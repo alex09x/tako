@@ -143,7 +143,9 @@ extension SessionSidebarTests {
         let items1 = store.items(for: win)
         #expect(items1.count == 1)
         #expect(items1[0].surfaceId == surf1.id)
-        #expect(items1[0].title == "Pane 1")
+        // A session of two terminals is named by the folder they share
+        // (SessionNaming, agreed 2026-11-11), not by whichever one has focus.
+        #expect(items1[0].title == "dev")
         #expect(items1[0].workingDirectory == "/Users/dev/pane1")
 
         // When focus moves to surf2
@@ -151,7 +153,7 @@ extension SessionSidebarTests {
         let items2 = store.items(for: win)
         #expect(items2.count == 1)
         #expect(items2[0].surfaceId == surf2.id)
-        #expect(items2[0].title == "Pane 2")
+        #expect(items2[0].title == "dev", "the session name does not follow focus")
         #expect(items2[0].workingDirectory == "/Users/dev/pane2")
     }
 

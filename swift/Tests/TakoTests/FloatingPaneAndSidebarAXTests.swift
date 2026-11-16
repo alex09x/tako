@@ -65,6 +65,9 @@ struct FloatingPaneAndSidebarAXTests {
 
     /// Creates a real `.fullSizeContentView` `TerminalWindow` matching `TerminalWindow.awakeFromNib()`
     /// so macOS imposes the real 28pt titlebar safe-area inset on any unguarded `NSHostingView`.
+    /// The canvas of a window every test display holds unclamped (DesktopCanvasFixture).
+    private var canvasWidth: CGFloat { DesktopCanvasFixture.windowWidth - SessionSidebarWidth.current() }
+
     private func makeFullSizeLoadedWindow(canvasWidth: CGFloat = 1000, height: CGFloat = 700) -> (TerminalController, TerminalWindow) {
         TerminalTestSupport.preventQuitting()
         let sidebarWidth = SessionSidebarWidth.current()
@@ -83,15 +86,16 @@ struct FloatingPaneAndSidebarAXTests {
         controller.window = window
         window.windowController = controller
         controller.windowDidLoad()
-        window.setFrame(NSRect(x: 80, y: 80, width: canvasWidth + sidebarWidth, height: height), display: true)
+        window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebarWidth, height: height), display: true)
         controller.showWindow(nil)
         return (controller, window)
     }
 
     @Test func floatingPaneRootAXGroupHasZeroTitlebarSafeAreaGapInFullSizeWindow() throws {
         let sidebarWidth = SessionSidebarWidth.current()
-        let (controller, window) = makeFullSizeLoadedWindow(canvasWidth: 1000, height: 700)
+        let (controller, window) = makeFullSizeLoadedWindow(canvasWidth: canvasWidth, height: 700)
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        DesktopCanvasFixture.expectUnclamped(window, width: DesktopCanvasFixture.windowWidth)
 
         let p1 = try #require(controller.focusedSurface)
         let initialP1PTY = p1.pty
@@ -120,7 +124,7 @@ struct FloatingPaneAndSidebarAXTests {
         let maxPaneInWindow = window.convertFromScreen(paneGroup.frameInScreen)
         #expect(abs(maxPaneInWindow.minX - (sidebarWidth + gap)) <= 2)
         #expect(abs(maxPaneInWindow.minY - gap) <= 2)
-        #expect(abs(maxPaneInWindow.width - (1000 - 2 * gap)) <= 2)
+        #expect(abs(maxPaneInWindow.width - (canvasWidth - 2 * gap)) <= 2)
         #expect(abs(maxPaneInWindow.height - (winHeight - 2 * gap)) <= 2)
 
         var paneDescendants: [AXSnapshotNode] = []
@@ -150,7 +154,7 @@ struct FloatingPaneAndSidebarAXTests {
         // Verify .normal mode near the top of the .fullSizeContentView window (y = 8 inside titlebar zone!) ALSO has zero safe-area gap:
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))
         let p2Key = p2.id.uuidString.lowercased()
-        let canvasSize = CGSize(width: 1000, height: winHeight)
+        let canvasSize = CGSize(width: canvasWidth, height: winHeight)
         controller.floatingCanvas.setInteractiveRect(CGRect(x: 40, y: 8, width: 420, height: 320), for: p1.id, in: canvasSize)
         controller.floatingCanvas.commitInteractiveRect(for: p1.id, in: canvasSize)
         controller.floatingCanvas.setInteractiveRect(CGRect(x: 100, y: 80, width: 420, height: 320), for: p2.id, in: canvasSize)
@@ -273,22 +277,27 @@ struct FloatingPaneAndSidebarAXTests {
 
     @Test func normalFloatingPaneAXHitTestingReachesHeaderControlsTerminalAndAllEightResizeHandles() throws {
         let (_, controller, window) = {
-            let pair = makeFullSizeLoadedWindow(canvasWidth: 1000, height: 700)
+            let pair = makeFullSizeLoadedWindow(canvasWidth: canvasWidth, height: 700)
             return (SessionSidebarWidth.current(), pair.0, pair.1)
         }()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        DesktopCanvasFixture.expectUnclamped(window, width: DesktopCanvasFixture.windowWidth)
 
         let p1 = try #require(controller.focusedSurface)
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))
         let p1Key = p1.id.uuidString.lowercased()
         let p2Key = p2.id.uuidString.lowercased()
         let contentView = try #require(window.contentView)
-        let canvasSize = CGSize(width: 1000, height: contentView.bounds.height)
+        let canvasSize = CGSize(width: canvasWidth, height: contentView.bounds.height)
 
-        // Place p1 (focused) and p2 (background) non-overlapping so both Close buttons & handles are visible:
-        controller.floatingCanvas.setInteractiveRect(CGRect(x: 24, y: 24, width: 420, height: 320), for: p1.id, in: canvasSize)
+        // Place p1 (focused) and p2 (background) non-overlapping so both Close buttons & handles are
+        // visible: side by side with 24 pt around each, sized from the canvas. A fixed 490 pt offset
+        // was clamped back over p1 on a narrower canvas, which then took p2's left handles' hits.
+        let paneWidth = (canvasWidth - 3 * 24) / 2
+        #expect(paneWidth >= FloatingPaneGeometry.minSize.width)
+        controller.floatingCanvas.setInteractiveRect(CGRect(x: 24, y: 24, width: paneWidth, height: 320), for: p1.id, in: canvasSize)
         controller.floatingCanvas.commitInteractiveRect(for: p1.id, in: canvasSize)
-        controller.floatingCanvas.setInteractiveRect(CGRect(x: 490, y: 80, width: 420, height: 320), for: p2.id, in: canvasSize)
+        controller.floatingCanvas.setInteractiveRect(CGRect(x: 48 + paneWidth, y: 80, width: paneWidth, height: 320), for: p2.id, in: canvasSize)
         controller.floatingCanvas.commitInteractiveRect(for: p2.id, in: canvasSize)
         controller.activateFloatingPane(p1)
 

@@ -43,7 +43,7 @@ struct FloatingRexPolishTests {
         let sidebarWidth = SessionSidebarWidth.current()
         let controller = TerminalController(app, withBaseConfig: nil, withSurfaceTree: nil)
         let window = TerminalWindow(
-            contentRect: NSRect(x: 80, y: 80, width: canvasWidth + sidebarWidth, height: height),
+            contentRect: NSRect(x: 0, y: 80, width: canvasWidth + sidebarWidth, height: height),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -55,7 +55,7 @@ struct FloatingRexPolishTests {
         controller.window = window
         window.windowController = controller
         controller.windowDidLoad()
-        window.setFrame(NSRect(x: 80, y: 80, width: canvasWidth + sidebarWidth, height: height), display: true)
+        window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebarWidth, height: height), display: true)
         controller.showWindow(nil)
         return (controller, window)
     }
@@ -165,13 +165,16 @@ struct FloatingRexPolishTests {
         }
 
         let sidebarWidth = SessionSidebarWidth.current()
-        let (controller, window) = makeLoadedDesktopWindow(canvasWidth: 1000, height: 700)
+        // A window every test display holds unclamped (DesktopCanvasFixture).
+        let canvasWidth = DesktopCanvasFixture.windowWidth - sidebarWidth
+        let (controller, window) = makeLoadedDesktopWindow(canvasWidth: canvasWidth, height: 700)
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        DesktopCanvasFixture.expectUnclamped(window, width: DesktopCanvasFixture.windowWidth)
 
         let p1 = try #require(controller.focusedSurface)
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))
         let contentView = try #require(window.contentView)
-        let canvas = CGSize(width: 1000, height: contentView.bounds.height)
+        let canvas = CGSize(width: canvasWidth, height: contentView.bounds.height)
 
         // The split tiled both (reference grid); maximizing p1 on its own makes it the sole
         // maximized pane: the whole grid, with the 8 pt gutter all round a tiled pane has.
@@ -188,7 +191,7 @@ struct FloatingRexPolishTests {
         let gap = DesktopCanvasMetrics.paneGap
         #expect(abs(p1MaxRect.minX - (sidebarWidth + gap)) <= 1.5)
         #expect(abs(p1MaxRect.minY - gap) <= 1.5)
-        #expect(abs(p1MaxRect.width - (1000 - 2 * gap)) <= 1.5)
+        #expect(abs(p1MaxRect.width - (canvasWidth - 2 * gap)) <= 1.5)
         #expect(abs(p1MaxRect.height - (contentView.bounds.height - 2 * gap)) <= 1.5)
 
         // Position both panes as non-overlapping .normal windows (p1 focused, p2 background)

@@ -16,7 +16,11 @@ extension DesktopCanvasDesignTests {
     @Suite(.serialized)
     @MainActor
     struct Hosted {
-        private let canvasWidth: CGFloat = 1000
+        /// The whole window, sidebar included, fits the smallest display these
+        /// run on (a hosted runner's 1024 pt), so AppKit never clamps it and
+        /// every display measures the same canvas.
+        private let windowWidth = DesktopCanvasFixture.windowWidth
+        private var canvasWidth: CGFloat { windowWidth - SessionSidebarWidth.current() }
         private let height: CGFloat = 700
 
         private func makeWindow() -> (TerminalController, TerminalWindow) {
@@ -35,8 +39,9 @@ extension DesktopCanvasDesignTests {
             window.windowController = controller
             controller.windowDidLoad()
             controller.floatingCanvas.reduceMotionProvider = { true }
-            window.setFrame(NSRect(x: 80, y: 80, width: canvasWidth + sidebar, height: height), display: true)
+            window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebar, height: height), display: true)
             controller.showWindow(nil)
+            DesktopCanvasFixture.expectUnclamped(window, width: windowWidth)
             return (controller, window)
         }
 

@@ -106,26 +106,43 @@ struct QuickTerminalControllerNotificationTests {
         #expect(!window.isOpaque)
     }
 
-    @Test func onNewTabIgnoresNonSurfaceObjects() {
+    /// The Quick Terminal refuses a tab with an in-window dialog card
+    /// (`TerminalDialogView.alert`), not a sheet: its title, or nil.
+    private func noNewTabAlert(in window: NSWindow) -> String? {
+        TerminalDialogView.pending(in: window).map(\.title)
+    }
+
+    /// The card is presented from a main-actor task, which runs only once the
+    /// test yields; spinning the run loop inside the test never lets it run.
+    /// The negative cases yield the same way before checking nothing came.
+    private func settleAlert(in window: NSWindow) async {
+        for _ in 0..<1000 where noNewTabAlert(in: window) == nil { await Task.yield() }
+    }
+
+    /// Answers the card if one is up, so the next test starts without it.
+    private func dismissAlert(in window: NSWindow) {
+        _ = TerminalDialogView.pending(in: window)?.press("OK")
+    }
+
+    @Test func onNewTabIgnoresNonSurfaceObjects() async {
         let (controller, window) = QTTestSupport.loadAndAnimateIn()
-        defer { QTTestSupport.tearDown(controller, window) }
+        defer { dismissAlert(in: window); QTTestSupport.tearDown(controller, window) }
         NotificationCenter.default.post(name: Tako.Notification.takoNewTab, object: NSObject())
+        await settleAlert(in: window)
+        #expect(noNewTabAlert(in: window) == nil)
         #expect(window.attachedSheet == nil)
     }
 
-    @Test func onNewTabShowsAlertForASurfaceOwnedByThisQuickTerminal() throws {
+    @Test func onNewTabShowsAlertForASurfaceOwnedByThisQuickTerminal() async throws {
         let (controller, window) = QTTestSupport.loadAndAnimateIn()
-        defer {
-            if let sheet = window.attachedSheet { window.endSheet(sheet) }
-            QTTestSupport.tearDown(controller, window)
-        }
+        defer { dismissAlert(in: window); QTTestSupport.tearDown(controller, window) }
         let surface = try #require(controller.focusedSurface)
         NotificationCenter.default.post(name: Tako.Notification.takoNewTab, object: surface)
-        QTTestSupport.waitUntil(timeout: 1) { window.attachedSheet != nil }
-        #expect(window.attachedSheet != nil)
+        await settleAlert(in: window)
+        #expect(noNewTabAlert(in: window) == "Cannot Create New Tab")
     }
 
-    @Test func onNewTabIgnoresSurfacesNotHostedInAQuickTerminalWindow() {
+    @Test func onNewTabIgnoresSurfacesNotHostedInAQuickTerminalWindow() async {
         let (controller, window) = QTTestSupport.loadAndAnimateIn()
         defer { QTTestSupport.tearDown(controller, window) }
         let foreignWindow = NSWindow(
@@ -138,6 +155,8 @@ struct QuickTerminalControllerNotificationTests {
 
         NotificationCenter.default.post(name: Tako.Notification.takoNewTab, object: foreignSurface)
 
+        await settleAlert(in: window)
+        #expect(noNewTabAlert(in: window) == nil)
         #expect(window.attachedSheet == nil)
     }
 
@@ -150,15 +169,14 @@ struct QuickTerminalControllerNotificationTests {
         #expect(controller.window === window)
     }
 
-    @Test func newTabActionShowsTheUnsupportedAlertInsteadOfCreatingATab() {
+    @Test func newTabActionShowsTheUnsupportedAlertInsteadOfCreatingATab() async {
         let (controller, window) = QTTestSupport.loadAndAnimateIn()
-        defer {
-            if let sheet = window.attachedSheet { window.endSheet(sheet) }
-            QTTestSupport.tearDown(controller, window)
-        }
+        defer { dismissAlert(in: window); QTTestSupport.tearDown(controller, window) }
+        let surfacesBefore = Array(controller.surfaceTree).count
         controller.newTab(nil)
-        QTTestSupport.waitUntil(timeout: 1) { window.attachedSheet != nil }
-        #expect(window.attachedSheet != nil)
+        await settleAlert(in: window)
+        #expect(noNewTabAlert(in: window) == "Cannot Create New Tab")
+        #expect(Array(controller.surfaceTree).count == surfacesBefore, "no tab or terminal was created")
     }
 
     /// `Tako.SurfaceView.surface` is hardcoded to `nil` in this Zig-less shim
