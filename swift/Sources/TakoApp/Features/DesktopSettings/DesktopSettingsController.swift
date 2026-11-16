@@ -138,6 +138,7 @@ final class DesktopSettingsController {
         content.addSubview(overlay, positioned: .above, relativeTo: nil)
         overlay.panel.frame = DesktopSettingsGeometry.frame(in: overlay.bounds)
         model.onClose = { [weak self] in self?.close() }
+        overlay.onClose = { [weak self] in self?.close() }
         host.makeFirstResponder(overlay.panel)
         hostCloseObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                                                                    object: host, queue: .main) { [weak self] _ in
@@ -230,4 +231,14 @@ final class DesktopSettingsOverlayView: NSView {
     /// Clicks outside the panel never reach the terminal underneath.
     override func mouseDown(with event: NSEvent) {}
     override var acceptsFirstResponder: Bool { true }
+
+    /// Cmd+W while Settings is shown closes Settings, not the tab under it.
+    var onClose: (() -> Void)?
+
+    /// Menu shortcuts never act on the terminal underneath: see
+    /// DesktopSettingsOverlayView+Keys.swift.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if super.performKeyEquivalent(with: event) { return true }
+        return containsKeyEquivalent(event)
+    }
 }
