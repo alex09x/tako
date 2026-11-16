@@ -29,7 +29,18 @@ struct MotionClockTests {
         LivingAnimationState.shared.onFrame = { if $0 == key { n += 1 } }
         defer { LivingAnimationState.shared.onFrame = nil }
         await wait(seconds)
+        diagnostics("\(key): \(n) frames over \(seconds)s")
         return n
+    }
+
+    /// Retain the actual clock prerequisites on hosted runners. A paused
+    /// clock, an occluded window and a non-running presentation are different
+    /// failures; no frame-count expectation is skipped or relaxed here.
+    private func diagnostics(_ label: String, window: NSWindow? = nil) {
+        let motion = LivingAnimationState.shared
+        let watched = motion.windowsToWatch()
+        print("[motion environment] \(label); reduce=\(motion.reduceMotion), source=\(motion.reduceMotionSource()), paused=\(motion.isTimelinePaused), occluded=\(motion.isOccludedOrIdle), shown=\(motion.statusShown), animates=\(motion.statusAnimates), fixed=\(String(describing: motion.fixedTimeOverride)), active=\(NSApp.isActive)")
+        print("[motion display] screen=\(String(describing: NSScreen.main?.frame)), scale=\(NSScreen.main?.backingScaleFactor ?? 0), fps=\(NSScreen.main?.maximumFramesPerSecond ?? 0), watched=\(watched.count), visible=\(watched.filter(\.isVisible).count), probeVisible=\(window?.isVisible ?? false), probeOcclusion=\(window?.occlusionState.rawValue ?? 0)")
     }
 
     private func overview(_ statuses: [Tako.PaneStatus]) -> (SwiftUIMotionProbe, PaneOverviewStore) {
@@ -37,6 +48,7 @@ struct MotionClockTests {
         store.items = statuses.map { PaneOverviewItem(id: UUID(), title: "pane", status: $0) }
         let probe = SwiftUIMotionProbe(PaneOverviewView(isPresented: .constant(true), showsBackdrop: false, store: store),
                                        size: CGSize(width: 520, height: 360))
+        diagnostics("overview mounted", window: probe.window)
         return (probe, store)
     }
 
