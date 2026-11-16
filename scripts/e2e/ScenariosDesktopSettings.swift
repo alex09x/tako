@@ -335,16 +335,16 @@ func runDesktopSettingsContainmentScenario(_ d: Driver) throws {
         let title = w.flatMap { d.attribute($0, kAXTitleAttribute) as String? } ?? "nil"
         return "key window \(title.debugDescription), Settings open \(keys.isOpen), on-screen windows \(d.onScreenWindows().count)"
     }
-    let before = try d.treeFacts(ctl, saveAs: "modal-tree-before.json")
-    print("[diag modal] before Cmd+D: panes \(before.panes) focused \(before.focused ?? "nil") selected \(before.selected) split \(before.split); \(keyWindow())")
-    guard before.split.isEmpty else { throw Failure("the fixture was already split before Cmd+D: \(before.split)") }
+    let treeBefore = try d.treeFacts(ctl, saveAs: "modal-tree-before.json")
+    print("[diag modal] before Cmd+D: panes \(treeBefore.panes) focused \(treeBefore.focused ?? "nil") selected \(treeBefore.selected) split \(treeBefore.split); \(keyWindow())")
+    guard treeBefore.split.isEmpty else { throw Failure("the fixture was already split before Cmd+D: \(treeBefore.split)") }
     d.key(Key.d, .maskCommand)
     usleep(1_000_000)
-    let after = try d.treeFacts(ctl, saveAs: "modal-tree-after.json")
-    print("[diag modal] after Cmd+D:  panes \(after.panes) focused \(after.focused ?? "nil") selected \(after.selected) split \(after.split); \(keyWindow())")
-    let added = Set(after.panes.keys).subtracting(before.panes.keys)
-    guard added.isEmpty, after.split.isEmpty else {
-        throw Failure("Cmd+D leaked through Settings: new panes \(added.sorted()) in \(added.map { after.panes[$0] ?? "?" }), split tabs \(after.split)")
+    let treeAfter = try d.treeFacts(ctl, saveAs: "modal-tree-after.json")
+    print("[diag modal] after Cmd+D:  panes \(treeAfter.panes) focused \(treeAfter.focused ?? "nil") selected \(treeAfter.selected) split \(treeAfter.split); \(keyWindow())")
+    let added = Set(treeAfter.panes.keys).subtracting(treeBefore.panes.keys)
+    guard added.isEmpty, treeAfter.split.isEmpty else {
+        throw Failure("Cmd+D leaked through Settings: new panes \(added.sorted()) in \(added.map { treeAfter.panes[$0] ?? "?" }), split tabs \(treeAfter.split)")
     }
     guard !FileManager.default.fileExists(atPath: leakFile) else { throw Failure("keys typed into Settings reached the shell") }
     // Recording, then Esc, cancels without closing or changing anything.
