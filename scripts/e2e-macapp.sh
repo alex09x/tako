@@ -42,7 +42,10 @@ started=$(date +%s)
 sources=(scripts/e2e/DriverCore.swift scripts/e2e/DriverEvents.swift scripts/e2e/DriverAX.swift scripts/e2e/DriverAXControls.swift scripts/e2e/DriverPTY.swift scripts/e2e/ScenariosDialogsAndTabs.swift scripts/e2e/ScenariosHumanInteractions.swift scripts/e2e/ScenariosKittyGraphics.swift scripts/e2e/ScenariosSessionRecovery.swift scripts/e2e/SessionRecoveryDeferralJourney.swift scripts/e2e/ScenariosSessionCollision.swift scripts/e2e/ScenariosSidebarWorkspaceMove.swift scripts/e2e/ScenariosSidebarStyleSettings.swift scripts/e2e/ScenariosSidebarRename.swift scripts/e2e/ScenariosMovePaneToTab.swift scripts/e2e/ScenariosSidebarSwitchSpeed.swift scripts/e2e/OwnedProcesses.swift scripts/e2e/DriverLifecycleSelfTest.swift scripts/e2e/SettingsPage.swift scripts/e2e/ScenariosActivitySoundSettings.swift scripts/e2e/ScenariosRecoveryGrouping.swift scripts/e2e/ScenariosLegacyWorkspaceRecovery.swift scripts/e2e/ScenariosAppearanceSettings.swift scripts/e2e/ScenariosScopedAppearance.swift scripts/e2e/ScenariosThemePresets.swift scripts/e2e/ScenariosThemeControl.swift scripts/e2e/ScenariosThemeTypography.swift scripts/e2e/ScenariosDesktopSettings.swift scripts/e2e/ReflowRows.swift scripts/e2e/tako-e2e.swift)
 # Persistence runs use this same driver with a fresh bundle for each case.
 # Include the compiler and this script (its flags/source list) in the key.
-fingerprint=$({ swiftc --version; shasum -a 256 "$0" "${sources[@]}"; } | shasum -a 256 | cut -d' ' -f1)
+# The script by its path from the repository root, not as invoked: shasum
+# prints the name, and ./scripts/… and scripts/… gave two keys for one
+# runner, so the shared runner was recompiled.
+fingerprint=$({ swiftc --version; shasum -a 256 scripts/e2e-macapp.sh "${sources[@]}"; } | shasum -a 256 | cut -d' ' -f1)
 if [ ! -x target/tako-e2e ] || [ "$(cat target/tako-e2e.inputs 2>/dev/null || true)" != "$fingerprint" ]; then
     swiftc -O -o target/tako-e2e.next "${sources[@]}"
     mv -f target/tako-e2e.next target/tako-e2e

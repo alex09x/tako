@@ -227,18 +227,53 @@ def verify(prebuilt: str, require_zmx: bool, root: str = ROOT, environ=os.enviro
 
 def reseal(app: str, bundle_id: str) -> None:
     sh(["/usr/libexec/PlistBuddy", "-c", f"Set :CFBundleIdentifier {bundle_id}", os.path.join(app, "Contents/Info.plist")])
-    sh(["codesign", "--force", "--sign", "-", app])
+    # A plain --force --sign - drops the entitlements (Apple Events, audio
+    # input, the sounds app group) and the option flags. Keep them; only the
+    # identity changes. Requirements are regenerated for the new identifier.
+    sh(["codesign", "--force", "--sign", "-", "--preserve-metadata=entitlements,flags,runtime", app])
+
+
+def signing_facts(app: str) -> dict:
+    """What the app's signature grants and how it is signed, read back from
+    codesign: identifier, option flags, hardened-runtime version, entitlements."""
+    ents = sh(["codesign", "-d", "--entitlements", "-", "--xml", app])
+    r = subprocess.run(["codesign", "-d", "--verbose=4", app], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise Mismatch(f"codesign -d {app}: {r.stderr.strip()}")
+    facts: dict = {"identifier": None, "flags": [], "runtime": None,
+                   "entitlements": plistlib.loads(ents.encode()) if ents.strip() else {}}
+    for line in r.stderr.splitlines():
+        if line.startswith("Identifier="):
+            facts["identifier"] = line.split("=", 1)[1]
+        elif line.startswith("CodeDirectory ") and "flags=" in line:
+            inner = line.split("flags=", 1)[1].split(" ", 1)[0]
+            facts["flags"] = sorted(inner.split("(", 1)[1].rstrip(")").split(",")) if "(" in inner else []
+        elif line.startswith("Runtime Version="):
+            facts["runtime"] = line.split("=", 1)[1]
+    return facts
+
+
+def require_same_signing(before: dict, after: dict, bundle_id: str) -> None:
+    """A reseal changes the identity and nothing the signature grants."""
+    if after.get("identifier") != bundle_id:
+        raise Mismatch(f"resealed signing identifier is {after.get('identifier')!r}, not {bundle_id}")
+    for key in ("entitlements", "flags", "runtime"):
+        if before.get(key) != after.get(key):
+            raise Mismatch(f"resealing changed the signature's {key}: {before.get(key)!r} -> {after.get(key)!r}")
 
 
 def install(prebuilt: str, app_dir: str, bundle_id: str, require_zmx: bool, root: str = ROOT,
-            environ=os.environ, current: dict | None = None, resealer=reseal) -> dict:
+            environ=os.environ, current: dict | None = None, resealer=reseal, signing=signing_facts) -> dict:
     manifest = verify(prebuilt, require_zmx, root, environ, current)
     app = os.path.join(app_dir, "Tako.app")
     if os.path.exists(app):
         shutil.rmtree(app)
     os.makedirs(app_dir, exist_ok=True)
     shutil.copytree(os.path.join(prebuilt, "Tako.app"), app, symlinks=True)
+    signed_before = signing(app)
     resealer(app, bundle_id)
+    signed_after = signing(app)
+    require_same_signing(signed_before, signed_after, bundle_id)
     after = tree_hashes(app)
     changed = sorted(k for k in set(after) | set(manifest["app"]) if after.get(k) != manifest["app"].get(k))
     if not set(changed) <= RESEALED:
@@ -252,7 +287,8 @@ def install(prebuilt: str, app_dir: str, bundle_id: str, require_zmx: bool, root
     with open(os.path.join(prebuilt, "manifest.json"), "rb") as f:
         source = hashlib.sha256(f.read()).hexdigest()
     receipt = {"prebuilt_manifest_sha256": source, "bundle_id": bundle_id, "app": app,
-               "resealed": changed, "files": after, "runner_installed": bool(manifest.get("runner"))}
+               "resealed": changed, "files": after, "runner_installed": bool(manifest.get("runner")),
+               "signing_before": signed_before, "signing_after": signed_after}
     with open(os.path.join(app_dir, "prebuilt-receipt.json"), "w") as f:
         json.dump(receipt, f, indent=2, sort_keys=True)
     return receipt

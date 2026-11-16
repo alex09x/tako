@@ -50,6 +50,22 @@ def fake_reseal(app, bundle_id):
         f.write(b"sig")
 
 
+ENTITLEMENTS = {"com.apple.security.automation.apple-events": True, "com.apple.security.device.audio-input": True,
+                "com.apple.security.application-groups": ["group.example.sounds"]}
+
+
+class FakeSigning:
+    """codesign -d for fake bundles: the identifier is the bundle's, the
+    rest what the stand-in reseal left (`drop` imitates a plain re-sign)."""
+
+    def __init__(self):
+        self.dropped = False
+
+    def __call__(self, app):
+        return {"identifier": prebuilt.bundle_id(app), "flags": ["adhoc", "runtime"], "runtime": "14.0.0",
+                "entitlements": {} if self.dropped else dict(ENTITLEMENTS)}
+
+
 class PrebuiltTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -145,7 +161,7 @@ class PrebuiltTests(unittest.TestCase):
         def drops(app, bundle_id):
             write_plist(os.path.join(app, "Contents/Info.plist"), bundle_id)
         with self.assertRaisesRegex(prebuilt.Mismatch, "resealed app's TakoSourceCommit"):
-            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(), drops)
+            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(), drops, signing=FakeSigning())
 
     def test_a_runner_that_lost_its_mode_is_refused(self):
         for name in ("tako-e2e", "tako-e2e.inputs"):
@@ -255,7 +271,7 @@ class PrebuiltTests(unittest.TestCase):
 
     def test_install_reseals_only_identity_and_writes_its_own_receipt(self):
         dest = os.path.join(self.tmp, "stage")
-        receipt = prebuilt.install(self.out, dest, "com.example.e2e-1", True, self.root, ENV, self.current(), fake_reseal)
+        receipt = prebuilt.install(self.out, dest, "com.example.e2e-1", True, self.root, ENV, self.current(), fake_reseal, signing=FakeSigning())
         self.assertEqual(receipt["bundle_id"], "com.example.e2e-1")
         self.assertEqual(prebuilt.bundle_id(os.path.join(dest, "Tako.app")), "com.example.e2e-1")
         self.assertEqual(receipt["resealed"], ["Contents/Info.plist", "Contents/MacOS/Tako"])
@@ -266,10 +282,56 @@ class PrebuiltTests(unittest.TestCase):
 
     def test_a_reseal_that_touches_anything_else_is_refused(self):
         def bad(app, bundle_id):
+            fake_reseal(app, bundle_id)
             with open(os.path.join(app, "Contents/MacOS/takoctl"), "a") as f:
                 f.write("x")
         with self.assertRaisesRegex(prebuilt.Mismatch, "takoctl"):
-            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(), bad)
+            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(), bad, signing=FakeSigning())
+
+    def test_the_receipt_records_identical_signing_but_the_identifier(self):
+        dest = os.path.join(self.tmp, "stage-sign")
+        receipt = prebuilt.install(self.out, dest, "com.example.e2e-2", True, self.root, ENV, self.current(),
+                                   fake_reseal, signing=FakeSigning())
+        before, after = receipt["signing_before"], receipt["signing_after"]
+        self.assertEqual((before["identifier"], after["identifier"]), ("com.tako-core.terminal.prebuilt", "com.example.e2e-2"))
+        self.assertEqual(after["entitlements"], ENTITLEMENTS)
+        self.assertEqual({k: v for k, v in before.items() if k != "identifier"},
+                         {k: v for k, v in after.items() if k != "identifier"})
+
+    def test_a_reseal_that_drops_entitlements_is_refused(self):
+        signing = FakeSigning()
+        def plain(app, bundle_id):
+            fake_reseal(app, bundle_id)
+            signing.dropped = True
+        with self.assertRaisesRegex(prebuilt.Mismatch, "changed the signature's entitlements"):
+            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(), plain,
+                             signing=signing)
+
+    def test_a_reseal_that_keeps_the_old_identifier_is_refused(self):
+        with self.assertRaisesRegex(prebuilt.Mismatch, "signing identifier"):
+            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(),
+                             lambda app, bundle_id: None, signing=FakeSigning())
+
+    def test_the_real_reseal_preserves_entitlements_flags_and_runtime(self):
+        calls = []
+        with mock.patch.object(prebuilt, "sh", lambda cmd, cwd=None: calls.append(cmd) or ""):
+            prebuilt.reseal("/tmp/X.app", "com.example.id")
+        sign = [c for c in calls if c[0] == "codesign"]
+        self.assertEqual(len(sign), 1)
+        self.assertIn("--preserve-metadata=entitlements,flags,runtime", sign[0])
+        self.assertNotIn("identifier", sign[0][-2])
+
+    def test_signing_facts_are_read_from_codesign(self):
+        xml = plistlib.dumps(ENTITLEMENTS).decode()
+        verbose = ("Executable=/x/Tako.app/Contents/MacOS/Tako\nIdentifier=com.example.e2e\nFormat=app bundle with Mach-O thin (arm64)\n"
+                   "CodeDirectory v=20500 size=1234 flags=0x10002(adhoc,runtime) hashes=27+7 location=embedded\n"
+                   "Runtime Version=14.0.0\nSignature=adhoc\n")
+        done = subprocess.CompletedProcess([], 0, "", verbose)
+        with mock.patch.object(prebuilt, "sh", lambda cmd, cwd=None: xml), \
+                mock.patch.object(prebuilt.subprocess, "run", lambda *a, **k: done):
+            facts = prebuilt.signing_facts("/x/Tako.app")
+        self.assertEqual(facts, {"identifier": "com.example.e2e", "flags": ["adhoc", "runtime"], "runtime": "14.0.0",
+                                 "entitlements": ENTITLEMENTS})
 
     def test_the_cli_fails_closed_with_exit_3(self):
         with mock.patch.object(prebuilt, "ROOT", self.root):
