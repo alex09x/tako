@@ -16,11 +16,14 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
     private let presetName = "XCUI Full Theme"
     private let config = "font-family = Monaco\nfont-size = 21\nbackground = #123456\nforeground = #c0ffee\npalette = 1=#fa1234\ncursor-style-blink = false\n"
 
+    /// The full-preset editor lives on the scoped appearance route: Cmd+,
+    /// opens the native Settings panel, which has no New/Edit preset editor.
+    /// The default workspace's «Workspace Appearance…» opens the Themes list
+    /// that hosts it. Contract on this route: a saved preset is assigned to
+    /// the default workspace (fixed id, so it survives a relaunch), not
+    /// written as the global `theme =`.
     @MainActor private func openThemes(_ app: XCUIApplication) -> XCUIElement {
-        app.typeKey(",", modifierFlags: .command)
-        let dialog = app.groups["TerminalSettingsDialog"]
-        XCTAssertTrue(dialog.waitForExistence(timeout: 5))
-        dialog.typeKey("3", modifierFlags: .command)
+        let dialog = H.openWorkspaceAppearance(in: app)
         H.assertValue(dialog, contains: "Themes:")
         return dialog
     }

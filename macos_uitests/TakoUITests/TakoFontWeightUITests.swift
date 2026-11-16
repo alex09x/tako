@@ -35,10 +35,12 @@ final class TakoFontWeightUITests: TakoCustomConfigCase {
         let original = try XCTUnwrap(witness)
         let originalConfig = try Data(contentsOf: env.configFile)
 
-        app.typeKey(",", modifierFlags: .command)
-        let parent = app.groups["TerminalSettingsDialog"]
-        XCTAssertTrue(parent.waitForExistence(timeout: 5))
-        parent.typeKey("3", modifierFlags: .command)
+        // The preset editor is hosted by the scoped appearance route (Cmd+,
+        // opens the native Settings panel, which has no preset editor). Saving
+        // there also assigns the preset to this terminal's scope; the global
+        // configuration stays byte-identical, as asserted at the end.
+        let parent = H.openPaneAppearance(in: app, paneID: try XCTUnwrap(env.primaryPaneID))
+        H.assertValue(parent, contains: "Themes:")
         H.search(name, in: parent)
         parent.typeKey("e", modifierFlags: .command)
         let editor = app.groups["ThemePresetEditor"]
