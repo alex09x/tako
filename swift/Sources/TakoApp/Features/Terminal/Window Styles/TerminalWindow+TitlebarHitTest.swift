@@ -15,6 +15,14 @@ extension TerminalWindow {
     /// never swallows clicks/drags meant for the edge-to-edge right terminal or the
     /// permanent sidebar's top drag/zoom header while keeping native traffic lights intact.
     func handleInterceptedWindowEvent(_ event: NSEvent) -> Bool {
+        // Modal menu tracking can consume the previous press's mouseUp.
+        // A fresh press starts its own gesture, not that earlier capture.
+        switch event.type {
+        case .leftMouseDown: topBandLeftTarget = nil
+        case .rightMouseDown: topBandRightTarget = nil
+        case .otherMouseDown: topBandOtherTargets.removeValue(forKey: event.buttonNumber)
+        default: break
+        }
         if let bar = Tako.TabBarController.bar(for: self), bar.draggingTabIndex != nil {
             if event.type == .leftMouseDragged {
                 bar.mouseDragged(with: event)
