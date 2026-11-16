@@ -62,7 +62,7 @@ jobs:
       - name: Run only the failed motion scopes with diagnostics
         run: |
           set -euo pipefail
-          python3 scripts/check_run.py 'swift:MotionClockTests|MotionDelayTests|MotionCopiedFlashPixelTests|MotionOverlaySpanPixelTests|MotionOverviewCardTests|MotionRenderingTests|MotionSidebarLookTests|MotionWiringTests' 2>&1 | tee target/motion-diagnosis/focused.log
+          python3 scripts/check_run.py 'swift:MotionClockTests|MotionDelayTests|MotionOverlayTests|MotionOverviewCardTests|MotionRenderingTests|MotionSidebarLookTests|MotionWiringTests' 2>&1 | tee target/motion-diagnosis/focused.log
       - name: Retain diagnosis
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
