@@ -129,6 +129,52 @@ extension DesktopSettingsTests {
         #expect(window.performKeyEquivalent(with: try key(left, 123, arrow, in: window)), "no field focused: contained")
     }
 
+    /// Stands in for a menu command a user bound to Cmd+Left.
+    final class MenuSpy: NSObject {
+        var fired = 0
+        @objc func newTab(_ sender: Any?) { fired += 1 }
+    }
+
+    /// AppKit's order for a Command key: the window's key equivalents, then
+    /// the menu (here a private one, never the app's), then the first responder.
+    func deliver(_ event: NSEvent, in window: NSWindow, menu: NSMenu) {
+        if window.performKeyEquivalent(with: event) { return }
+        if menu.performKeyEquivalent(with: event) { return }
+        window.firstResponder?.keyDown(with: event)
+    }
+
+    /// A menu shortcut on a line-editing chord (a user can bind Cmd+Left to
+    /// New Tab) does not fire over a focused Settings field, whose caret
+    /// moves instead; in a bare window the same menu does fire.
+    @Test func aMenuShortcutOnALineEditingChordStaysOutOfAFocusedSettingsField() throws {
+        let sandbox = try Sandbox()
+        let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        let arrow: NSEvent.ModifierFlags = [.command, .numericPad, .function]
+        let spy = MenuSpy(), menu = NSMenu()
+        let item = NSMenuItem(title: "New Tab", action: #selector(MenuSpy.newTab(_:)), keyEquivalent: left)
+        item.keyEquivalentModifierMask = .command
+        item.target = spy
+        menu.addItem(item)
+
+        let (bare, _) = keyHost()
+        defer { bare.close() }
+        deliver(try key(left, 123, arrow, in: bare), in: bare, menu: menu)
+        #expect(spy.fired == 1, "control: the private menu takes Cmd+Left in a bare window")
+
+        let (window, _) = keyHost()
+        defer { window.close() }
+        let controller = try #require(DesktopSettingsController.show(in: window, section: .general, configPath: sandbox.config.path))
+        defer { controller.close() }
+        let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+        controller.overlay.panel.addSubview(editor)
+        editor.string = "alpha beta"
+        #expect(window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 5, length: 0))
+        deliver(try key(left, 123, arrow, in: window), in: window, menu: menu)
+        #expect(spy.fired == 1, "the menu shortcut did not fire over the focused field")
+        #expect(editor.selectedRange().location == 0, "the field moved its caret instead")
+    }
+
     /// Cmd+W closes Settings and gives the keyboard back to the terminal;
     /// the window and its tab stay.
     @Test func commandWClosesOnlySettings() throws {

@@ -31,12 +31,14 @@ extension DesktopSettingsOverlayView {
             return true
         }
         // Line editing in a field of the panel (Cmd or Shift+Cmd with an
-        // arrow, Home/End/Page Up/Down, Delete or Forward Delete) is the
-        // field's own keyDown, which comes after key equivalents: claimed
-        // here it never moved the caret or deleted to the line start.
+        // arrow, Home/End/Page Up/Down, Delete or Forward Delete): claimed
+        // and dropped, the caret never moved; declined, a menu shortcut bound
+        // to the same chord (Cmd+Left can be bound to New Tab) would run
+        // first. So the field gets it here, directly, and nothing else does.
         if flags.isSubset(of: [.command, .shift]), Self.lineEditingKeyCodes.contains(event.keyCode),
            let editor = window?.firstResponder as? NSText, editor.isDescendant(of: self) {
-            return false
+            editor.keyDown(with: event)
+            return true
         }
         return !Self.reachesMenu(flags: flags, key: key)
     }
