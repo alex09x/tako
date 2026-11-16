@@ -776,7 +776,9 @@ let scenarios: [Scenario] = [
     }),
     ("persist-reflow", "a restored persistent session reflows and updates columns when widened", { d in
         d.quit()
-        let config = "session-persistence = true\n"
+        // remote-control = on: the pane is read by takoctl from outside it,
+        // as in the other persistence scenarios; this fixture's app only.
+        let config = "session-persistence = true\nremote-control = on\n"
         try d.launch(config: config)
         d.setPosition(CGPoint(x: 20, y: 50))
         d.setSize(CGSize(width: 650, height: 500))
@@ -797,30 +799,35 @@ let scenarios: [Scenario] = [
         try d.run("python3 -c \"import base64, sys; sys.stdout.write(base64.b64decode('\(markerB64)').decode('utf-8') + '\\n')\"")
         usleep(1_000_000)
 
-        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        // Precondition: In narrow terminal, the 115-char marker wraps and does NOT appear on any single line.
-        // Also verify takoctl exit code succeeded via separate status witness.
-        // Using --styled reads physical viewport rows rather than unstyled logical scrollback.
-        try d.run("\(ctl) text --styled --lines 12 > \(d.path("narrow_text")) && echo OK > \(d.path("narrow_ok"))")
-        guard try d.file("narrow_ok").trimmingCharacters(in: .whitespacesAndNewlines) == "OK" else {
-            throw Failure("takoctl text failed at narrow width")
+        // Quoted as the other scenarios' d.exec calls do: the app's path can
+        // hold spaces (the test Mac builds under /Volumes/Volume 1).
+        func q(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let ctl = "\(q(d.appURL.path + "/Contents/MacOS/takoctl")) --bundle-id \(q(d.bundleID))"
+        // The pane is read from outside it, the way the other scenarios drive
+        // takoctl: a capture typed into the pane would put its own echo -- a
+        // long path, wrapped over many narrow rows -- into the rows it reads.
+        // --styled reads physical viewport rows rather than logical scrollback.
+        func rows(_ lines: Int) throws -> [String] {
+            try d.exec("\(ctl) text --styled --lines \(lines)").components(separatedBy: "\n").map {
+                $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .newlines)
+            }
         }
-        let narrowRows = (try? d.file("narrow_text"))?.components(separatedBy: "\n").map {
-            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression).trimmingCharacters(in: .newlines)
-        } ?? []
+        // The whole bounded viewport, as the wide read below: a marker of many
+        // narrow rows under a wrapped prompt can need more than a few lines.
+        let narrowRows = try rows(50)
         guard !narrowRows.isEmpty && !narrowRows.allSatisfy({ $0.isEmpty }) else {
             throw Failure("precondition failed: narrowRows was empty!")
         }
+        // Precondition: in the narrow terminal the 115-char marker wraps and does NOT appear on any single line.
         guard !narrowRows.contains(where: { $0.contains(expectedMarker) }) else {
             throw Failure("precondition failed: marker was not wrapped across physical rows in narrow \(narrow) columns. Rows were: \(narrowRows)")
         }
-        // Verify physical row boundaries: prefix row must contain p1 and subsequent row must contain p4.suffix(20),
-        // and together they reconstruct the full wrapped marker.
-        guard let prefixIdx = narrowRows.firstIndex(where: { $0.contains(p1) }),
-              prefixIdx + 1 < narrowRows.count,
-              narrowRows[prefixIdx + 1].contains(p4.suffix(20)),
-              (narrowRows[prefixIdx] + narrowRows[prefixIdx + 1]).contains(expectedMarker) else {
-            throw Failure("precondition failed: could not identify physical wrapped row boundaries in narrow text: \(narrowRows)")
+        // Physical row boundaries, at whatever width the window got
+        // (wrappedMarkerStart, ReflowRows.swift): ceil(115 / cols) rows, every
+        // one but the last exactly `narrow` wide.
+        guard wrappedMarkerStart(expectedMarker, in: narrowRows, cols: narrow) != nil else {
+            throw Failure("precondition failed: could not identify the marker's \((expectedMarker.count + narrow - 1) / narrow) physical wrapped rows of \(narrow) columns in narrow text: \(narrowRows)")
         }
 
         try d.quitNormally()
@@ -839,13 +846,7 @@ let scenarios: [Scenario] = [
 
         // Postcondition: Widening unwrapped the wrapped physical rows so the full 115-character marker
         // now fits onto a single physical terminal row.
-        try d.run("\(ctl) text --styled --lines 50 > \(d.path("wide_text")) && echo OK > \(d.path("wide_ok"))")
-        guard try d.file("wide_ok").trimmingCharacters(in: .whitespacesAndNewlines) == "OK" else {
-            throw Failure("takoctl text failed at wide width")
-        }
-        let wideRows = (try? d.file("wide_text"))?.components(separatedBy: "\n").map {
-            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression).trimmingCharacters(in: .newlines)
-        } ?? []
+        let wideRows = try rows(50)
         guard wideRows.contains(where: { $0.contains(expectedMarker) }) else {
             throw Failure("physical reflow failed: marker was not unwrapped into a single line in wide \(wide) columns. Rows were: \(wideRows)")
         }
