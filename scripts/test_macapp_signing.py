@@ -34,6 +34,7 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(entitlements, {
             "com.apple.security.device.audio-input": True,
             "com.apple.security.automation.apple-events": True,
+            "com.apple.security.application-groups": ["284V2M3LN9.com.tako-core.terminal.sounds"],
         })
         self.assertNotIn("NSCameraUsageDescription", PRIVACY_USAGE_DESCRIPTIONS)
 
