@@ -32,13 +32,20 @@ def git(root, *args):
     subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
 
 
-def write_plist(path, bundle_id):
+def write_plist(path, bundle_id, stamp=None):
+    info = {"CFBundleIdentifier": bundle_id}
+    if stamp is not None:
+        info["TakoSourceCommit"] = stamp
     with open(path, "wb") as f:
-        plistlib.dump({"CFBundleIdentifier": bundle_id}, f)
+        plistlib.dump(info, f)
 
 
 def fake_reseal(app, bundle_id):
-    write_plist(os.path.join(app, "Contents/Info.plist"), bundle_id)
+    """As PlistBuddy Set + codesign: only the id changes, the stamp stays."""
+    plist = os.path.join(app, "Contents/Info.plist")
+    with open(plist, "rb") as f:
+        info = plistlib.load(f)
+    write_plist(plist, bundle_id, info.get("TakoSourceCommit"))
     with open(os.path.join(app, "Contents/MacOS/Tako"), "ab") as f:
         f.write(b"sig")
 
@@ -64,7 +71,9 @@ class PrebuiltTests(unittest.TestCase):
             os.makedirs(os.path.dirname(os.path.join(self.app, rel)), exist_ok=True)
             with open(os.path.join(self.app, rel), "w") as f:
                 f.write(body)
-        write_plist(os.path.join(self.app, "Contents/Info.plist"), "com.tako-core.terminal.prebuilt")
+        # Stamped with the real test HEAD, as build-macapp.py does in a Git checkout.
+        self.stamp = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip()
+        write_plist(os.path.join(self.app, "Contents/Info.plist"), "com.tako-core.terminal.prebuilt", self.stamp)
         self.runner = os.path.join(self.root, "target/tako-e2e")
         for path, body in [(self.runner, "runner"), (self.runner + ".inputs", "key")]:
             with open(path, "w") as f:
@@ -109,6 +118,44 @@ class PrebuiltTests(unittest.TestCase):
             prebuilt.pack(self.app, self.out + "-new", None, self.root, ENV)
         with self.assertRaisesRegex(prebuilt.Mismatch, "uncommitted"):
             prebuilt.verify(self.out, False, self.root, ENV)
+
+    def test_an_unstamped_or_otherwise_stamped_app_cannot_be_packed_as_this_commit(self):
+        plist = os.path.join(self.app, "Contents/Info.plist")
+        for stamp in (None, "", "0" * 40, self.stamp[:12]):
+            write_plist(plist, "com.tako-core.terminal.prebuilt", stamp)
+            with self.assertRaisesRegex(prebuilt.Mismatch, "TakoSourceCommit"):
+                prebuilt.pack(self.app, self.out + "-stamp", None, self.root, ENV)
+
+    def test_a_prebuilt_whose_stamp_was_changed_is_refused(self):
+        plist = os.path.join(self.out, "Tako.app/Contents/Info.plist")
+        write_plist(plist, "com.tako-core.terminal.prebuilt", "0" * 40)
+        with self.assertRaisesRegex(prebuilt.Mismatch, "changed Contents/Info.plist"):
+            prebuilt.verify(self.out, False, self.root, ENV, self.current())
+        # Even with the manifest rewritten to match, the stamp itself must be HEAD.
+        path = os.path.join(self.out, "manifest.json")
+        with open(path) as f:
+            manifest = json.load(f)
+        manifest["app"]["Contents/Info.plist"] = prebuilt.entry(plist)
+        with open(path, "w") as f:
+            json.dump(manifest, f)
+        with self.assertRaisesRegex(prebuilt.Mismatch, "prebuilt app's TakoSourceCommit"):
+            prebuilt.verify(self.out, False, self.root, ENV, self.current())
+
+    def test_a_reseal_that_drops_the_stamp_is_refused(self):
+        def drops(app, bundle_id):
+            write_plist(os.path.join(app, "Contents/Info.plist"), bundle_id)
+        with self.assertRaisesRegex(prebuilt.Mismatch, "resealed app's TakoSourceCommit"):
+            prebuilt.install(self.out, os.path.join(self.tmp, "s"), "id", False, self.root, ENV, self.current(), drops)
+
+    def test_a_runner_that_lost_its_mode_is_refused(self):
+        for name in ("tako-e2e", "tako-e2e.inputs"):
+            path = os.path.join(self.out, name)
+            mode = os.stat(path).st_mode & 0o777
+            os.chmod(path, mode ^ 0o100)
+            with self.assertRaisesRegex(prebuilt.Mismatch, f"runner: {name}"):
+                prebuilt.verify(self.out, False, self.root, ENV, self.current())
+            os.chmod(path, mode)
+        self.assertTrue(self.manifest["runner"]["tako-e2e"].endswith(f":{os.stat(self.runner).st_mode & 0o777:o}"))
 
     def test_only_an_ad_hoc_build_can_be_shared(self):
         for env in ({}, {"TAKO_CODESIGN_IDENTITY": "Developer ID Application: X"}):

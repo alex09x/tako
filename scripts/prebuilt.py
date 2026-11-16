@@ -72,11 +72,13 @@ def tree_hashes(top: str) -> dict[str, str]:
         for name in sorted(files) + [x for x in dirs if os.path.islink(os.path.join(d, x))]:
             p = os.path.join(d, name)
             rel = os.path.relpath(p, top)
-            if os.path.islink(p):
-                out[rel] = "link:" + os.readlink(p)
-            else:
-                out[rel] = f"{sha256(p)}:{os.stat(p).st_mode & 0o777:o}"
+            out[rel] = "link:" + os.readlink(p) if os.path.islink(p) else entry(p)
     return out
+
+
+def entry(path: str) -> str:
+    """A file as hash and ordinary mode bits: a lost executable bit is a change."""
+    return f"{sha256(path)}:{os.stat(path).st_mode & 0o777:o}"
 
 
 def checkout_facts(root: str = ROOT, environ=os.environ) -> dict:
@@ -120,12 +122,25 @@ def toolchain_facts(root: str = ROOT) -> dict:
 CONTRACT = ("target", "mode", "cargo_features", "codesign")
 
 
-def bundle_id(app: str) -> str | None:
+def info(app: str, key: str) -> str | None:
     try:
         with open(os.path.join(app, "Contents/Info.plist"), "rb") as f:
-            return plistlib.load(f).get("CFBundleIdentifier")
+            return plistlib.load(f).get(key)
     except (OSError, plistlib.InvalidFileException):
         return None
+
+
+def bundle_id(app: str) -> str | None:
+    return info(app, "CFBundleIdentifier")
+
+
+def require_source_stamp(app: str, head: str, what: str) -> None:
+    """The commit build-macapp.py stamped into the bundle must be `head`: a
+    clean checkout says nothing about a bundle built from another one."""
+    stamp = info(app, "TakoSourceCommit")
+    if stamp != head:
+        raise Mismatch(f"{what}'s TakoSourceCommit is {stamp!r}, not the checkout {head}: "
+                       "it was not built from this commit (or from a Git checkout at all)")
 
 
 def build_facts(app: str, environ=os.environ) -> dict:
@@ -183,14 +198,14 @@ def pack(app: str, out: str, runner: str | None, root: str = ROOT, environ=os.en
         # Every stage reseals ad hoc under its own id; a shared build signed
         # with a real identity would change meaning when it is resealed.
         raise Mismatch("the shared build must be signed ad hoc (TAKO_CODESIGN_IDENTITY=-)")
+    require_source_stamp(app, manifest["checkout"]["head"], "the app")
     os.makedirs(out, exist_ok=False)
     shutil.copytree(app, os.path.join(out, "Tako.app"), symlinks=True)
     manifest["app"] = tree_hashes(os.path.join(out, "Tako.app"))
     if runner:
         shutil.copy2(runner, os.path.join(out, "tako-e2e"))
         shutil.copy2(runner + ".inputs", os.path.join(out, "tako-e2e.inputs"))
-        manifest["runner"] = {"tako-e2e": sha256(os.path.join(out, "tako-e2e")),
-                              "tako-e2e.inputs": sha256(os.path.join(out, "tako-e2e.inputs"))}
+        manifest["runner"] = {name: entry(os.path.join(out, name)) for name in ("tako-e2e", "tako-e2e.inputs")}
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
     return manifest
@@ -202,9 +217,11 @@ def verify(prebuilt: str, require_zmx: bool, root: str = ROOT, environ=os.enviro
     app = os.path.join(prebuilt, "Tako.app")
     compare(manifest, current or describe(app, None, root, environ), require_zmx)
     check_files(manifest["app"], app, "prebuilt app")
-    for name, digest in manifest.get("runner", {}).items():
-        if not os.path.isfile(os.path.join(prebuilt, name)) or sha256(os.path.join(prebuilt, name)) != digest:
-            raise Mismatch(f"prebuilt runner: {name} changed or missing")
+    require_source_stamp(app, manifest["checkout"]["head"], "the prebuilt app")
+    for name, recorded in manifest.get("runner", {}).items():
+        path = os.path.join(prebuilt, name)
+        if not os.path.isfile(path) or entry(path) != recorded:
+            raise Mismatch(f"prebuilt runner: {name} changed, missing or lost its mode ({recorded})")
     return manifest
 
 
@@ -226,6 +243,7 @@ def install(prebuilt: str, app_dir: str, bundle_id: str, require_zmx: bool, root
     changed = sorted(k for k in set(after) | set(manifest["app"]) if after.get(k) != manifest["app"].get(k))
     if not set(changed) <= RESEALED:
         raise Mismatch(f"resealing changed more than its identity: {', '.join(sorted(set(changed) - RESEALED))}")
+    require_source_stamp(app, manifest["checkout"]["head"], "the resealed app")
     if manifest.get("runner"):
         target = os.path.join(root, "target")
         os.makedirs(target, exist_ok=True)
