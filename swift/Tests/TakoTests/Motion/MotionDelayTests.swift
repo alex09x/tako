@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import Combine
 import Testing
 @testable import Tako
 
@@ -112,18 +113,42 @@ struct MotionDelayTests {
         #expect(layer.animation(forKey: "position") != nil, "a dragged pill's layer jumped instead of following")
     }
 
-    @Test func copiedShowsForAMomentAndAnotherCopyKeepsItsOwn() async {
-        let flash = CopiedFlash()
+    @Test func copiedShowsForAMomentAndAnotherCopyKeepsItsOwn() {
+        // Deliver both real scheduled actions explicitly: a busy runner can
+        // resume a 70 ms sleep after the artificial 100 ms hold has expired.
+        var scheduled: [(TimeInterval, @MainActor () -> Void)] = []
+        let flash = CopiedFlash { hold, action in scheduled.append((hold, action)) }
         #expect(flash.hold == 1.5)
-        flash.hold = 0.1
         flash.flash()
         #expect(flash.shown)
-        await wait(0.06)
         flash.flash()
-        await wait(0.07)
+        #expect(scheduled.map { $0.0 } == [1.5, 1.5])
+        scheduled[0].1()
         #expect(flash.shown, "the first copy's timer cut the second short")
-        await wait(0.1)
+        scheduled[1].1()
         #expect(!flash.shown, "Copied! stayed")
+    }
+
+    @Test func copiedUsesItsRealDefaultDelayBeforeItClears() async {
+        let flash = CopiedFlash()
+        #expect(flash.hold == 1.5)
+        var clearedAt: TimeInterval?
+        let observation = flash.$shown.dropFirst().sink { shown in
+            if !shown { clearedAt = ProcessInfo.processInfo.systemUptime }
+        }
+        defer { observation.cancel() }
+        let started = ProcessInfo.processInfo.systemUptime
+        flash.flash()
+        #expect(flash.shown)
+        let deadline = started + 4
+        while clearedAt == nil && ProcessInfo.processInfo.systemUptime < deadline {
+            await wait(0.02)
+        }
+        #expect(clearedAt != nil, "the production scheduler never cleared Copied!")
+        if let clearedAt {
+            #expect(clearedAt - started >= flash.hold, "Copied! cleared before the real 1.5 s hold")
+        }
+        #expect(!flash.shown)
     }
 
     /// Search hits are recounted once output pauses for 150 ms; output that

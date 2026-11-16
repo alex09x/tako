@@ -77,54 +77,59 @@ struct MotionWiringTests {
     /// The header's "Needs you" ring (4a) pulses while something waits for
     /// you and rests when nothing does; hidden, it stands still.
     @Test func theNeedsYouRingPulsesOnlyWhileSomethingWaits() throws {
-        _ = NSApplication.shared
-        let suite = "test.tako.motion.header.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-motion-ws-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
-        workspaces.resetForTesting()
-        let store = SessionSidebarStore(defaults: defaults)
+        try withMotionOn {
+            _ = NSApplication.shared
+            let suite = "test.tako.motion.header.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-motion-ws-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
+            workspaces.resetForTesting()
+            let store = SessionSidebarStore(defaults: defaults)
 
-        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
-        surface.title = "agent"
-        let controller = BaseTerminalController(Tako.App(), surfaceTree: SplitTree(view: surface))
-        let tab = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled],
-                           backing: .buffered, defer: false)
-        tab.isReleasedWhenClosed = false
-        tab.windowController = controller
-        controller.window = tab
-        tab.contentView = surface
-        defer { tab.close() }
+            let fixture = try PrivateSurfaceFixture()
+            defer { fixture.cleanUp() }
+            let surface = fixture.surface()
+            surface.title = "agent"
+            let controller = BaseTerminalController(Tako.App(), baseConfig: fixture.configuration,
+                                                    surfaceTree: SplitTree(view: surface))
+            let tab = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled],
+                               backing: .buffered, defer: false)
+            tab.isReleasedWhenClosed = false
+            tab.windowController = controller
+            controller.window = tab
+            tab.contentView = surface
+            defer { tab.close() }
 
-        var presented = true
-        let shown = Binding(get: { presented }, set: { presented = $0 })
-        let sidebar = NSHostingView(rootView: SessionSidebarView(isPresented: shown, containingWindow: tab,
-                                                                 store: store, workspaceStore: workspaces))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 500), styleMask: [.borderless],
-                              backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = sidebar
-        defer { window.close() }
+            var presented = true
+            let shown = Binding(get: { presented }, set: { presented = $0 })
+            let sidebar = NSHostingView(rootView: SessionSidebarView(isPresented: shown, containingWindow: tab,
+                                                                     store: store, workspaceStore: workspaces))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 500), styleMask: [.borderless],
+                                  backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = sidebar
+            defer { window.close() }
 
-        // The header's ring is the one drawn small: 11 pt of a 14 pt ring.
-        let header = { () -> Tako.TabStatusLayer? in
-            // Reference A01 `.sb-seg .ring`: the needs-you ring is 10 pt of a 14 pt ring.
-            hosts(in: sidebar).map(\.statusLayer).first { abs($0.transform.m11 - 10.0 / 14) < 0.01 }
+            // The header's ring is the one drawn small: 11 pt of a 14 pt ring.
+            let header = { () -> Tako.TabStatusLayer? in
+                // Reference A01 `.sb-seg .ring`: the needs-you ring is 10 pt of a 14 pt ring.
+                hosts(in: sidebar).map(\.statusLayer).first { abs($0.transform.m11 - 10.0 / 14) < 0.01 }
+            }
+            TerminalTestSupport.waitUntil(timeout: 1) { header() != nil }
+            let resting = try #require(header())
+            #expect(StatusLayerInventory.effects(of: resting) == [.ring(.waiting), .blink(moving: false)],
+                    "nothing waits, yet: \(StatusLayerInventory.effects(of: resting))")
+
+            surface.crab.setStatus(.needsApproval, text: nil)
+            TerminalTestSupport.waitUntil(timeout: 2) {
+                header().map { StatusLayerInventory.effects(of: $0).contains(.halo) } ?? false
+            }
+            let moving = try #require(header())
+            #expect(StatusLayerInventory.effects(of: moving) == [.ring(.waiting), .blink(moving: true), .halo])
         }
-        TerminalTestSupport.waitUntil(timeout: 1) { header() != nil }
-        let resting = try #require(header())
-        #expect(StatusLayerInventory.effects(of: resting) == [.ring(.waiting), .blink(moving: false)],
-                "nothing waits, yet: \(StatusLayerInventory.effects(of: resting))")
-
-        surface.crab.setStatus(.needsApproval, text: nil)
-        TerminalTestSupport.waitUntil(timeout: 2) {
-            header().map { StatusLayerInventory.effects(of: $0).contains(.halo) } ?? false
-        }
-        let moving = try #require(header())
-        #expect(StatusLayerInventory.effects(of: moving) == [.ring(.waiting), .blink(moving: true), .halo])
     }
 
     /// Terminal UI: the tab numbers show only while ⌘ is held, after 150 ms.

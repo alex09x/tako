@@ -125,15 +125,23 @@ public struct InputOwnershipHeaderView: View {
 /// "Copied!" for a moment after a copy, then the button's own words again.
 @MainActor
 final class CopiedFlash: ObservableObject {
+    typealias Schedule = (TimeInterval, @escaping @MainActor () -> Void) -> Void
     @Published private(set) var shown = false
     var hold: TimeInterval = 1.5
     private var mark = 0
+    private let schedule: Schedule
+
+    init(schedule: @escaping Schedule = { hold, action in
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { action() }
+    }) {
+        self.schedule = schedule
+    }
 
     func flash() {
         shown = true
         mark += 1
         let this = mark
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
+        schedule(hold) { [weak self] in
             // A copy made meanwhile keeps its own moment.
             guard let self, self.mark == this else { return }
             self.shown = false

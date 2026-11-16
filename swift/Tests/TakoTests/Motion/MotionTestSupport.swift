@@ -172,3 +172,23 @@ func withMotionOn<T>(_ body: @MainActor () throws -> T) rethrows -> T {
     }
     return try body()
 }
+
+/// The same process-local policy while an asynchronous probe takes frames.
+/// Restore the real host's accessibility source after the probe, including
+/// probes that explicitly turn reduction back on to verify the paused path.
+@MainActor
+func withMotionOn<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
+    let motion = LivingAnimationState.shared
+    let (reduce, windows) = (motion.reduceMotionSource, motion.windowsToWatch)
+    motion.reduceMotionSource = { false }
+    motion.windowsToWatch = { [] }
+    motion.refreshReduceMotion()
+    motion.recomputeOcclusion()
+    defer {
+        motion.reduceMotionSource = reduce
+        motion.windowsToWatch = windows
+        motion.refreshReduceMotion()
+        motion.recomputeOcclusion()
+    }
+    return try await body()
+}
