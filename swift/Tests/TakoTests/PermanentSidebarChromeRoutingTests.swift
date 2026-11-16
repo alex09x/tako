@@ -151,12 +151,32 @@ struct PermanentSidebarChromeRoutingTests {
         let headerRect = paneHeader.convert(paneHeader.bounds, to: contentView)
         let surfaceView = try #require(findFirst(of: Tako.SurfaceView.self, in: contentView))
         let surfaceRect = surfaceView.convert(surfaceView.bounds, to: contentView)
-        #expect(abs(headerRect.maxY - contentView.bounds.maxY) < 1)
-        #expect(abs((surfaceRect.maxY + FloatingPaneGeometry.headerHeight) - contentView.bounds.maxY) < 1)
+        // Diagnostic print: the measured geometry behind the checks below (the gap, body-inset and
+        // A01 header expectations they compare it with).
+        let dragForLog = findFirst(of: SidebarTitlebarDragView.self, in: contentView)
+        print("[chrome geometry] window \(type(of: window)) frame \(window.frame) contentLayoutRect \(window.contentLayoutRect) "
+            + "content bounds \(contentView.bounds) safeArea \(contentView.safeAreaInsets) "
+            + "header \(headerRect) surface \(surfaceRect) headerHeight \(FloatingPaneGeometry.headerHeight) "
+            + "drag bounds \(dragForLog.map { "\($0.bounds)" } ?? "nil") drag in content \(dragForLog.map { "\($0.convert($0.bounds, to: contentView))" } ?? "nil") "
+            + "drag AX frame \(dragForLog.map { "\($0.accessibilityFrame())" } ?? "nil") drag superview \(dragForLog?.superview.map { "\(type(of: $0)) \($0.frame)" } ?? "nil") "
+            + "strip expected \(SessionSidebarChrome.hiddenTitlebarStripHeight) topStrip \(SessionSidebarChrome.topStripHeight(for: window))")
+        // A sole pane is the maximized card: 8 pt in from the window's top, as tiles are
+        // (DesktopCanvasMetrics.paneGap), with the terminal bodyInsets.top under its header.
+        // Still nothing of a titlebar safe area: that would push both 28 pt further down.
+        let gap = DesktopCanvasMetrics.paneGap
+        #expect(abs(headerRect.maxY - (contentView.bounds.maxY - gap)) < 1)
+        #expect(abs((surfaceRect.maxY + FloatingPaneGeometry.headerHeight + FloatingPaneGeometry.bodyInsets.top)
+            - (contentView.bounds.maxY - gap)) < 1)
 
+        // The hidden-titlebar window's strip is 16 pt; since the reference A01 header (0160193f)
+        // the sidebar's drag region spans that whole header bar, the taller of the two.
+        #expect(SessionSidebarChrome.topStripHeight(for: window) == SessionSidebarChrome.hiddenTitlebarStripHeight)
         let dragRegion = try #require(findFirst(of: SidebarTitlebarDragView.self, in: contentView))
         #expect(dragRegion.accessibilityIdentifier() == "SidebarWindowDragRegion")
-        #expect(abs(dragRegion.bounds.height - SessionSidebarChrome.hiddenTitlebarStripHeight) < 0.5)
+        let headerBar = max(SessionSidebarChrome.headerBarHeight(for: window), SessionSidebarView.referenceHeaderHeight)
+        #expect(abs(dragRegion.bounds.height - headerBar) < 0.5)
+        #expect(abs(dragRegion.convert(dragRegion.bounds, to: contentView).maxY - contentView.bounds.maxY) < 0.5,
+                "the drag region starts at the window's top edge")
 
         for clicks in [1, 2] {
             let ev = try #require(NSEvent.mouseEvent(
