@@ -39,7 +39,9 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         assertRect(pane(second, in: app).frame, equals: secondTile)
         control("Maximize", pane: first, in: app).click()
         let maximized = pane(first, in: app).frame
-        assertRect(maximized, equals: canvas(in: app).frame)
+        // The maximized card keeps the grid's gap from every canvas edge, as tiles do.
+        let gap = Self.canvasPaneGap
+        assertRect(maximized, equals: canvas(in: app).frame.insetBy(dx: gap, dy: gap))
         activeWindow(in: app).descendants(matching: .any)["session-pane-\(second)"].firstMatch.click()
         control("Minimize", pane: second, in: app).click()
         waitForPaneCount(1, in: app)
@@ -114,7 +116,8 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         XCTAssertEqual(try shellPID(id, phase: "NATIVE_SHELF_AFTER", in: app, focus: false), process)
         let maximize = control("Maximize", pane: id, in: app)
         if maximize.value as? String != "maximized" { maximize.click() }
-        assertRect(pane(id, in: app).frame, equals: canvas(in: app).frame)
+        let gap = Self.canvasPaneGap
+        assertRect(pane(id, in: app).frame, equals: canvas(in: app).frame.insetBy(dx: gap, dy: gap))
         control("Close", pane: id, in: app).click()
         waitForPaneCount(0, in: app)
         XCTAssertTrue(app.descendants(matching: .any)["FloatingCanvasNewTerminal"].firstMatch.waitForExistence(timeout: 5))

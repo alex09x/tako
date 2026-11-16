@@ -40,6 +40,20 @@ Its `PRODUCT_BUNDLE_IDENTIFIER` matches the real bundle's
 `TEST_TARGET_NAME = TakoCore`, which is what puts `UITargetAppPath` into the
 generated `.xctestrun`.
 
+### A private host
+
+`scripts/uitest.sh --host-id=SUFFIX` builds the host as
+`com.tako-core.terminal.uitest.SUFFIX` (build setting `TAKO_UITEST_HOST_ID`) into its own
+app and derived-data directories (`TAKO_UITEST_APP_DIR`), with the defaults suite
+`TAKO_UITEST_RUN_SUFFIX`. The runner keeps its identity, `com.tako-core.TakoUITests`, but is
+signed with entitlements generated for that host only (`TAKO_UITEST_RUNNER_ENTITLEMENTS`,
+from `scripts/uitest_host_identity.py`, which refuses any template other than the shared
+host's). The tests read both names from `TEST_RUNNER_TAKO_UITEST_HOST_ID` and
+`TEST_RUNNER_TAKO_UITEST_DEFAULTS_SUITE`, so their terminate, state-removal and defaults
+resets touch only the private host. The shared host's processes, profile and suite are
+snapshotted before and after; a change fails the run and is not rolled back. Without the flag
+every setting has its shared default. `--without-building` reruns a private build's tests.
+
 If `scripts/build-macapp.py` fails, the host phase fails the build. A UI run
 must execute against the current real app, and zero passed cases is a failure.
 

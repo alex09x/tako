@@ -43,17 +43,15 @@ final class TakoPermanentSidebarUITests: TakoCustomConfigCase {
 
         app.typeKey("s", modifierFlags: [.command, .option])
         XCTAssertTrue(sidebar.isHittable, "The former sidebar toggle must not hide navigation")
-        let searchToggle = sidebar.buttons["SessionSidebarSearchButton"]
-        XCTAssertTrue(searchToggle.isHittable)
-        searchToggle.click()
-        let search = sidebar.textFields.firstMatch
+        // The A01 header always shows its search field: there is no toggle to press first.
+        let search = sidebar.textFields["SessionSidebarSearchField"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isHittable)
         search.click()
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(sidebar.isHittable, "Escape must preserve permanent navigation")
 
         // Inside a floating pane, terminal rows must accept input and selection rather than drag chrome.
-        searchToggle.click()
         search.click()
         let topRow = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.01))
         topRow.click()
@@ -90,9 +88,13 @@ final class TakoPermanentSidebarUITests: TakoCustomConfigCase {
         waitForText("SIDEBAR-FIRST", in: firstTerminal)
 
         let firstRowID = try XCTUnwrap(sessionRows(in: app).first?.identifier)
-        let newSession = sidebar(in: app).buttons["SessionSidebarNewSession"]
+        // The A01 header's + opens its menu on the press; New Session is its first item.
+        let plus = sidebar(in: app).buttons["SessionSidebarHeaderNewSession"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 5))
+        XCTAssertTrue(plus.isHittable)
+        plus.click()
+        let newSession = app.menuItems["New Session"].firstMatch
         XCTAssertTrue(newSession.waitForExistence(timeout: 5))
-        XCTAssertTrue(newSession.isHittable)
         newSession.click()
         waitForSessionCount(2, in: app)
         let secondRowID = try XCTUnwrap(sessionRows(in: app).first { $0.identifier != firstRowID }?.identifier)

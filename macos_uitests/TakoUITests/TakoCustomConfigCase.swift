@@ -20,8 +20,13 @@ import Darwin
 
 @MainActor
 class TakoCustomConfigCase: XCTestCase {
-    static let defaultsSuiteName: String = "TAKO_UI_TESTS"
-    static let testBundleID = "com.tako-core.terminal.uitest"
+    /// A private run (`scripts/uitest.sh --host-id`) names its own host and suite through the
+    /// runner's environment; every terminate, state removal and defaults reset below follows
+    /// them, so a private run never touches the shared host, its profile or this suite.
+    static let defaultsSuiteName: String =
+        ProcessInfo.processInfo.environment["TAKO_UITEST_DEFAULTS_SUITE"] ?? "TAKO_UI_TESTS"
+    static let testBundleID =
+        ProcessInfo.processInfo.environment["TAKO_UITEST_HOST_ID"] ?? "com.tako-core.terminal.uitest"
 
     private let configFile: URL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("tako")

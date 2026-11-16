@@ -28,7 +28,7 @@ final class TakoFontWeightUITests: TakoCustomConfigCase {
         }.joined(separator: "\n")
         try (base + "\ntheme = \(name)\n").write(to: env.configFile, atomically: true, encoding: .utf8)
         let app = try env.launchIsolatedApp()
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         pane.typeText("printf '\\033[2J\\033[H\\033[?25lALPHABET\\n'; exec sleep 600\n")
         var witness: H.GlyphObservation?
         XCTAssertTrue(H.wait { witness = try? H.glyphs(in: pane); return witness != nil })

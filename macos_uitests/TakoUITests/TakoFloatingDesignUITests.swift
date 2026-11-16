@@ -19,20 +19,19 @@ final class TakoFloatingDesignUITests: TakoFloatingTerminalCase {
         let sidebar = window.descendants(matching: .any)["SessionSidebar"].firstMatch
         let workspaceHeader = sidebar.descendants(matching: .any)["SessionSidebarWorkspace-Default"].firstMatch
         XCTAssertTrue(workspaceHeader.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(workspaceHeader.frame.minY - sidebar.frame.minY, 72,
-                                 "Idle navigation should not spend a tall stack on empty filters")
-        XCTAssertFalse(sidebar.textFields.firstMatch.exists)
-
-        let searchToggle = sidebar.buttons["SessionSidebarSearchButton"]
-        XCTAssertTrue(searchToggle.isHittable)
-        searchToggle.click()
-        let search = sidebar.textFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        // Reference A01: 44 pt header, the always-shown filter field and the counters, then
+        // the first workspace about 116 pt from the window's top (FloatingRexPolishTests asserts
+        // the same band on the hosted view).
+        let idleTop = workspaceHeader.frame.minY - window.frame.minY
+        XCTAssertTrue((104...128).contains(idleTop), "first workspace \(idleTop) pt from the top, reference A01 is about 116")
+        let search = sidebar.textFields["SessionSidebarSearchField"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "A01 always shows the filter field")
         search.click()
         app.typeText("no-session-matches-this-reference")
         app.typeKey(.escape, modifierFlags: [])
-        XCTAssertTrue(search.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(search.exists, "Escape clears the query; the field stays")
         XCTAssertTrue(workspaceHeader.waitForExistence(timeout: 5))
+        XCTAssertEqual(workspaceHeader.frame.minY - window.frame.minY, idleTop, accuracy: 1, "clearing does not move the list")
         XCTAssertTrue(sidebar.isHittable)
         attachCanvas(app, named: "Compact sidebar with filters collapsed")
 
@@ -40,17 +39,20 @@ final class TakoFloatingDesignUITests: TakoFloatingTerminalCase {
         let firstProcess = try shellPID(first, phase: "DESIGN_BACKGROUND_BEFORE", in: app)
         let backgroundFrame = pane(first, in: app).frame
         let workFrame = canvas(in: app).frame
+        let gap = Self.canvasPaneGap
         XCTAssertEqual(control("Maximize", pane: first, in: app).value as? String, "maximized")
-        assertRect(backgroundFrame, equals: workFrame)
+        // A sole pane is the maximized card: the grid's gap from every canvas edge.
+        assertRect(backgroundFrame, equals: workFrame.insetBy(dx: gap, dy: gap))
         XCTAssertEqual(header(first, in: app).frame.height, Self.expectedPaneHeaderHeight, accuracy: 2)
 
+        // A split tiles both (the sole maximized tile returns to the grid); a floating
+        // terminal is the explicit Float control, which opens at the default proportions.
         app.typeKey("d", modifierFlags: .command)
         waitForPaneCount(2, in: app)
         let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
+        XCTAssertEqual(control("Float", pane: first, in: app).value as? String, "tiled")
+        floatPane(second, in: app)
         let floatingFrame = pane(second, in: app).frame
-        XCTAssertEqual(control("Maximize", pane: first, in: app).value as? String, "maximized",
-                       "Opening a floating terminal must preserve the background presentation")
-        assertRect(pane(first, in: app).frame, equals: backgroundFrame)
         XCTAssertEqual(control("Maximize", pane: second, in: app).value as? String, "normal")
         XCTAssertEqual(floatingFrame.width, max(260, workFrame.width * 0.55), accuracy: 3)
         XCTAssertEqual(floatingFrame.height, max(150, workFrame.height * 0.60), accuracy: 3)

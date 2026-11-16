@@ -23,6 +23,7 @@ final class TakoFloatingTerminalPersistenceUITests: TakoFloatingTerminalCase {
         let secondProcess = try shellPID(second, phase: "PERSIST_B_BEFORE", in: app)
         try focusThroughSidebar(first, in: app)
         restorePaneToNormal(first, in: app)
+        floatPane(first, in: app) // the resize and drag below are a floating pane's
 
         let resize = canvas(in: app).descendants(matching: .any)["FloatingPaneResize-bottomTrailing-\(first)"].firstMatch
         XCTAssertTrue(resize.exists)
@@ -47,9 +48,10 @@ final class TakoFloatingTerminalPersistenceUITests: TakoFloatingTerminalCase {
         XCTAssertTrue(minimizedCard(second, in: app).waitForExistence(timeout: 10))
         let restored = pane(first, in: app).frame
         let area = canvas(in: app).frame
-        XCTAssertEqual(restored.minX, area.minX, accuracy: 3)
-        XCTAssertEqual(restored.minY, area.minY, accuracy: 3)
-        XCTAssertEqual(restored.width, area.width, accuracy: 3)
+        let gap = Self.canvasPaneGap // the maximized card keeps the grid gap
+        XCTAssertEqual(restored.minX, area.minX + gap, accuracy: 3)
+        XCTAssertEqual(restored.minY, area.minY + gap, accuracy: 3)
+        XCTAssertEqual(restored.width, area.width - 2 * gap, accuracy: 3)
         XCTAssertLessThanOrEqual(restored.maxY, minimizedCard(second, in: app).frame.minY - 4)
         XCTAssertEqual(try shellPID(first, phase: "PERSIST_A_AFTER", in: app, focus: false), firstProcess)
 

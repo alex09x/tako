@@ -21,11 +21,14 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         XCTAssertEqual(header(first, in: app).frame.minY, firstFrame.minY, accuracy: 2,
                        "Pane chrome must start at the workspace top without another titlebar inset")
         XCTAssertEqual(firstBody.minY, firstFrame.minY + Self.expectedPaneHeaderHeight, accuracy: 2)
-        XCTAssertEqual(firstBody.maxY, firstFrame.maxY, accuracy: 2)
+        // The terminal keeps its card margin (bodyInsets) above the card's bottom edge.
+        XCTAssertEqual(firstBody.maxY, firstFrame.maxY - Self.paneBodyBottomInset, accuracy: 2)
         app.typeKey("d", modifierFlags: .command)
         waitForPaneCount(2, in: app)
         let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
         let process = try shellPID(second, phase: "DRAG_BEFORE", in: app)
+        // Resizing, free dragging and overlap are a floating pane's: a new split tiles.
+        floatPane(second, in: app)
         let outerFrame = activeWindow(in: app).frame
         let initial = pane(second, in: app).frame
         let resize = canvas(in: app).descendants(matching: .any)["FloatingPaneResize-bottomTrailing-\(second)"].firstMatch
@@ -47,7 +50,8 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         attachCanvas(app, named: "Floating terminals overlap after drag and resize")
 
         control("Maximize", pane: second, in: app).click()
-        assertRect(pane(second, in: app).frame, equals: canvas(in: app).frame)
+        let gap = Self.canvasPaneGap
+        assertRect(pane(second, in: app).frame, equals: canvas(in: app).frame.insetBy(dx: gap, dy: gap))
         header(second, in: app).doubleClick()
         assertRect(pane(second, in: app).frame, equals: moved)
         XCTAssertEqual(try shellPID(second, phase: "DRAG_AFTER", in: app, focus: false), process)
@@ -88,7 +92,8 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
 
         try focusThroughSidebar(first, in: app)
         control("Maximize", pane: first, in: app).click()
-        assertRect(pane(first, in: app).frame, equals: canvas(in: app).frame)
+        let gap = Self.canvasPaneGap
+        assertRect(pane(first, in: app).frame, equals: canvas(in: app).frame.insetBy(dx: gap, dy: gap))
         control("Minimize", pane: first, in: app).click()
         waitForPaneCount(1, in: app)
         XCTAssertTrue(minimizedCard(first, in: app).waitForExistence(timeout: 5))
@@ -117,9 +122,9 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         firstCard.click()
         waitForPaneCount(1, in: app)
         let restoredMaximum = pane(first, in: app).frame
-        XCTAssertEqual(restoredMaximum.minX, workspace.minX, accuracy: 3)
-        XCTAssertEqual(restoredMaximum.minY, workspace.minY, accuracy: 3)
-        XCTAssertEqual(restoredMaximum.width, workspace.width, accuracy: 3)
+        XCTAssertEqual(restoredMaximum.minX, workspace.minX + gap, accuracy: 3)
+        XCTAssertEqual(restoredMaximum.minY, workspace.minY + gap, accuracy: 3)
+        XCTAssertEqual(restoredMaximum.width, workspace.width - 2 * gap, accuracy: 3)
         XCTAssertLessThanOrEqual(restoredMaximum.maxY, minimizedCard(second, in: app).frame.minY - 4,
                                  "The shelf must not cover a maximized terminal's last rows")
         XCTAssertEqual(try shellPID(first, phase: "SHELF_A_AFTER", in: app, focus: false), firstProcess)
@@ -168,6 +173,7 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
         try focusThroughSidebar(first, in: app)
         restorePaneToNormal(first, in: app)
+        floatPane(first, in: app) // moving it off its tile is a floating pane's
         let moveFirst = header(first, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
         moveFirst.press(forDuration: 0.1, thenDragTo: moveFirst.withOffset(CGVector(dx: -100, dy: 0)))
         let backgroundClose = control("Close", pane: second, in: app)

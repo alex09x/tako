@@ -31,6 +31,10 @@ settings:
     # which reads and writes all over the repo and the target/ directory.
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     ALWAYS_SEARCH_USER_PATHS: NO
+    # The UI-test host's identity and build directory. scripts/uitest.sh --host-id
+    # overrides both for a private run; these defaults are the shared host.
+    TAKO_UITEST_HOST_ID: com.tako-core.terminal.uitest
+    TAKO_UITEST_APP_DIR: target/macapp-uitest
 
 targets:
   # The host application. It has no real sources of its own: the single
@@ -45,7 +49,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: TakoCore
-        PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.terminal.uitest
+        PRODUCT_BUNDLE_IDENTIFIER: $(TAKO_UITEST_HOST_ID)
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         INFOPLIST_KEY_CFBundleDisplayName: TakoCore
@@ -78,9 +82,9 @@ targets:
           # Keep Xcode's module-cache and SDK build variables out of the standalone builder.
           if env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" DEVELOPER_DIR="$DEVELOPER_DIR" LANG="${LANG:-en_US.UTF-8}" \
             RELEASE="${RELEASE:-0}" TAKO_VERSION="${TAKO_VERSION:-}" TAKO_BUILD_NUMBER="${TAKO_BUILD_NUMBER:-}" CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
-            TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp-uitest/Tako.app" ]; then
+            TAKO_BUNDLE_ID="${TAKO_UITEST_HOST_ID}" TAKO_APP_DIR="${TAKO_UITEST_APP_DIR}" python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "${TAKO_UITEST_APP_DIR}/Tako.app" ]; then
             rm -rf "${DEST}"
-            /usr/bin/ditto "target/macapp-uitest/Tako.app" "${DEST}"
+            /usr/bin/ditto "${TAKO_UITEST_APP_DIR}/Tako.app" "${DEST}"
             /usr/bin/codesign --force --sign - --timestamp=none --entitlements "${SRCROOT}/../swift/Resources/Tako.entitlements" "${DEST}"
           else
             # Never run a GUI journey against a placeholder or an older app
@@ -102,7 +106,10 @@ targets:
         script: |
           set -uo pipefail
           DEST="${BUILT_PRODUCTS_DIR}/TakoCore.app"
-          SRC="${SRCROOT}/../target/macapp-uitest/Tako.app"
+          case "${TAKO_UITEST_APP_DIR}" in
+            /*) SRC="${TAKO_UITEST_APP_DIR}/Tako.app" ;;
+            *) SRC="${SRCROOT}/../${TAKO_UITEST_APP_DIR}/Tako.app" ;;
+          esac
           if [ -d "${DEST}" ] && [ -d "${SRC}" ]; then
             cp -f "${SRC}/Contents/Info.plist" "${DEST}/Contents/Info.plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable TakoCore" "${DEST}/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string TakoCore" "${DEST}/Contents/Info.plist"
@@ -114,7 +121,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.TakoUITests
-        CODE_SIGN_ENTITLEMENTS: TakoUITests/TakoUITests.entitlements
+        # Only this runner reads it: a private run signs the runner with entitlements
+        # generated for its own host, and the host target keeps its own signing.
+        TAKO_UITEST_RUNNER_ENTITLEMENTS: TakoUITests/TakoUITests.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(TAKO_UITEST_RUNNER_ENTITLEMENTS)
         TEST_TARGET_NAME: TakoCore
         GENERATE_INFOPLIST_FILE: YES
 

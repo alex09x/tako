@@ -33,7 +33,7 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         try JSONSerialization.data(withJSONObject: styles).write(to: env.support.appendingPathComponent("Appearance.json"))
         let app = try env.launchIsolatedApp()
         let id = try XCTUnwrap(env.primaryPaneID)
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         let ocean = NSColor(srgbRed: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) < 0.03 })
         func shell(_ slot: String) throws -> String {
@@ -92,7 +92,7 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
     @MainActor func testWorkspaceThemeAndResetChangeRenderedPixels() throws {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         let before = try XCTUnwrap(H.samplePixelColor(from: pane))
         let dialog = H.openWorkspaceAppearance(in: app)
         let behindCatalog = try XCTUnwrap(H.samplePixelColor(from: pane))
@@ -156,7 +156,7 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
         let id = try XCTUnwrap(env.primaryPaneID)
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         pane.typeText("printf '\\033[2J\\033[H\\033[?25lALPHABET\\n'; exec sleep 600\n")
         var initial: H.GlyphObservation?
         XCTAssertTrue(H.wait { initial = try? H.glyphs(in: pane); return initial != nil })

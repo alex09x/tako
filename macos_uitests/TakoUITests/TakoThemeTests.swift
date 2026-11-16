@@ -174,7 +174,7 @@ final class TakoThemeTests: TakoCustomConfigCase {
         app.launch()
         try assertTitlebarAppearance(.dark, for: app)
         // create a split
-        app.groups["Terminal pane"].typeKey("d", modifierFlags: .command)
+        TakoScopedAppearanceHelpers.terminalPane(in: app).typeKey("d", modifierFlags: .command)
         // reload config
         app.typeKey(",", modifierFlags: [.command, .shift])
         try await Task.sleep(for: .seconds(0.5))

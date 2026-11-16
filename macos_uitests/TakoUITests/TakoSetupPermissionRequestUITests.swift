@@ -154,8 +154,16 @@ final class TakoSetupPermissionRequestUITests: TakoCustomConfigCase {
         app.activate()
         app.menuBars.menuBarItems.element(boundBy: 1).click()
         app.menuItems["Set Up Tako…"].click()
-        XCTAssertTrue(app.buttons["SetupStep-permissions"].waitForExistence(timeout: 5))
-        app.buttons["SetupStep-permissions"].click()
+        // The welcome hero (A14) has no stage bar: Get Started leads to it. The Permissions
+        // stage is named by its first step, notifications.
+        let permissions = app.buttons["SetupStep-notifications"]
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
+        if !permissions.exists {
+            XCTAssertEqual(app.buttons["SetupNext"].label, "Get Started")
+            app.buttons["SetupNext"].click()
+        }
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
+        permissions.click()
         XCTAssertTrue(app.buttons["SetupPermission-microphone"].waitForExistence(timeout: 5))
         return app
     }

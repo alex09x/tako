@@ -58,7 +58,7 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
         let originalConfig = try Data(contentsOf: env.configFile)
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         let original = try XCTUnwrap(H.samplePixelColor(from: pane))
         let parent = openThemes(app)
         let dimmedOriginal = try XCTUnwrap(H.samplePixelColor(from: pane))
@@ -78,7 +78,7 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
     @MainActor func testSavedThemeKeepsItsPaletteFontAndSizeAcrossRelaunch() throws {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         pane.typeText("printf '\\033[2J\\033[H\\033[?25lALPHABET\\n'; exec sleep 600\n")
         var before: H.GlyphObservation?
         XCTAssertTrue(H.wait { before = try? H.glyphs(in: pane); return before != nil })
@@ -101,7 +101,7 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         H.attachScreenshot(savedGlyphs.screenshot, name: "full-preset-rendered-font", to: self)
         app.terminate(); app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
-        let restoredPane = app.groups["Terminal pane"].firstMatch
+        let restoredPane = H.terminalPane(in: app)
         restoredPane.typeText("printf '\\033[2J\\033[H\\033[?25lALPHABET\\n'; exec sleep 600\n")
         XCTAssertTrue(H.wait {
             guard let glyphs = try? H.glyphs(in: restoredPane) else { return false }
@@ -134,7 +134,7 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         XCTAssertEqual(try Data(contentsOf: url), original)
         app.buttons["ThemePresetCancelButton"].click()
         let failure = editSaved(app, dialog: parent)
-        let pane = app.groups["Terminal pane"].firstMatch
+        let pane = H.terminalPane(in: app)
         let before = try XCTUnwrap(H.samplePixelColor(from: pane))
         setConfig(config.replacingOccurrences(of: "#123456", with: "#884422"), editor: failure, app: app)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) > 0.04 })

@@ -25,7 +25,8 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         let app = try isolatedApplication()
         app.launch()
         try openSetup(app)
-        app.buttons["SetupStep-permissions"].click()
+        // The Permissions stage (A16) is named by its first step, notifications.
+        app.buttons["SetupStep-notifications"].click()
         XCTAssertTrue(app.staticTexts["Permissions"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["SetupAgentsCard"].exists)
         XCTAssertFalse(app.buttons["SetupSystemPermissionsCard"].exists)
@@ -84,17 +85,21 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         app.launch()
         let wizard = app.descendants(matching: .any)["SetupWizard"].firstMatch
         XCTAssertTrue(wizard.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["Your terminal. Your way."].exists)
+        // The welcome hero (A14): its line and Get Started.
+        XCTAssertTrue(app.staticTexts["A terminal that shows which agents are working, waiting for you or need attention."].exists)
+        XCTAssertEqual(app.buttons["SetupNext"].label, "Get Started")
         attach(app, name: "Setup welcome")
         app.buttons["SetupNext"].click()
-        for _ in 0..<4 {
-            let skip = app.buttons["SetupSkip"]
-            XCTAssertTrue(skip.waitForExistence(timeout: 5))
-            skip.click()
+        // Theme, Agents and Permissions are optional: Continue leaves each without choosing anything.
+        for stage in ["Theme", "Agents", "Permissions"] {
+            let next = app.buttons["SetupNext"]
+            XCTAssertTrue(next.waitForExistence(timeout: 5), "Continue on \(stage)")
+            XCTAssertEqual(next.label, "Continue")
+            next.click()
         }
-        XCTAssertTrue(app.staticTexts["You're ready to go."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Tako Is Ready"].waitForExistence(timeout: 5))
         attach(app, name: "Setup optional steps skipped")
-        app.buttons["SetupNext"].click()
+        app.buttons["SetupFinish"].click()
         XCTAssertTrue(wizard.waitForNonExistence(timeout: 5))
         try await assertKeyboardReturnsToTerminal(app)
         app.terminate()
@@ -153,7 +158,9 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.buttons["SetupNext"].waitForNonExistence(timeout: 5))
         try assertTerminalFillsItsHost(app, background: appliedBackground)
         try openSetup(app)
-        XCTAssertTrue(app.staticTexts["Find your colors."].waitForExistence(timeout: 5))
+        let title = app.staticTexts["SetupStepTitle"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Theme", "reopening resumes at the Theme stage")
         XCTAssertEqual(app.buttons["SetupTheme-\(chosenName)"].value as? String, "Selected")
         app.buttons["SetupLater"].click()
         try await assertKeyboardReturnsToTerminal(app)
@@ -191,11 +198,20 @@ final class TakoSetupUITests: TakoCustomConfigCase {
     func testReentryIsSingleInstanceAndNotificationStepIsOptional() async throws {
         let app = try isolatedApplication()
         app.launch()
+        // Cmd+, opens the native Settings panel; General › First Run reopens setup.
         app.typeKey(",", modifierFlags: [.command])
-        let setupButton = app.buttons["SettingsSetupButton"]
+        let settings = app.descendants(matching: .any)["DesktopSettingsRoot"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let general = settings.buttons["DesktopSettingsSection-general"].firstMatch
+        XCTAssertTrue(general.waitForExistence(timeout: 5))
+        general.click()
+        let setupButton = settings.buttons["DesktopOpenSetup"].firstMatch
         XCTAssertTrue(setupButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(setupButton.isHittable)
         setupButton.click()
+        XCTAssertTrue(settings.waitForNonExistence(timeout: 5), "Opening setup must close Settings")
         XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
+        showStages(app)
         app.buttons["SetupStep-agents"].click()
         XCTAssertTrue(app.checkBoxes["SetupAgent-codex"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.checkBoxes["SetupAgent-codex"].isEnabled, "The isolated profile must not connect real-account agents")
@@ -323,6 +339,18 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(item.waitForExistence(timeout: 3))
         item.click()
         XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
+        showStages(app)
+    }
+
+    /// The welcome hero (A14) has no stage bar: Get Started (`SetupNext`) leads to the
+    /// stages. A reopened wizard that resumes at a stage already shows the bar.
+    private func showStages(_ app: XCUIApplication) {
+        let bar = app.buttons["SetupStep-appearance"]
+        if !bar.exists {
+            XCTAssertEqual(app.buttons["SetupNext"].label, "Get Started", "only the welcome hero lacks the stage bar")
+            app.buttons["SetupNext"].click()
+        }
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "the stage bar")
     }
 
     private func attach(_ app: XCUIApplication, name: String) {

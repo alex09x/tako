@@ -13,6 +13,10 @@ import XCTest
 
 class TakoFloatingTerminalCase: TakoCustomConfigCase {
     static let expectedPaneHeaderHeight: CGFloat = 32
+    /// `DesktopCanvasMetrics.paneGap`: a tile and the maximized card sit this far in from the canvas.
+    static let canvasPaneGap: CGFloat = 8
+    /// `FloatingPaneGeometry.bodyInsets.bottom`: the terminal's margin inside its card.
+    static let paneBodyBottomInset: CGFloat = 6
     private var launchedApp: XCUIApplication?
     private var persistentFixture = false
     private var loggedWindowInventory = false
@@ -116,12 +120,26 @@ class TakoFloatingTerminalCase: TakoCustomConfigCase {
         canvas(in: app).buttons["FloatingMinimizedCard-\(id)"].firstMatch
     }
 
+    /// Out of maximized, back to a normal pane. Panes tile by default, and a tile
+    /// has no resize handles: a test that drags or resizes a pane floats it first.
     @MainActor
     func restorePaneToNormal(_ id: String, in app: XCUIApplication) {
         let zoom = control("Maximize", pane: id, in: app)
         if (zoom.value as? String) != "normal" { zoom.click() }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'normal'"), object: zoom)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        XCTAssertTrue(header(id, in: app).waitForExistence(timeout: 5))
+    }
+
+    /// Takes a pane out of the grid with its own Float control, as a person
+    /// does, and waits for the handles only a floating pane has.
+    @MainActor
+    func floatPane(_ id: String, in app: XCUIApplication) {
+        let toggle = control("Float", pane: id, in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        if (toggle.value as? String) != "floating" { toggle.click() }
+        let floating = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'floating'"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [floating], timeout: 5), .completed)
         let corner = canvas(in: app).descendants(matching: .any)["FloatingPaneResize-bottomTrailing-\(id)"].firstMatch
         XCTAssertTrue(corner.waitForExistence(timeout: 5))
         let interactive = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in corner.isHittable }, object: corner)

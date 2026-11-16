@@ -41,7 +41,7 @@ final class TakoMouseStateTests: TakoCustomConfigCase {
             .containing(NSPredicate(format: "label CONTAINS[c] 'Clear Screen'"))
             .firstMatch
             .click()
-        let surface = app.groups["Terminal pane"]
+        let surface = TakoScopedAppearanceHelpers.terminalPane(in: app)
         surface
             .coordinate(withNormalizedOffset: .zero)
             .withOffset(.init(dx: 20, dy: 10))

@@ -99,6 +99,13 @@ final class TakoNativeAgentSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(item.waitForExistence(timeout: 3))
         item.click()
         XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
-        app.buttons["SetupStep-agents"].click()
+        // The welcome hero (A14) has no stage bar; a reopened wizard may resume past it.
+        let agents = app.buttons["SetupStep-agents"]
+        if !agents.exists {
+            XCTAssertEqual(app.buttons["SetupNext"].label, "Get Started")
+            app.buttons["SetupNext"].click()
+        }
+        XCTAssertTrue(agents.waitForExistence(timeout: 5))
+        agents.click()
     }
 }
