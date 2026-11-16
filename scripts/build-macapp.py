@@ -63,7 +63,14 @@ sdk = subprocess.run(["xcrun", "--sdk", "macosx", "--show-sdk-path"],
 # macOS 14: TakoTerminalNSView drives its redraws from CADisplayLink,
 # which does not exist before 14. The app cannot both ship that surface
 # and claim to run on 13.
-BASE = ["-target", "arm64-apple-macos14.0", "-sdk", sdk]
+MACOS_DEPLOYMENT_TARGET = "14.0"
+BASE = ["-target", f"arm64-apple-macos{MACOS_DEPLOYMENT_TARGET}", "-sdk", sdk]
+# Enforce this minimum even if the caller exports a newer target: Rust build
+# scripts and their C dependencies must match the Swift target and Info.plist.
+os.environ["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
+# Xcode puts the toolchain's clang directly on PATH. Give C build scripts
+# the same native SDK as Swift instead of relying on the xcrun driver shim.
+os.environ["SDKROOT"] = sdk
 # Release builds optimise; local ones stay incremental, which is the
 # difference between a minute and a few seconds.
 RELEASE = os.environ.get("RELEASE") == "1"
@@ -235,7 +242,7 @@ with open(os.path.join(APP, "Contents", "Info.plist"), "wb") as f:
         "CFBundleShortVersionString": VERSION,
         "CFBundleVersion": BUILD_NUMBER,
         "TakoSourceCommit": git("rev-parse", "HEAD"),
-        "LSMinimumSystemVersion": "14.0",
+        "LSMinimumSystemVersion": MACOS_DEPLOYMENT_TARGET,
         "NSHighResolutionCapable": True,
         "NSPrincipalClass": "NSApplication",
         # NSApplicationMain finds the app delegate through this nib.
