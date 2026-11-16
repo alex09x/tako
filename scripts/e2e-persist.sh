@@ -26,13 +26,19 @@ cd "$(dirname "$0")/.."
 . scripts/e2e/persist-case.sh
 
 [ $# -gt 0 ] || set -- persist-live persist-gone persist-close persist-cancel persist-close-asks persist-close-quit persist-second-owner persist-reflow
-export TAKO_APP_DIR=target/macapp-persist TAKO_WITH_ZMX=1 TAKO_CODESIGN_IDENTITY=-
+# The app is built and run from the startup disk, not from the checkout:
+# every case reseals it under a bundle id of its own, so macOS sees a new
+# app each time, and one launched from an external volume (the test Mac
+# builds on one) asked anew on every case for access to that volume. One
+# directory per checkout, so two checkouts never share a build.
+PERSIST_ROOT="${TAKO_E2E_APP_ROOT:-$HOME/Library/Caches/tako-e2e}/$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-12)"
+export TAKO_APP_DIR="$PERSIST_ROOT/macapp-persist" TAKO_WITH_ZMX=1 TAKO_CODESIGN_IDENTITY=-
 APP="$TAKO_APP_DIR/Tako.app"
 # Bundle identity is metadata, not a Swift compile input. Build once, then
 # reseal only that metadata per scenario; inner executable bytes stay fixed.
 TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-persist-build-$$" python3 scripts/build-macapp.py
 export PERSIST_ZMX="$APP/Contents/Helpers/zmx" PERSIST_FORGET="scripts/e2e/forget-saved-state.py"
-APPEXE="$PWD/$APP/Contents/MacOS/Tako"
+APPEXE="$APP/Contents/MacOS/Tako"
 
 # Called on the left of ||, so errexit does not apply here: every step
 # checks its own status.
@@ -51,7 +57,7 @@ run_one() {
         || ! codesign --force --sign - "$APP"; then
         echo "FAIL  $scenario: the isolated app could not be resealed" >&2
         status=1
-    elif [ "$(defaults read "$PWD/$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$bundle" ]; then
+    elif [ "$(defaults read "$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$bundle" ]; then
         echo "FAIL  $scenario: the built app is not this run's ($bundle)" >&2
         status=1
     else
