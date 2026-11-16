@@ -125,10 +125,13 @@ func runDesktopSettingsRecordScenario(_ d: Driver) throws {
     d.key(Key.k, [.maskCommand, .maskAlternate, .maskControl])
     usleep(1_200_000)
     guard try d.tty("rec_tty2") != first else { throw Failure("Cmd+Opt+Ctrl+K did not open a new tab with its own tty") }
-    // Closing it gives the keyboard back to the first tab.
+    // Its shell exits, which leaves the tab open and empty by design; closing
+    // that tab gives the keyboard back to the first one.
     try d.run("exit")
+    usleep(800_000)
+    d.closeTab()
     usleep(1_200_000)
-    guard (try? d.tty("rec_tty3")) == first else { throw Failure("focus did not return to the first tab after the new one exited") }
+    guard (try? d.tty("rec_tty3")) == first else { throw Failure("focus did not return to the first tab after the new one was closed") }
 
     // Restore the default with ↺; the chord does nothing, Cmd+T opens a tab.
     try keys.open()
@@ -143,7 +146,10 @@ func runDesktopSettingsRecordScenario(_ d: Driver) throws {
     usleep(1_200_000)
     guard try d.tty("rec_tty5") != first else { throw Failure("Cmd+T did not open a tab after the reset") }
     try d.run("exit")
+    usleep(800_000)
+    d.closeTab()
     usleep(1_200_000)
+    guard (try? d.tty("rec_tty6")) == first else { throw Failure("focus did not return to the first tab after the Cmd+T tab was closed") }
     try d.run("echo 'settings_ok' > \(d.path("settings_witness"))")
     try d.expect("settings_witness", "settings_ok\n", "terminal keyboard input after Settings")
 }
