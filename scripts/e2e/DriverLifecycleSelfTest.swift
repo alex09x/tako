@@ -15,6 +15,16 @@ import Foundation
 /// launched and nothing but this test's own `sleep` is ever signalled.
 func runDriverLifecycleSelfTest(app: URL) throws {
     func expect(_ ok: Bool, _ what: String) throws { if !ok { throw Failure("driver lifecycle: \(what)") }; print("  ok: \(what)") }
+    let firstWitness = ShellBootstrapWitness(), nextWitness = ShellBootstrapWitness()
+    let fields = "home|data|history|sessions|dotdir"
+    try expect(firstWitness.fileName != nextWitness.fileName,
+               "quit/relaunch cannot reuse a shell bootstrap filename")
+    try expect(nextWitness.receipt(from: fields + firstWitness.suffix) == nil,
+               "a previous launch's completed witness is refused")
+    try expect(nextWitness.receipt(from: fields) == nil && nextWitness.receipt(from: "") == nil,
+               "an empty or incomplete bootstrap write is not readiness")
+    try expect(nextWitness.receipt(from: fields + nextWitness.suffix) == fields,
+               "only this launch's completed witness yields the environment receipt")
     var signalled: [pid_t] = []
     // This test's own drivers: their problems are the point, so whatever
     // happens their scratch goes when the test ends.
@@ -96,9 +106,14 @@ func runDriverLifecycleSelfTest(app: URL) throws {
     // scenario's own value wins; an owned persistence namespace is kept.
     let d = try driver()
     let env = d.launchEnvironment()
+    try expect(d.work.path.hasPrefix("/private/tmp/tkw.") && d.work.path.utf8.count < 48,
+               "the driver work directory is short and internal")
+    let permissions = try FileManager.default.attributesOfItem(atPath: d.work.path)[.posixPermissions] as? NSNumber
+    try expect(permissions?.intValue == 0o700, "the short driver directory is private at creation")
     try expect(["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "HISTFILE", "ZDOTDIR", "TAKO_AGENT_HOOKS_HOME", "CODEX_HOME"]
                 .allSatisfy { env[$0]?.hasPrefix(d.work.path + "/") == true },
                "every shell, history, zsh dotdir and hooks default is under the driver's work: \(env)")
+    try runBootstrapScriptChecks(work: d.work, environment: env)
     try expect(env["ZDOTDIR"] == env["HOME"], "zsh's dotdir is the private HOME")
     // An external dotdir in the runner's own environment (a stand-in path)
     // does not reach the launch: the private one is passed explicitly.
@@ -154,4 +169,33 @@ func runDriverLifecycleSelfTest(app: URL) throws {
     real.quit()
     try expect(real.cleanupProblems.isEmpty && OwnedProcesses.liveIdentity(sleeper.processIdentifier) == .gone,
                "its own process is ended and confirmed gone: \(real.cleanupProblems)")
+}
+
+/// Only noninteractive, no-startup-file shells with this test's private
+/// environment; no terminal app, owner profile or history is opened.
+private func runBootstrapScriptChecks(work: URL, environment: [String: String]) throws {
+    let shells = [("/bin/bash", ["--noprofile", "--norc"]), ("/bin/zsh", ["-f"]),
+                  ("/opt/homebrew/bin/fish", ["--no-config"])]
+    for (shell, flags) in shells where FileManager.default.isExecutableFile(atPath: shell) {
+        let witness = ShellBootstrapWitness()
+        let script = try witness.writeCommand(in: work)
+        let another = try witness.writeCommand(in: work)
+        let mode = try FileManager.default.attributesOfItem(atPath: script.path)[.posixPermissions] as? NSNumber
+        guard mode?.intValue == 0o600, script != another else {
+            throw Failure("bootstrap scripts must be fresh and private")
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        process.arguments = flags + ["-c", "source '\(script.path)'"]
+        process.environment = environment
+        try process.run()
+        process.waitUntilExit()
+        let text = try String(contentsOf: work.appendingPathComponent(witness.fileName), encoding: .utf8)
+        let expected = ["HOME", "XDG_DATA_HOME", "HISTFILE", "TAKO_SESSIONS_HOME", "ZDOTDIR"]
+            .map { environment[$0] ?? "" }.joined(separator: "|")
+        guard process.terminationStatus == 0, witness.receipt(from: text) == expected else {
+            throw Failure("bootstrap script did not report the actual private shell environment: \(shell)")
+        }
+        print("  ok: fresh 0600 bootstrap script reports all five fields through \(shell)")
+    }
 }

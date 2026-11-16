@@ -64,10 +64,8 @@ final class Driver {
         self.bundleID = bundleID
             ?? ProcessInfo.processInfo.environment["TAKO_BUNDLE_ID"]
             ?? "com.tako-core.terminal.e2e"
-        let work = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("tako-driver-\(ProcessInfo.processInfo.globallyUniqueString)")
+        let work = try makeDriverWorkDirectory()
         self.work = work
-        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         // Short names: the session namespace holds Unix sockets.
         let home = work.appendingPathComponent("h").path, hooks = work.appendingPathComponent("k").path
         // Agent hook and provider homes are private for every launch, as they
@@ -161,7 +159,9 @@ final class Driver {
     }
 
     func launch(config: String = Driver.defaultConfig, settleTerminal: Bool = true) throws {
+        var timing = DriverLaunchClock()
         quit()
+        timing.mark("quit")
         // The session sidebar's visibility is kept in the app's defaults: a run
         // that stopped with it open would start the next one with it open, and
         // a scenario's Cmd+Opt+S would close it. Every launch starts it closed.
@@ -172,6 +172,7 @@ final class Driver {
         forget.standardOutput = FileHandle.nullDevice
         try? forget.run()
         forget.waitUntilExit()
+        timing.mark("defaults")
         let configURL = work.appendingPathComponent("config")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
 
@@ -183,8 +184,10 @@ final class Driver {
         open.arguments = ["-n", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
             + env.flatMap { ["--env", "\($0.key)=\($0.value)"] }
             + [appURL.path, "--args", "--no-update", "--no-launch-notices"]
+        timing.mark("prepare")
         try open.run()
         open.waitUntilExit()
+        timing.mark("open")
 
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
@@ -197,10 +200,12 @@ final class Driver {
         }
         guard pid != 0 else { throw Failure("Tako did not start") }
         try own(pid, what: "the app")
+        timing.mark("pid-identity")
 
         guard wait(for: { !self.windows().isEmpty }, timeout: 15) else {
             throw Failure("Tako started but opened no window")
         }
+        timing.mark("window")
 
         if let app = NSRunningApplication(processIdentifier: pid) {
             app.activate()
@@ -208,19 +213,34 @@ final class Driver {
         if let window = self.windows().first {
             AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
+        timing.mark("activate")
         if settleTerminal {
             // The first command also proves where the shell runs: in this
             // launch's environment, never the owner's.
-            let file = "bootstrap-env-\(ownedApps.count)"
-            try run("printf '%s|%s|%s|%s|%s' \"$HOME\" \"$XDG_DATA_HOME\" \"$HISTFILE\" \"$TAKO_SESSIONS_HOME\" \"$ZDOTDIR\" > \(path(file))")
+            let witness = ShellBootstrapWitness()
+            let file = witness.fileName
+            let command = try witness.writeCommand(in: work)
+            try run("source '\(command.path)'")
+            timing.mark("bootstrap-typed")
             let want = ["HOME", "XDG_DATA_HOME", "HISTFILE", "TAKO_SESSIONS_HOME", "ZDOTDIR"].map { env[$0] ?? "" }.joined(separator: "|")
-            let seen = try self.file(file)
+            var seen: String?
+            guard wait(for: {
+                guard let text = try? String(contentsOf: self.work.appendingPathComponent(file), encoding: .utf8),
+                      let receipt = witness.receipt(from: text) else { return false }
+                seen = receipt
+                return true
+            }, timeout: 10), let seen else {
+                throw Failure("this launch did not write its fresh shell bootstrap witness. Screen: [\(screenText().suffix(500))]")
+            }
+            usleep(150_000)
             guard env["HOME"] == nil || seen == want else {
                 throw Failure("the first shell does not run in this launch's environment: \(seen), want \(want)")
             }
             print("first shell (HOME|XDG_DATA_HOME|HISTFILE|TAKO_SESSIONS_HOME|ZDOTDIR): \(seen)")
+            timing.mark("bootstrap-receipt")
         }
         usleep(300_000)
+        timing.mark("settle")
     }
 
     /// The owner's shell histories by size and modification time; their

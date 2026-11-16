@@ -14,6 +14,49 @@ import Foundation
 
 // MARK: - PTY and Command Execution
 
+func makeDriverWorkDirectory() throws -> URL {
+    var template = Array("/private/tmp/tkw.XXXXXX".utf8CString)
+    guard mkdtemp(&template) != nil else { throw Failure("no private driver work directory: errno \(errno)") }
+    return URL(fileURLWithPath: String(cString: template), isDirectory: true)
+}
+
+struct DriverLaunchClock {
+    private let started = ProcessInfo.processInfo.systemUptime
+    private var previous = ProcessInfo.processInfo.systemUptime
+
+    mutating func mark(_ phase: String) {
+        let now = ProcessInfo.processInfo.systemUptime
+        print(String(format: "[timing] launch %@=%.3fs total=%.3fs", phase, now - previous, now - started))
+        previous = now
+    }
+}
+
+/// A launch owns a fresh file and a completion suffix; an old or partial
+/// write must never stand in for this launch's first shell command.
+struct ShellBootstrapWitness {
+    let token = UUID().uuidString
+    var fileName: String { "bootstrap-env-\(token)" }
+    var suffix: String { "|\(token)" }
+
+    func receipt(from contents: String) -> String? {
+        guard contents.hasSuffix(suffix) else { return nil }
+        return String(contents.dropLast(suffix.count))
+    }
+
+    /// Source the same printf in the actual shell, through a short HID
+    /// command. A fresh 0600 script avoids typing its long variable list.
+    func writeCommand(in work: URL) throws -> URL {
+        var template = Array(work.appendingPathComponent("b.XXXXXX").path.utf8CString)
+        let descriptor = mkstemp(&template)
+        guard descriptor >= 0 else { throw Failure("no private bootstrap script: errno \(errno)") }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        let command = "printf '%s|%s|%s|%s|%s|%s' \"$HOME\" \"$XDG_DATA_HOME\" \"$HISTFILE\" \"$TAKO_SESSIONS_HOME\" \"$ZDOTDIR\" '\(token)' > '\(work.appendingPathComponent(fileName).path)'\n"
+        try file.write(contentsOf: Data(command.utf8))
+        try file.close()
+        return URL(fileURLWithPath: String(cString: template))
+    }
+}
+
 extension Driver {
     /// Type a command line and press Return.
     func run(_ command: String) throws {

@@ -4814,16 +4814,24 @@ struct TakoE2E {
         for s in scenarios { print("  \(s.name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(s.why)") }
         exit(2)
     }
-    guard AXIsProcessTrusted() else {
-        print("FAIL: this process has no Accessibility permission, so it can neither post keys nor read windows")
-        exit(1)
-    }
     let wanted = Set(args.dropFirst())
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
         let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move", "persist-partial-group", "persist-empty-workspace-group", "persist-task-workspace-group", "persist-intentional-windows", "persist-assign-selected", "persist-inactive-recovery-group", "persist-cross-window-workspace-move", "persist-legacy-window-choice", "persist-legacy-workspace-choice"]
     let isolatedPersistence = persistenceOnly.union(["persist-sidebar-long-list", "persist-scoped-appearance"])
     let explicitOnly = isolatedPersistence.union(["kitty-icat"])
+    // Registry inspection is metadata only: never require UI permission or
+    // launch an app just to account for the scenarios in a shard.
+    if args.first == "--list" {
+        for scenario in scenarios {
+            print("\(explicitOnly.contains(scenario.name) ? "explicit" : "default") \(scenario.name)")
+        }
+        exit(0)
+    }
+    guard AXIsProcessTrusted() else {
+        print("FAIL: this process has no Accessibility permission, so it can neither post keys nor read windows")
+        exit(1)
+    }
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))
     if !unknown.isEmpty {
@@ -4845,6 +4853,10 @@ struct TakoE2E {
     // never repaired or put down to a scenario on a guess.
     let historyAtStart = Driver.ownerHistoryStamp()
     for scenario in scenarios where (wanted.isEmpty && !explicitOnly.contains(scenario.name)) || wanted.contains(scenario.name) {
+        let scenarioStarted = ProcessInfo.processInfo.systemUptime
+        print("[timing] scenario_begin \(scenario.name)")
+        defer { print(String(format: "[timing] scenario %@ total=%.3fs", scenario.name,
+                             ProcessInfo.processInfo.systemUptime - scenarioStarted)) }
         // A fresh app per scenario: one that failed half way must not leave a
         // split, a zoom or a hung command behind for the next.
         do {
@@ -4869,8 +4881,10 @@ struct TakoE2E {
             if let error = OwnedProcesses.outcome(failure: failure, problems: problems) {
                 failed += 1
                 print("FAIL  \(scenario.name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(error)")
+                print("[result] \(scenario.name) FAIL")
             } else {
                 print("ok    \(scenario.name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(scenario.why)")
+                print("[result] \(scenario.name) ok")
                 // Only now may its files go: a failed scenario or an
                 // unproven cleanup keeps them, as the evidence.
                 driver.removeWorkWhenDone = true
@@ -4878,6 +4892,7 @@ struct TakoE2E {
         } catch {
             failed += 1
             print("FAIL  \(scenario.name): \(error)")
+            print("[result] \(scenario.name) FAIL")
         }
     }
     if Driver.ownerHistoryStamp() != historyAtStart {
