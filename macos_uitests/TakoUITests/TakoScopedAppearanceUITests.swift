@@ -11,6 +11,11 @@
 import AppKit
 import XCTest
 
+/// Each level's appearance is edited where a person reaches it now: a workspace row's or
+/// a terminal's own «Appearance ▸» menu, which opens native Settings › Terminal
+/// Appearance at that level (theme cards, Font & Size, ↺ Inherit) or drops the level's
+/// own appearance («Inherit · …»). A level's font and size are its own scoped values
+/// (Appearance.json); its theme is a preset it selects.
 final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
     private typealias H = TakoScopedAppearanceHelpers
 
@@ -33,6 +38,7 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         try JSONSerialization.data(withJSONObject: styles).write(to: env.support.appendingPathComponent("Appearance.json"))
         let app = try env.launchIsolatedApp()
         let id = try XCTUnwrap(env.primaryPaneID)
+        try env.recordControlSocket()
         let pane = H.terminalPane(in: app)
         let ocean = NSColor(srgbRed: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) < 0.03 })
@@ -53,14 +59,19 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         // workspace switch also has this title, but is a different action.
         app.menuItems.matching(identifier: "Destination")
             .matching(NSPredicate(format: "identifier != %@", "selectWorkspaceFromMenu:")).firstMatch.click()
-        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["theme"]) == "Move Witness" })
+        // The source workspace's style is carried into the moved session's own record
+        // (its stable tab identity, from the live tree), not copied onto each pane.
+        let session = H.sessionKey(try env.stableTabID(ofPane: id))
+        XCTAssertTrue(H.wait { (try? env.sessionStyles()[session]?["theme"]) == "Move Witness" })
+        XCTAssertEqual(try env.sessionStyles().count, 1, "one session record: the moved session's")
+        XCTAssertNil(try env.paneStyle(id)["theme"], "the pane keeps no copy of its own")
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) < 0.03 })
         XCTAssertEqual(try env.identifyPane(pane, title: "Moved", slot: "moved"), id)
         XCTAssertEqual(try shell("after"), process)
         H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "moved-session-keeps-inherited-theme", to: self)
-        let dialog = H.openPaneAppearance(in: app, paneID: id)
-        app.buttons["SettingsResetButton"].click()
-        H.dismissDialog(dialog, in: app)
+        // The session row's «Appearance ▸ Inherit»: the theme it carried over is dropped.
+        H.inheritAppearance(from: H.sessionRow(id, in: app), in: app)
+        XCTAssertTrue(H.wait { (try? env.sessionStyles()[session]?["theme"]) == nil })
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) > 0.04 })
     }
 
@@ -68,53 +79,66 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
         let original = try Data(contentsOf: env.configFile)
-        let dialog = H.openWorkspaceAppearance(in: app)
-        XCTAssertTrue(dialog.label.contains("Workspace: Default"))
-        XCTAssertEqual(app.buttons["SettingsResetButton"].label, "Inherit")
-        dialog.typeText("dr")
-        XCTAssertEqual(dialog.textFields.firstMatch.value as? String, "dr")
+        let root = H.openAppearance(.allThemes, from: H.workspaceRow(in: app), in: app)
+        let level = H.currentLevel(in: root)
+        XCTAssertTrue(level.contains("workspace") && level.contains("Default"), "editing level: \(level)")
+        // Nothing of its own yet: the workspace inherits, so there is nothing to inherit back.
+        XCTAssertFalse(root.buttons["DesktopInherit-theme"].exists)
+        // Keys stay in Settings: typing goes to its theme filter, not to the terminal.
+        let filter = root.textFields["DesktopThemeFilter"].firstMatch
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.click()
+        filter.typeText("dr")
+        XCTAssertEqual(filter.value as? String, "dr")
         XCTAssertFalse(FileManager.default.fileExists(atPath: env.support.appendingPathComponent("Appearance.json").path))
-        H.search("", in: dialog)
+        H.replaceText(of: filter, with: "")
         for key in ["1", "2", "4", "5"] {
-            dialog.typeKey(key, modifierFlags: .command)
-            H.assertValue(dialog, contains: "Themes:")
+            root.typeKey(key, modifierFlags: .command)
+            XCTAssertTrue(root.exists, "⌘\(key) left Settings")
+            XCTAssertTrue(H.currentLevel(in: root).contains("Default"), "⌘\(key) changed the edited level")
         }
-        dialog.typeKey("d", modifierFlags: .command)
+        root.typeKey("d", modifierFlags: .command)
         XCTAssertEqual(H.leafPanes(in: app).count, 1)
         H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "workspace-editor", to: self)
-        H.dismissDialog(dialog, in: app)
-        let pane = H.openPaneAppearance(in: app, paneID: try XCTUnwrap(env.primaryPaneID))
-        XCTAssertTrue(pane.label.contains("Pane appearance"))
-        H.dismissDialog(pane, in: app)
+        H.closeSettings(root)
+        let pane = H.openAppearance(.allThemes, from: H.terminalPane(in: app), in: app)
+        XCTAssertTrue(H.currentLevel(in: pane).contains("terminal"), "editing level: \(H.currentLevel(in: pane))")
+        H.closeSettings(pane)
         XCTAssertEqual(try Data(contentsOf: env.configFile), original)
     }
 
     @MainActor func testWorkspaceThemeAndResetChangeRenderedPixels() throws {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
+        let id = try XCTUnwrap(env.primaryPaneID)
+        try env.recordControlSocket()
         let pane = H.terminalPane(in: app)
         let before = try XCTUnwrap(H.samplePixelColor(from: pane))
-        let dialog = H.openWorkspaceAppearance(in: app)
-        let behindCatalog = try XCTUnwrap(H.samplePixelColor(from: pane))
-        app.buttons["ThemePresetChoice-Tako Forest"].click()
-        H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Forest")
+        let root = H.openAppearance(.allThemes, from: H.workspaceRow(in: app), in: app)
+        // Settings covers the window: the pane is read from its own renderer while it is open.
+        let behindCatalog = try XCTUnwrap(env.rendererColor(of: id))
+        let forest = H.themeCard("Tako Forest", in: root)
+        forest.click()
+        XCTAssertTrue(H.wait { (try? env.workspaceStyles().values.first?["theme"]) == "Tako Forest" })
         XCTAssertTrue(H.wait {
-            guard let color = H.samplePixelColor(from: pane) else { return false }
+            guard let color = env.rendererColor(of: id) else { return false }
             return H.colorDifference(behindCatalog, color) > 0.04
         }, "One click must visibly apply the theme while its catalog remains open")
-        XCTAssertTrue(dialog.exists)
+        XCTAssertTrue(root.exists)
         H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "theme-click-live-catalog", to: self)
-        H.search("Ocean", in: dialog)
-        XCTAssertFalse(app.buttons["ThemePresetSaveButton"].exists)
-        app.buttons["ThemePresetChoice-Tako Ocean"].click()
-        H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
-        H.dismissDialog(dialog, in: app)
+        // Choosing a theme is not editing one: no draft, nothing to save.
+        XCTAssertFalse(root.buttons["DesktopThemeSave"].exists)
+        H.themeCard("Tako Ocean", in: root).click()
+        XCTAssertTrue(H.wait { (try? env.workspaceStyles().values.first?["theme"]) == "Tako Ocean" })
+        H.closeSettings(root)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) > 0.04 })
         H.attachScreenshot(pane.screenshot(), name: "workspace-theme-rendered", to: self)
-        let reset = H.openWorkspaceAppearance(in: app)
-        app.buttons["SettingsResetButton"].click()
-        H.assertValue(reset, contains: "setting_reset_success: theme")
-        H.dismissDialog(reset, in: app)
+        let reset = H.openAppearance(.allThemes, from: H.workspaceRow(in: app), in: app)
+        let inherit = reset.buttons["DesktopInherit-theme"].firstMatch
+        XCTAssertTrue(inherit.waitForExistence(timeout: 5))
+        inherit.click()
+        XCTAssertTrue(H.wait { (try? env.workspaceStyles().values.first?["theme"]) == nil })
+        H.closeSettings(reset)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) < 0.03 })
     }
 
@@ -129,20 +153,14 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let left = panes[0], right = panes[1]
         let second = try env.identifyPane(right, title: "Scope Split", slot: "split")
         let beforeLeft = try XCTUnwrap(H.samplePixelColor(from: left))
-        let dialog = H.openPaneAppearance(in: app, paneID: second, isChild: true)
-        H.search("Ocean", in: dialog)
-        app.buttons["ThemePresetChoice-Tako Ocean"].click()
-        H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
-        H.search("", in: dialog)
-        app.buttons["ThemePresetEditButton"].click()
-        let editor = app.groups["ThemePresetEditor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        editor.typeKey("5", modifierFlags: .command)
-        for _ in 0..<4 { editor.typeKey(.rightArrow, modifierFlags: []) }
-        app.buttons["ThemePresetSaveButton"].click()
-        XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(try env.paneThemeConfig(second).contains("font-size = 17"))
-        H.dismissDialog(dialog, in: app)
+        // The right terminal's own «Appearance ▸ All Themes…» edits that terminal only.
+        let root = H.openAppearance(.allThemes, from: right, in: app, expectedPane: second)
+        XCTAssertTrue(H.currentLevel(in: root).contains("terminal"))
+        H.themeCard("Tako Ocean", in: root).click()
+        XCTAssertTrue(H.wait { (try? env.paneStyle(second)["theme"]) == "Tako Ocean" })
+        H.setFontSize("17", in: root)
+        XCTAssertTrue(H.wait { (try? env.paneStyle(second)["font-size"]) == "17" })
+        H.closeSettings(root)
         XCTAssertTrue(H.wait {
             guard let a = H.samplePixelColor(from: left), let b = H.samplePixelColor(from: right) else { return false }
             return H.colorDifference(beforeLeft, a) < 0.03 && H.colorDifference(a, b) > 0.04
@@ -162,17 +180,11 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         XCTAssertTrue(H.wait { initial = try? H.glyphs(in: pane); return initial != nil })
         let initialGlyphs = try XCTUnwrap(initial)
         H.attachScreenshot(initialGlyphs.screenshot, name: "font-size-before", to: self)
-        let dialog = H.openPaneAppearance(in: app, paneID: id)
-        app.buttons["ThemePresetEditButton"].click()
-        let sizeEditor = app.groups["ThemePresetEditor"]
-        XCTAssertTrue(sizeEditor.waitForExistence(timeout: 5))
-        sizeEditor.typeKey("5", modifierFlags: .command)
-        for _ in 0..<4 { sizeEditor.typeKey(.rightArrow, modifierFlags: []) }
+        let size = H.openAppearance(.allThemes, from: pane, in: app)
         XCTAssertNil(try env.paneStyle(id)["font-size"])
-        app.buttons["ThemePresetSaveButton"].click()
-        XCTAssertTrue(sizeEditor.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(try env.paneThemeConfig(id).contains("font-size = 17"))
-        H.dismissDialog(dialog, in: app)
+        H.setFontSize("17", in: size)
+        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-size"]) == "17" })
+        H.closeSettings(size)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         var enlarged: H.GlyphObservation?
         let grew = H.wait {
@@ -183,16 +195,13 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         if let enlarged { H.attachScreenshot(enlarged.screenshot, name: "font-size-after", to: self) }
         XCTAssertTrue(grew, "Before glyph bounds: \(initialGlyphs.bounds); after: \(String(describing: enlarged?.bounds))")
         H.attachScreenshot(try XCTUnwrap(enlarged).screenshot, name: "font-size-rendered", to: self)
-        let reset = H.openPaneAppearance(in: app, paneID: id)
-        app.buttons["ThemePresetEditButton"].click()
-        let resetEditor = app.groups["ThemePresetEditor"]
-        XCTAssertTrue(resetEditor.waitForExistence(timeout: 5))
-        resetEditor.typeKey("5", modifierFlags: .command)
-        for _ in 0..<4 { resetEditor.typeKey(.leftArrow, modifierFlags: []) }
-        app.buttons["ThemePresetSaveButton"].click()
-        XCTAssertTrue(resetEditor.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(try env.paneThemeConfig(id).contains("font-size = 13"))
-        H.dismissDialog(reset, in: app)
+        // ↺ Inherit drops the terminal's own size.
+        let reset = H.openAppearance(.allThemes, from: pane, in: app)
+        let inheritSize = reset.buttons["DesktopInherit-font-size"].firstMatch
+        XCTAssertTrue(inheritSize.waitForExistence(timeout: 5))
+        inheritSize.click()
+        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-size"]) == nil })
+        H.closeSettings(reset)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         var resetGlyphs: H.GlyphObservation?
         XCTAssertTrue(H.wait {
@@ -201,19 +210,11 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         }, "Reset must restore the same glyph size and ink mask before testing family changes")
         let familyBaseline = try XCTUnwrap(resetGlyphs)
         XCTAssertNil(try env.paneStyle(id)["font-size"])
-        let family = H.openPaneAppearance(in: app, paneID: id)
-        app.buttons["ThemePresetEditButton"].click()
-        let familyEditor = app.groups["ThemePresetEditor"]
-        XCTAssertTrue(familyEditor.waitForExistence(timeout: 5))
-        familyEditor.typeKey("4", modifierFlags: .command)
-        H.search("Monaco", in: familyEditor)
-        familyEditor.typeKey(.return, modifierFlags: [])
-        H.assertValue(familyEditor, contains: "setting_custom_success: font-family = Monaco")
-        app.buttons["ThemePresetSaveButton"].click()
-        XCTAssertTrue(familyEditor.waitForNonExistence(timeout: 5))
-        H.dismissDialog(family, in: app)
+        let family = H.openAppearance(.allThemes, from: pane, in: app)
+        H.chooseFont("Monaco", in: family)
+        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-family"]) == "Monaco" })
+        H.closeSettings(family)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
-        XCTAssertTrue(try env.paneThemeConfig(id).contains("font-family = Monaco"))
         XCTAssertTrue(H.wait { guard let glyphs = try? H.glyphs(in: pane) else { return false }; return glyphs.pixels != familyBaseline.pixels })
         H.attachScreenshot(pane.screenshot(), name: "font-family-rendered", to: self)
     }

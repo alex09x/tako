@@ -213,19 +213,33 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
         showStages(app)
         app.buttons["SetupStep-agents"].click()
-        XCTAssertTrue(app.checkBoxes["SetupAgent-codex"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.checkBoxes["SetupAgent-codex"].isEnabled, "The isolated profile must not connect real-account agents")
+        // An agent is a card button whose value says Connected / Selected / Not selected.
+        let codex = app.buttons["SetupAgent-codex"]
+        XCTAssertTrue(codex.waitForExistence(timeout: 5))
+        XCTAssertFalse(codex.isEnabled, "The isolated profile must not connect real-account agents")
         XCTAssertFalse(app.buttons["SetupConnectAgents"].isEnabled)
+        // The Permissions stage (A16) is opened by its first step, notifications: the
+        // passive permission panel, with notifications as its first row.
         app.buttons["SetupStep-notifications"].click()
-        XCTAssertTrue(app.staticTexts["Know when you're needed."].waitForExistence(timeout: 5))
+        let title = app.staticTexts["SetupStepTitle"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        // A SwiftUI Text exposes its words as the static text's value.
+        func titleText() -> String { (title.value as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title.label }
+        XCTAssertEqual(titleText(), "macOS Permissions")
+        XCTAssertTrue(app.descendants(matching: .any)["SetupPermissionRow-notifications"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "SetupWizard").count, 1)
-        XCTAssertTrue(app.buttons["SetupSkip"].isHittable)
+        // Optional: Continue leaves the stage without granting anything.
+        XCTAssertTrue(app.buttons["SetupNext"].isHittable)
+        XCTAssertEqual(app.buttons["SetupNext"].label, "Continue")
         // Reading this step must never require answering a macOS consent prompt.
         XCTAssertTrue(app.buttons["SetupLater"].isHittable)
         attach(app, name: "Setup notifications")
         app.buttons["SetupLater"].click()
         try openSetup(app)
-        XCTAssertTrue(app.staticTexts["Know when you're needed."].waitForExistence(timeout: 5))
+        // Reopened, the wizard resumes at the same stage, once.
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(titleText(), "macOS Permissions")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "SetupWizard").count, 1)
         app.buttons["SetupLater"].click()
     }
 
