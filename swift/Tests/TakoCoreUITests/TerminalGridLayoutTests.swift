@@ -23,7 +23,8 @@ final class TerminalGridLayoutTests: XCTestCase {
 
         let invalid = TerminalTheme.parse(config: "window-padding-x = -1\nwindow-padding-y = 1,2,3\n")
         XCTAssertEqual(invalid.padding, TerminalTheme.takoDefault.padding, "invalid values keep the default")
-        XCTAssertEqual(TerminalTheme.takoDefault.padding, TerminalPadding(uniform: 10))
+        // Edge to edge by default: the host owns outer spacing (TerminalTheme).
+        XCTAssertEqual(TerminalTheme.takoDefault.padding, TerminalPadding(uniform: 0))
     }
 
     func testTheGridFitsWholeCellsInsideThePadding() {

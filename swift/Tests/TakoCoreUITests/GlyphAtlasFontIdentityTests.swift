@@ -54,24 +54,32 @@ final class GlyphAtlasFontIdentityTests: XCTestCase {
     }
 
     func testVariableInstancesKeepDistinctCoordinates() throws {
-        let base = CTFontCreateWithName("Skia" as CFString, 16, nil)
-        let axes = try XCTUnwrap(CTFontCopyVariationAxes(base) as? [[String: Any]])
-        let axis = try XCTUnwrap(axes.first)
-        let id = try XCTUnwrap(axis[kCTFontVariationAxisIdentifierKey as String] as? NSNumber)
-        let min = try XCTUnwrap(axis[kCTFontVariationAxisMinimumValueKey as String] as? NSNumber)
-        let max = try XCTUnwrap(axis[kCTFontVariationAxisMaximumValueKey as String] as? NSNumber)
+        // The shared fixture: an installed font with a real wght axis on
+        // macOS and the iOS simulator alike (Skia is macOS-only).
+        let base = CTFontCreateCopyWithAttributes(try VariableFontFixture.weightVariableFont(size: 16), 16, nil, nil)
+        let axis = try XCTUnwrap(TerminalRenderer.Metrics.weightAxis(base))
+        XCTAssertLessThan(axis.min, axis.max, "a real axis range, not a single value")
+        // Two coordinates away from the axis default, where CoreText omits
+        // the coordinate: the far end, and halfway to it.
+        let far = abs(axis.max - axis.defaultValue) >= abs(axis.min - axis.defaultValue) ? axis.max : axis.min
+        let id = axis.id
+        let halfway = NSNumber(value: (axis.defaultValue + far) / 2)
+        let end = NSNumber(value: far)
+        XCTAssertNotEqual(halfway.doubleValue, axis.defaultValue)
+        XCTAssertNotEqual(halfway, end)
         func instance(_ value: NSNumber) -> CTFont {
             let descriptor = CTFontDescriptorCreateWithAttributes(
                 [kCTFontVariationAttribute: [id: value]] as CFDictionary
             )
             return CTFontCreateCopyWithAttributes(base, 16, nil, descriptor)
         }
-        let light = instance(min)
-        let heavy = instance(max)
+        let light = instance(halfway)
+        let heavy = instance(end)
         let atlas = GlyphAtlas()
         let first = atlas.glyphKey(12, font: light, scale: 2, emboldened: false)
         let second = atlas.glyphKey(12, font: heavy, scale: 2, emboldened: false)
         XCTAssertFalse(first.variations.isEmpty)
+        XCTAssertFalse(second.variations.isEmpty)
         XCTAssertNotEqual(first.variations, second.variations)
         XCTAssertNotEqual(first, second)
         XCTAssertEqual(first, GlyphAtlasKey(glyph: 12, font: light, scale: 2))
