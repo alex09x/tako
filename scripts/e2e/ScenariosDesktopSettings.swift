@@ -19,132 +19,6 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-/// The desktop Settings Keys page, by real clicks and keys.
-struct DesktopKeys {
-    let d: Driver
-    var config: String { (try? String(contentsOfFile: d.path("config"), encoding: .utf8)) ?? "" }
-
-    /// The element whose identifier is exactly `id` (Driver.element also
-    /// matches identifiers that merely contain it, and every row's Record
-    /// button contains "DesktopShortcutRecord").
-    func exact(_ id: String) -> AXUIElement? {
-        d.windows().lazy.compactMap { find([id], under: $0, depth: 30) }.first
-    }
-
-    /// The first element under `root` whose identifier is exactly one of `ids`.
-    func find(_ ids: Set<String>, under root: AXUIElement, depth: Int) -> AXUIElement? {
-        if let id = d.attribute(root, "AXIdentifier") as String?, ids.contains(id) { return root }
-        guard depth > 0 else { return nil }
-        for child in (d.attribute(root, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
-            if let hit = find(ids, under: child, depth: depth - 1) { return hit }
-        }
-        return nil
-    }
-
-    /// The action's own Record or Reset control, looked up only inside its
-    /// row (`DesktopShortcut-<action>`): an unselected row names it
-    /// `DesktopShortcut<kind>-<action>`, the selected one plain
-    /// `DesktopShortcut<kind>`, which is never taken from another row.
-    func control(_ kind: String, of action: String) -> AXUIElement? {
-        guard let row = exact("DesktopShortcut-\(action)") else { return nil }
-        return find(["DesktopShortcut\(kind)-\(action)", "DesktopShortcut\(kind)"], under: row, depth: 12)
-    }
-
-    func clickControl(_ kind: String, of action: String) throws {
-        try clickLaidOut("the \(kind) control of the \(action) row") { control(kind, of: action) }
-    }
-
-    func hasFrame(_ e: AXUIElement) -> Bool {
-        (d.attribute(e, kAXPositionAttribute) as AXValue?) != nil && (d.attribute(e, kAXSizeAttribute) as AXValue?) != nil
-    }
-
-    /// Scrolls the control into view and clicks it once it has a frame:
-    /// SwiftUI can report a control in the tree a moment before it is laid out.
-    func clickLaidOut(_ what: String, _ find: () -> AXUIElement?) throws {
-        guard d.wait(for: { find() != nil }, timeout: 5), let e = find() else { throw Failure("no \(what)") }
-        AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
-        guard d.wait(for: { find().map(hasFrame) == true }, timeout: 3), let laidOut = find() else {
-            throw Failure("\(what) has no AX position/size")
-        }
-        usleep(300_000)
-        print("click \(what)")
-        try d.clickElement(find() ?? laidOut)
-        usleep(300_000)
-    }
-
-    var isOpen: Bool { exact("DesktopSettingsRoot") != nil }
-
-    func open() throws {
-        d.key(Key.comma, .maskCommand)
-        guard d.wait(for: { isOpen }, timeout: 5) else { throw Failure("Cmd+, did not open Settings (no DesktopSettingsRoot)") }
-        SettingsPage(d).placeWindow()
-    }
-
-    /// The owned window holding Settings, moved to the top left of the
-    /// display's visible frame and raised, and proved fully inside it, just
-    /// before Close. A notification alert sits at the right of the test
-    /// Mac's screen: at SettingsPage's bottom-left placement Close ended up
-    /// under it, while at the top left the page's own controls do. Nothing
-    /// foreign is moved or dismissed, and clicks keep their ownership guards.
-    func placeTopLeft() throws {
-        guard let root = exact("DesktopSettingsRoot"), let window: AXUIElement = d.attribute(root, kAXWindowAttribute),
-              let screen = NSScreen.screens.first, let sizeVal: AXValue = d.attribute(window, kAXSizeAttribute) else {
-            throw Failure("no owned Settings window to place")
-        }
-        var size = CGSize.zero
-        AXValueGetValue(sizeVal, .cgSize, &size)
-        // AX coordinates run down from the top of the primary display.
-        let visible = screen.visibleFrame, top = screen.frame.maxY
-        let area = CGRect(x: visible.minX, y: top - visible.maxY, width: visible.width, height: visible.height)
-        let margin = max(0, min(20, (area.height - size.height) / 2, (area.width - size.width) / 2))
-        var origin = CGPoint(x: area.minX + margin, y: area.minY + margin)
-        if let value = AXValueCreate(.cgPoint, &origin) { AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) }
-        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        usleep(400_000)
-        guard let posVal: AXValue = d.attribute(window, kAXPositionAttribute) else { throw Failure("Settings window has no position") }
-        var pos = CGPoint.zero
-        AXValueGetValue(posVal, .cgPoint, &pos)
-        let frame = CGRect(origin: pos, size: size)
-        print("settings window placed at \(frame) in visible \(area)")
-        guard area.insetBy(dx: -1, dy: -1).contains(frame) else {
-            throw Failure("the Settings window \(frame) is not fully inside the visible frame \(area)")
-        }
-    }
-
-    func click(_ id: String) throws {
-        try clickLaidOut(id) { exact(id) }
-    }
-
-    /// The Keys page, filtered by real typing to the one action.
-    func show(_ action: String) throws {
-        try click("DesktopSettingsSection-keys")
-        try click("DesktopShortcutFilter")
-        d.key(Key.a, .maskCommand)
-        try d.type(action)
-        guard d.wait(for: { exact("DesktopShortcut-\(action)") != nil }, timeout: 5) else {
-            throw Failure("the Keys filter did not show \(action)")
-        }
-    }
-
-    /// Clicks the action's shortcut, which selects it and starts recording.
-    func record(_ action: String) throws {
-        try clickControl("Record", of: action)
-        func label() -> String? {
-            control("Record", of: action).flatMap { d.attribute($0, "AXLabel") as String? ?? d.attribute($0, kAXDescriptionAttribute) as String? }
-        }
-        guard d.wait(for: { label() == "Recording Shortcut" }, timeout: 5) else {
-            throw Failure("\(action) did not start recording")
-        }
-    }
-
-    func close() throws {
-        try placeTopLeft()
-        try click("DesktopSettingsClose")
-        guard d.wait(for: { !isOpen }, timeout: 5) else { throw Failure("Close did not dismiss Settings") }
-    }
-
-    func binds(_ action: String) -> Bool { config.contains("=\(action)") }
-}
 
 extension Driver {
     /// The tty of the focused pane, written by the shell itself.
@@ -154,6 +28,32 @@ extension Driver {
     }
 
     func hasSplit(_ ctl: String) throws -> Bool { try exec("\(ctl) tree --json").contains("\"split\"") }
+
+    /// Cmd+W closes a terminal first; on its retained empty canvas, the next
+    /// Cmd+W closes the tab. Never leave that empty tab selected as a fixture
+    /// for a keyboard test. The other pane ids must survive both actions.
+    func closeFixtureTabWithOnePane(_ ctl: String, label: String) throws {
+        let before = try treeFacts(ctl, saveAs: "\(label)-before-close.json")
+        guard before.selected.count == 1, let place = before.selected.first,
+              before.panes.values.filter({ $0 == place }).count == 1 else {
+            throw Failure("\(label): the selected fixture tab must have exactly one terminal")
+        }
+        let remaining = Set(before.panes.filter { $0.value != place }.keys)
+        guard !remaining.isEmpty else { throw Failure("\(label): no original terminal would remain") }
+        let visible = onScreenWindowNumbers()
+        closeTab()
+        guard wait(for: {
+            guard let current = try? self.treeFacts(ctl, saveAs: "\(label)-terminal-closed.json") else { return false }
+            return current.selected.contains(place) && !current.panes.values.contains(place)
+        }, timeout: 5) else { throw Failure("\(label): Cmd+W did not leave the expected empty tab") }
+        closeTab()
+        guard wait(for: {
+            guard let current = try? self.treeFacts(ctl, saveAs: "\(label)-tab-closed.json") else { return false }
+            return Set(current.panes.keys) == remaining
+                && current.selected.contains(where: { current.panes.values.contains($0) })
+                && !self.onScreenWindowNumbers().isEmpty && self.onScreenWindowNumbers() != visible
+        }, timeout: 5) else { throw Failure("\(label): the empty tab did not close with the original terminals retained") }
+    }
 
     /// The pane tree as takoctl reports it, parsed: every pane with its
     /// window and tab, the focused pane, the selected tabs, and the tabs
@@ -270,8 +170,20 @@ func runDesktopSettingsConflictScenario(_ d: Driver) throws {
     usleep(1_200_000)
     d.activate()
     guard try d.tty("conf_tab_tty") != first else { throw Failure("Cmd+T did not open a tab after the cancelled conflict") }
-    d.closeTab()
-    usleep(1_200_000)
+    try d.closeFixtureTabWithOnePane(ctl, label: "conf-cancel-tab")
+    // Where the keyboard is after Cmd+W closed the Cmd+T tab and before
+    // Settings opens again (Settings later gives focus back to whatever had
+    // it now): read only, no click or key, so a broken handoff stays visible.
+    func witness(_ label: String) throws {
+        let facts = try d.treeFacts(ctl, saveAs: "conf-tree-\(label).json")
+        let focusedEl: AXUIElement? = d.attribute(d.axApp, kAXFocusedUIElementAttribute)
+        let role = focusedEl.flatMap { d.attribute($0, kAXRoleAttribute) as String? } ?? "nil"
+        let id = focusedEl.flatMap { d.attribute($0, "AXIdentifier") as String? } ?? "nil"
+        let key: AXUIElement? = d.attribute(d.axApp, kAXFocusedWindowAttribute)
+        let title = key.flatMap { d.attribute($0, kAXTitleAttribute) as String? } ?? "nil"
+        print("[diag conflict] \(label): panes \(facts.panes) focused \(facts.focused ?? "nil") selected \(facts.selected) split \(facts.split); AX focus role \(role) id \(id); key window \(title.debugDescription); Settings open \(keys.isOpen); on-screen windows \(d.onScreenWindows().count)")
+    }
+    try witness("before-second-open")
 
     // Reassign: Cmd+D now opens a tab, and does not split.
     try keys.open()
@@ -285,19 +197,15 @@ func runDesktopSettingsConflictScenario(_ d: Driver) throws {
     d.activate()
     // Where the keyboard is after Reassign and Close: printed before the
     // next typed probe, which round 4 saw reach no shell (Screen: []).
-    let facts = try d.treeFacts(ctl, saveAs: "conf-tree-after-reassign.json")
-    let focusedEl: AXUIElement? = d.attribute(d.axApp, kAXFocusedUIElementAttribute)
-    let role = focusedEl.flatMap { d.attribute($0, kAXRoleAttribute) as String? } ?? "nil"
-    let id = focusedEl.flatMap { d.attribute($0, "AXIdentifier") as String? } ?? "nil"
-    print("[diag conflict] after Reassign+Close: panes \(facts.panes) focused \(facts.focused ?? "nil") selected \(facts.selected) split \(facts.split); AX focus role \(role) id \(id); Settings open \(keys.isOpen); on-screen windows \(d.onScreenWindows().count)")
+    try witness("after-reassign-close")
     let base = try d.tty("conf_owner_tty1")
+    guard base == first else { throw Failure("Reassign and Close did not return input to the original terminal") }
     d.key(Key.d, .maskCommand)
     usleep(1_500_000)
     d.activate()
     guard try d.tty("conf_owner_tty2") != base else { throw Failure("Cmd+D did nothing after it was reassigned to New Tab") }
     guard try !d.hasSplit(ctl) else { throw Failure("Cmd+D still split after it was reassigned to New Tab") }
-    d.closeTab()
-    usleep(1_200_000)
+    try d.closeFixtureTabWithOnePane(ctl, label: "conf-reassigned-tab")
 
     // Restore both defaults with ↺: Cmd+D splits again, Cmd+T opens a tab.
     try keys.open()
@@ -320,8 +228,7 @@ func runDesktopSettingsConflictScenario(_ d: Driver) throws {
     usleep(1_200_000)
     d.activate()
     guard try d.tty("conf_reset_tab") != base else { throw Failure("Cmd+T did not open a tab after the reset") }
-    d.closeTab()
-    usleep(1_200_000)
+    try d.closeFixtureTabWithOnePane(ctl, label: "conf-reset-tab")
     d.activate()
     usleep(400_000)
     try d.run("echo 'conflict_ok' > \(d.path("conflict_witness"))")
