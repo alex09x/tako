@@ -352,6 +352,9 @@ func runDesktopSettingsContainmentScenario(_ d: Driver) throws {
         return "key window \(title.debugDescription), Settings open \(keys.isOpen), on-screen windows \(d.onScreenWindows().count)"
     }
     let treeBefore = try d.treeFacts(ctl, saveAs: "modal-tree-before.json")
+    guard !treeBefore.panes.isEmpty else {
+        throw Failure("the control tree returned no panes for the fixture's running shell")
+    }
     print("[diag modal] before Cmd+D: panes \(treeBefore.panes) focused \(treeBefore.focused ?? "nil") selected \(treeBefore.selected) split \(treeBefore.split); \(keyWindow())")
     guard treeBefore.split.isEmpty else { throw Failure("the fixture was already split before Cmd+D: \(treeBefore.split)") }
     d.key(Key.d, .maskCommand)
