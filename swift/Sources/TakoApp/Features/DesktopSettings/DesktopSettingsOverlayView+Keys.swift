@@ -30,15 +30,26 @@ extension DesktopSettingsOverlayView {
             onClose?()
             return true
         }
+        // Line editing in a field of the panel (Cmd or Shift+Cmd with an
+        // arrow, Home/End/Page Up/Down, Delete or Forward Delete) is the
+        // field's own keyDown, which comes after key equivalents: claimed
+        // here it never moved the caret or deleted to the line start.
+        if flags.isSubset(of: [.command, .shift]), Self.lineEditingKeyCodes.contains(event.keyCode),
+           let editor = window?.firstResponder as? NSText, editor.isDescendant(of: self) {
+            return false
+        }
         return !Self.reachesMenu(flags: flags, key: key)
     }
+
+    /// ← → ↓ ↑, Delete, Forward Delete, Home, End, Page Up, Page Down.
+    static let lineEditingKeyCodes: Set<UInt16> = [123, 124, 125, 126, 51, 117, 115, 119, 116, 121]
 
     /// The key as on a US layout, so editing keeps working with a Cyrillic
     /// input source (as TerminalDialogView does).
     static func commandKey(_ event: NSEvent) -> String? {
         let raw = event.charactersIgnoringModifiers?.lowercased()
         guard raw?.unicodeScalars.allSatisfy({ $0.isASCII }) == false else { return raw }
-        return [UInt16(0): "a", 8: "c", 7: "x", 9: "v", 6: "z", 13: "w", 12: "q", 4: "h", 46: "m"][event.keyCode]
+        return [UInt16(0): "a", 8: "c", 7: "x", 9: "v", 6: "z", 13: "w", 12: "q", 4: "h", 46: "m", 43: ","][event.keyCode]
     }
 
     static func reachesMenu(flags: NSEvent.ModifierFlags, key: String?) -> Bool {

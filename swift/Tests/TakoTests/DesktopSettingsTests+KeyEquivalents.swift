@@ -70,9 +70,63 @@ extension DesktopSettingsTests {
         for (character, code, flags) in passing {
             #expect(!window.performKeyEquivalent(with: try key(character, code, flags, in: window)), "\(flags) \(character)")
         }
-        // A Cyrillic layout still copies: the key code decides, not the letter.
+        // A Cyrillic layout still copies and opens Settings: the key code
+        // decides, not the letter ("с" on C, "б" on the comma key).
         #expect(!window.performKeyEquivalent(with: try key("с", 8, .command, in: window)))
+        #expect(!window.performKeyEquivalent(with: try key("б", 43, .command, in: window)))
         #expect(DesktopSettingsController.current(in: window) === controller)
+    }
+
+    /// A Command key event as AppKit delivers it without a menu: offered as
+    /// a key equivalent first, then, unclaimed, to the first responder.
+    func deliver(_ characters: String, _ keyCode: UInt16, _ flags: NSEvent.ModifierFlags, in window: NSWindow) throws {
+        let event = try key(characters, keyCode, flags, in: window)
+        if !window.performKeyEquivalent(with: event) { window.firstResponder?.keyDown(with: event) }
+    }
+
+    /// Cmd+Left/Right (also with Shift) and Cmd+Delete edit a focused text
+    /// view in Settings exactly as they do in a bare window: Settings claims
+    /// terminal shortcuts, not the editor's own line editing. Measured by the
+    /// caret, the selection and the text, not by a Bool.
+    @Test func lineEditingKeysReachAFocusedEditorInSettings() throws {
+        let sandbox = try Sandbox()
+        let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!), right = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        let arrow: NSEvent.ModifierFlags = [.command, .numericPad, .function]
+        func edit(in window: NSWindow, parent: NSView) throws -> [String] {
+            let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+            parent.addSubview(editor)
+            editor.string = "alpha beta"
+            #expect(window.makeFirstResponder(editor))
+            var seen: [String] = []
+            editor.setSelectedRange(NSRange(location: 5, length: 0))
+            try deliver(left, 123, arrow, in: window)
+            seen.append("left \(editor.selectedRange().location)")
+            try deliver(right, 124, arrow, in: window)
+            seen.append("right \(editor.selectedRange().location)")
+            editor.setSelectedRange(NSRange(location: 6, length: 0))
+            try deliver(right, 124, arrow.union(.shift), in: window)
+            seen.append("shift-right \(editor.selectedRange().location)+\(editor.selectedRange().length)")
+            editor.setSelectedRange(NSRange(location: 6, length: 0))
+            try deliver("\u{7f}", 51, .command, in: window)
+            seen.append("delete \(editor.string.debugDescription)")
+            return seen
+        }
+        let (bare, _) = keyHost()
+        defer { bare.close() }
+        let baseline = try edit(in: bare, parent: try #require(bare.contentView))
+        #expect(baseline == ["left 0", "right 10", "shift-right 6+4", "delete \"beta\""], "AppKit's own line editing")
+
+        let (window, _) = keyHost()
+        defer { window.close() }
+        let controller = try #require(DesktopSettingsController.show(in: window, section: .general, configPath: sandbox.config.path))
+        defer { controller.close() }
+        let inside = try edit(in: window, parent: controller.overlay.panel)
+        #expect(inside == baseline, "inside open Settings \(inside), bare window \(baseline)")
+        // With the editor focused, terminal shortcuts are still contained, and
+        // an arrow is the editor's only while the editor has the keyboard.
+        #expect(window.performKeyEquivalent(with: try key("d", 2, .command, in: window)))
+        window.makeFirstResponder(controller.overlay)
+        #expect(window.performKeyEquivalent(with: try key(left, 123, arrow, in: window)), "no field focused: contained")
     }
 
     /// Cmd+W closes Settings and gives the keyboard back to the terminal;
