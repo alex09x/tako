@@ -93,7 +93,19 @@ enum TerminalTestSupport {
 
     @MainActor
     static func tearDown(_ controller: TerminalController, _ window: NSWindow) {
-        window.orderOut(nil)
+        controller.cancelPendingInitialPresentation()
+        controller.surfaceTree.forEach { $0.pty?.terminate() }
+        NotificationCenter.default.removeObserver(controller)
+        if let monitor = controller.eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            controller.eventMonitor = nil
+        }
+        // Hiding keeps the hosting graph, controller registration and PTYs
+        // alive. Retire this fixture even if an assertion retains its values.
+        Tako.CustomTabGroup.close(window)
+        window.close()
+        window.contentView = nil
+        window.windowController = nil
     }
 
     /// A `TerminalController.System` that attaches a real, manually
