@@ -32,12 +32,12 @@ EXTERNAL = "/Volumes/"
 
 
 def is_external(path: str) -> bool:
-    """True when `path`, or the nearest of its parents that exists, resolves
-    onto an external volume."""
-    probe = os.path.abspath(path)
-    while not os.path.exists(probe) and probe != os.path.dirname(probe):
-        probe = os.path.dirname(probe)
-    return os.path.realpath(probe).startswith(EXTERNAL)
+    """True when `path` resolves onto an external volume or is the volumes
+    root itself. Every link on the way is followed, a dangling one too, and
+    the part that does not exist yet is kept: an app about to be built under
+    a link to a volume that is not mounted is refused like one that is."""
+    resolved = os.path.realpath(os.path.abspath(path))
+    return resolved == EXTERNAL.rstrip("/") or resolved.startswith(EXTERNAL)
 
 
 def app_dir(name: str, root: str | None = None, environ=os.environ) -> str:

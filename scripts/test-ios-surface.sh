@@ -15,6 +15,9 @@ cd "$ROOT_DIR"
 python3 scripts/app_locations.py check-source ios-surface
 
 BUILD_DIR="target/ios_test_build"
+# The test runner is built and run from here: a target linked onto a
+# volume would ask for access as well.
+python3 scripts/app_locations.py check-app "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 

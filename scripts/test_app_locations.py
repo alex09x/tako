@@ -61,6 +61,21 @@ class AppLocationsTests(unittest.TestCase):
         self.assertIsNotNone(app_locations.check_app(os.path.join(self.external, "new/Tako.app")))
         self.assertIsNone(app_locations.check_app(os.path.join(self.internal, "caches/x/Tako.app")))
 
+    def test_a_dangling_link_onto_a_volume_is_refused(self):
+        # target -> a build directory on a volume that is not there now.
+        target = os.path.join(self.internal, "checkout", "target")
+        os.symlink(os.path.join(self.external, "gone", "target"), target)
+        self.assertFalse(os.path.exists(target))
+        self.assertIsNotNone(app_locations.check_app(os.path.join(target, "macapp/Tako.app")))
+        self.assertIsNotNone(app_locations.check_app(target))
+
+    def test_the_volumes_root_and_unmounted_paths_below_it_are_refused(self):
+        root = app_locations.EXTERNAL.rstrip("/")
+        self.assertIsNotNone(app_locations.check_app(root))
+        self.assertIsNotNone(app_locations.check_app(os.path.join(root, "Missing", "x", "Tako.app")))
+        # A sibling that only shares the prefix's spelling is not the volumes root.
+        self.assertIsNone(app_locations.check_app(root + "-not/x"))
+
     def test_source_reading_routes_refuse_an_external_checkout(self):
         reason = app_locations.check_source("macos-ui-tests", self.link)
         self.assertIn("TAKO_MAC_DIR=/private/tmp/", reason)

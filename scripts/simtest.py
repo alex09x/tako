@@ -782,7 +782,10 @@ def main():
             print(f"  {spec['name']:<32} {spec['why']}")
         return
 
-    reason = app_locations.check_source("simtest")
+    # The source tree, the app's DerivedData and the fixtures' target/ (the
+    # sshd stand-ins run from there): none of them may resolve onto a volume.
+    reason = (app_locations.check_source("simtest") or app_locations.check_app(DERIVED)
+              or app_locations.check_app(OUT) or app_locations.check_app("target/debug/examples"))
     if reason:
         print(reason, file=sys.stderr)
         sys.exit(3)

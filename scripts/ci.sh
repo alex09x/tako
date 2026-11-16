@@ -135,6 +135,7 @@ PY
             # Off any external volume (scripts/app_locations.py).
             TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-ci)"
             export TAKO_APP_DIR
+            python3 scripts/app_locations.py check-app "$TAKO_APP_DIR/Tako.app"
             ci_logged macapp-build python3 scripts/build-macapp.py
             ci_logged "$stage" env APP="$TAKO_APP_DIR/Tako.app" ./scripts/selftest-macapp.sh
             ci_require "$stage" '^macapp self-test: ok$'
@@ -143,6 +144,7 @@ PY
             export TAKO_WITH_ZMX=1 TAKO_BUNDLE_ID=com.tako-core.terminal.e2e
             TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-e2e)"
             export TAKO_APP_DIR
+            python3 scripts/app_locations.py check-app "$TAKO_APP_DIR/Tako.app"
             ci_logged macapp-e2e-build python3 scripts/build-macapp.py
             ci_logged "$stage" ./scripts/e2e-macapp.sh
             ci_require "$stage" '^ok '
@@ -208,12 +210,14 @@ sys.exit("FAIL: no available iPhone simulator")
                 destination="platform=iOS Simulator,id=$device_id"
             fi
             echo "== iOS unit destination: $destination"
+            ios_derived="$(python3 scripts/app_locations.py dir ci-ios-derived)"
+            python3 scripts/app_locations.py check-app "$ios_derived"
             result_dir=$(mktemp -d target/ci-ios.XXXXXX)
             ci_logged "$stage" xcodebuild test -project ios/TakoCore.xcodeproj \
                 -scheme TakoCore -configuration Debug -jobs 2 \
                 -destination "$destination" \
                 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-                -derivedDataPath "$(python3 scripts/app_locations.py dir ci-ios-derived)" -resultBundlePath "$result_dir/tests.xcresult" \
+                -derivedDataPath "$ios_derived" -resultBundlePath "$result_dir/tests.xcresult" \
                 -only-testing:TakoCoreUnitTests CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM=
             ci_require "$stage" 'Test Case .* passed'
             ci_require "$stage" '\*\* TEST SUCCEEDED \*\*'
@@ -233,13 +237,17 @@ sys.exit("FAIL: no available iPhone simulator")
                 echo 'FAIL: enabling Automation Mode requires authentication; no XCUITest executed' >&2
                 exit 3
             fi
+            # The host and runner run from DerivedData: an explicit one, checked,
+            # never Xcode's default, which a user setting or link may put on a volume.
+            ui_derived="$(python3 scripts/app_locations.py dir ci-uitest-derived)"
+            python3 scripts/app_locations.py check-app "$ui_derived"
             result_dir=$(mktemp -d target/ci-ui.XXXXXX)
             ci_logged "$stage" python3 scripts/gui_lock.py -- \
                 python3 scripts/ci-swift-watchdog.py \
                 --diagnostics-dir target/ci-logs/mac-ui-stall -- xcodebuild test \
                 -project macos_uitests/TakoUITests.xcodeproj -scheme TakoUITests-Run \
                 -destination platform=macOS -jobs 2 -parallel-testing-enabled NO \
-                -resultBundlePath "$result_dir/tests.xcresult"
+                -derivedDataPath "$ui_derived" -resultBundlePath "$result_dir/tests.xcresult"
             if grep -q 'placeholder host app was kept' "target/ci-logs/$stage.log"; then
                 echo 'FAIL: Xcode kept the placeholder host app' >&2
                 exit 1
