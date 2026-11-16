@@ -60,12 +60,16 @@ extension Tako {
     }
 
     /// The controller's panes, when every one of them belongs to `window`
-    /// (mounted in `window` or unmounted on `window`'s minimize shelf).
+    /// (mounted in `window`, awaiting a background tab's first presentation,
+    /// or unmounted on `window`'s minimize shelf).
     private static func panes(of window: NSWindow) -> [Tako.SurfaceView]? {
         guard let controller = window.windowController as? BaseTerminalController else { return nil }
         let panes = Array(controller.surfaceTree)
         guard !panes.isEmpty,
-              panes.allSatisfy({ $0.window === window || ($0.window == nil && controller.isMinimizedInFloatingCanvas($0.id)) }) else {
+              panes.allSatisfy({
+                  $0.window === window || ($0.window == nil &&
+                      (!window.isVisible || controller.isMinimizedInFloatingCanvas($0.id)))
+              }) else {
             return nil
         }
         return panes

@@ -29,9 +29,11 @@ struct CanvasOverlayRegressionTests {
     }
 
     @Test func aCanvasCommandPaletteMountsForTheControllersInitialFocus() async throws {
-        let surface = Tako.SurfaceView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
-        surface.selfTestCapturing = true
-        let (controller, window) = TerminalTestSupport.loaded(surfaceTree: .init(view: surface))
+        let fixture = try PrivateSurfaceFixture()
+        defer { fixture.cleanUp() }
+        let surface = fixture.surface()
+        let (controller, window) = TerminalTestSupport.loaded(baseConfig: fixture.configuration,
+                                                            surfaceTree: .init(view: surface))
         defer { TerminalTestSupport.tearDown(controller, window) }
         controller.tako.readiness = .ready
         window.setContentSize(CGSize(width: 800, height: 600))
@@ -54,7 +56,10 @@ struct CanvasOverlayRegressionTests {
     }
 
     @Test func theSidebarPlusOpensItsMenuOnThePress() async throws {
-        let (controller, window) = TerminalTestSupport.loaded()
+        let fixture = try PrivateSurfaceFixture()
+        defer { fixture.cleanUp() }
+        let (controller, window) = TerminalTestSupport.loaded(baseConfig: fixture.configuration,
+                                                            surfaceTree: .init(view: fixture.surface()))
         defer { TerminalTestSupport.tearDown(controller, window) }
         let sidebar = SessionSidebarView(isPresented: .constant(true), containingWindow: window)
         let host = NSHostingView(rootView: sidebar.headerView(sessionCount: 1, attentionCount: 0))
