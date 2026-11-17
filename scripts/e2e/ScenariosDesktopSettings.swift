@@ -291,9 +291,20 @@ func runPermanentSidebarScenario(_ d: Driver) throws {
     let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
     func shown() -> Bool { keys.exact("SessionSidebarHeader") != nil }
     guard d.wait(for: shown, timeout: 5) else { throw Failure("the session sidebar is not shown at launch") }
-    // Who receives the keyboard, read only: the AX focused element (its
-    // owner, role and id), the focused window and takoctl's focused pane.
-    func recipient(_ label: String) throws -> (owner: pid_t, role: String, id: String, window: CGWindowID?, pane: String?) {
+    // Who receives the keyboard, read only: the AX focused element itself
+    // (and its owner, role and id), the focused window and takoctl's focused pane.
+    struct Recipient: CustomStringConvertible {
+        let element: AXUIElement?
+        let owner: pid_t, role: String, id: String, window: CGWindowID?, pane: String?
+        var description: String { "owner \(owner) role \(role) id \(id) window \(window.map(String.init) ?? "nil") pane \(pane ?? "nil")" }
+        /// The same focused AX element (CFEqual), not merely another text
+        /// area of this app in the same window and pane.
+        func isSame(as other: Recipient) -> Bool {
+            guard let element, let otherElement = other.element, CFEqual(element, otherElement) else { return false }
+            return owner == other.owner && role == other.role && id == other.id && window == other.window && pane == other.pane
+        }
+    }
+    func recipient(_ label: String) throws -> Recipient {
         let element: AXUIElement? = d.attribute(d.axApp, kAXFocusedUIElementAttribute)
         var owner: pid_t = 0
         if let element { AXUIElementGetPid(element, &owner) }
@@ -301,7 +312,8 @@ func runPermanentSidebarScenario(_ d: Driver) throws {
         let id = element.flatMap { d.attribute($0, "AXIdentifier") as String? } ?? "nil"
         let window: AXUIElement? = d.attribute(d.axApp, kAXFocusedWindowAttribute)
         let pane = try d.treeFacts(ctl, saveAs: "sidebar-tree-\(label).json").focused
-        return (owner, role, id, window.flatMap { d.windowID(for: $0) }, pane)
+        return Recipient(element: element, owner: owner, role: role, id: id,
+                         window: window.flatMap { d.windowID(for: $0) }, pane: pane)
     }
     func diagnostics() -> String {
         let flags = CGEventSource.flagsState(.combinedSessionState).rawValue
@@ -309,7 +321,8 @@ func runPermanentSidebarScenario(_ d: Driver) throws {
         return String(format: "modifier flags 0x%llx; ", flags) + "\(d.debugFocusState()); own pane last lines: [\(screen.suffix(600))]"
     }
     let before = try recipient("before")
-    guard before.owner == d.pid, before.role == kAXTextAreaRole as String, before.window != nil, before.pane != nil else {
+    guard before.element != nil, before.owner == d.pid, before.role == kAXTextAreaRole as String,
+          before.window != nil, before.pane != nil else {
         throw Failure("before Cmd+Opt+S the keyboard is not on Tako's terminal: \(before); \(diagnostics())")
     }
     // The legacy toggle and Escape leave the permanent sidebar where it is.
@@ -320,7 +333,7 @@ func runPermanentSidebarScenario(_ d: Driver) throws {
     // The same terminal pane must still be the keyboard's recipient. This is
     // checked before Ctrl+C, which could not bring back a lost recipient.
     let after = try recipient("after")
-    guard after.owner == d.pid, after.role == before.role, after.window == before.window, after.pane == before.pane else {
+    guard after.owner == d.pid, after.isSame(as: before) else {
         throw Failure("Cmd+Opt+S or Escape moved the keyboard off the terminal: before \(before), after \(after); \(diagnostics())")
     }
     // The Escape reached that shell, which then holds it as a pending Meta
