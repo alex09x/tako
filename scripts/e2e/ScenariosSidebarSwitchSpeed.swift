@@ -127,6 +127,13 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     // Two rounds on the row's name (where a double click renames), one beside
     // it. SwA is shown at the start; no order clicks the tab already shown.
     let orders = [["SwB", "SwC", "SwD", "SwE", "SwA"], ["SwC", "SwE", "SwB", "SwD", "SwA"], ["SwE", "SwD", "SwC", "SwB", "SwA"]]
+    // Diagnostic variable, one only: TAKO_E2E_LATENCY_CRITICAL=1 holds a
+    // .latencyCritical activity in this runner around each timed press and
+    // its polls (not the hover, the gap between clicks or anything after).
+    // The requested 20 ms hold, 5 ms polls, clock origin and 250 ms gate are
+    // the same either way.
+    let latencyCritical = ProcessInfo.processInfo.environment["TAKO_E2E_LATENCY_CRITICAL"] == "1"
+    print("[timing activity] latencyCritical \(latencyCritical ? "on" : "off")")
     for (round, order) in orders.enumerated() {
         let beside = round == 2
         for name in order {
@@ -139,6 +146,9 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             try d.requireAXOwnedTarget(at: point)
             CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             usleep(30_000)
+            let activity = latencyCritical
+                ? ProcessInfo.processInfo.beginActivity(options: .latencyCritical, reason: "timing synthetic HID")
+                : nil
             let downAt = ProcessInfo.processInfo.systemUptime
             let started = Date()
             CGEvent(mouseEventSource: d.source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
@@ -160,6 +170,10 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             }
             let shown = Date().timeIntervalSince(started)
             let shownAt = ProcessInfo.processInfo.systemUptime
+            // Nothing between beginActivity and here can throw, so the token
+            // always ends here: at the end of the timed block, before any
+            // bookkeeping, the 450 ms gap or the history read.
+            if let activity { ProcessInfo.processInfo.endActivity(activity) }
             boundaries.append(Boundary(name: (beside ? "beside " : "name ") + name,
                                        down: downAt, up: upAt, shown: shownAt, wallMS: shown * 1000,
                                        polls: polls, maxPoll: maxPoll,
