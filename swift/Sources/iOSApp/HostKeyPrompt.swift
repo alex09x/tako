@@ -23,11 +23,15 @@ struct HostKeyPrompt: View {
     let onTrust: () -> Void
     let onCancel: () -> Void
     let sleepBeforeArming: @MainActor @Sendable (Duration) async throws -> Void
+    /// How long Trust and Cancel stay dead labels: 1 s. Only a Debug UI test
+    /// passes a longer hold (LaunchOptions.hostKeyArmingHold).
+    let armingDelay: Duration
     @State private var actionsArmed = false
 
     init(
         host: String,
         presented: KnownHosts.Presented,
+        armingDelay: Duration = .seconds(1),
         sleepBeforeArming: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
         },
@@ -36,6 +40,7 @@ struct HostKeyPrompt: View {
     ) {
         self.host = host
         self.presented = presented
+        self.armingDelay = armingDelay
         self.sleepBeforeArming = sleepBeforeArming
         self.onTrust = onTrust
         self.onCancel = onCancel
@@ -143,7 +148,7 @@ struct HostKeyPrompt: View {
             // security feature. The delay still makes Cancel a second,
             // physically separate gesture from the Connect tap underneath.
             do {
-                try await sleepBeforeArming(.seconds(1))
+                try await sleepBeforeArming(armingDelay)
                 actionsArmed = true
             } catch {
                 // The prompt disappeared before it armed.
