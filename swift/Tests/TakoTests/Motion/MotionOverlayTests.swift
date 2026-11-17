@@ -147,6 +147,71 @@ struct MotionOverlayTests {
         try expectAnimated(going, from: shown, "a file overlay going")
     }
 
+    /// TEMPORARY diagnostic, only under TAKO_MOTION_DIAGNOSTICS: is the delay
+    /// before a file overlay's first fade frame paid once per process or by
+    /// every new overlay? In one process: A, a cold open on a fresh surface
+    /// and probe; B, the same on a different fresh surface after A closed;
+    /// C, A's surface again in a new probe after its first probe was
+    /// detached. Each case gets its own trace (overlay-A-cold, overlay-B-fresh,
+    /// overlay-C-reopen-A). It accepts no animation: the only expectations are
+    /// that each close leaves no overlay and no WKWebView behind.
+    @Test func diagnosticOverlayOpenCostColdFreshAndReopen() throws {
+        guard MotionStageTrace.directory != nil else { return }
+        _ = NSApplication.shared
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("tako-fade-cost-\(UUID().uuidString).txt")
+        try String(repeating: "an overlay over the pane fades in and out\n", count: 40).write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        func run(_ name: String, on surface: Tako.SurfaceView) throws {
+            let trace = try #require(MotionStageTrace(name))
+            defer { trace.write() }
+            defer { _ = OverlayStore.shared.closeOverlay(paneId: surface.id) }
+            trace.mark("probe.init.start")
+            let probe = SwiftUIMotionProbe(Tako.InspectableSurface(surfaceView: surface), size: CGSize(width: 240, height: 140))
+            trace.mark("probe.init.end")
+            defer {
+                // Detach the host so the surface can be put in a new probe.
+                probe.close()
+                probe.window.contentView = nil
+                trace.mark("probe.detached")
+            }
+            probe.settle(0.8)
+            trace.mark("settle.end")
+            let initial = probe.snapshot()
+            trace.mark("before.snapshot.end")
+            trace.keep("before", initial)
+            trace.set("before", SwiftUIMotionProbe.light(initial))
+            var opened: Error?
+            _ = probe.frames(after: {
+                do {
+                    _ = try OverlayStore.shared.openOverlay(paneId: surface.id, path: file.path,
+                                                            surfacePwd: file.deletingLastPathComponent().path)
+                } catch { opened = error }
+            }, for: 0.5, measure: SwiftUIMotionProbe.light, trace: trace, phase: "coming", keepImages: 96)
+            trace.set("openError", opened.map { "\($0)" } ?? "")
+            // Preparation, not animation acceptance: the shown overlay settles
+            // and is read outside any timed capture before it is closed.
+            trace.mark("preparation.settle.start")
+            probe.settle(0.8)
+            let shown = probe.snapshot()
+            trace.mark("preparation.settle.end")
+            trace.keep("preparation-shown", shown)
+            trace.set("preparationShown", SwiftUIMotionProbe.light(shown))
+            trace.set("preparationWeb", MotionStageTrace.webSample(in: probe.host))
+            _ = probe.frames(after: { _ = OverlayStore.shared.closeOverlay(paneId: surface.id) }, for: 0.5,
+                             measure: SwiftUIMotionProbe.light, trace: trace, phase: "going", keepImages: 8)
+            let afterClose = MotionStageTrace.webSample(in: probe.host)
+            trace.set("afterCloseWeb", afterClose)
+            try #require(OverlayStore.shared.overlay(for: surface.id) == nil, "\(name): an overlay is still open after closing")
+            try #require(afterClose["present"] as? Bool == false, "\(name): a WKWebView is still in the probe after closing")
+        }
+
+        let a = Tako.SurfaceView(frame: .zero), b = Tako.SurfaceView(frame: .zero)
+        try run("overlay-A-cold", on: a)
+        try run("overlay-B-fresh", on: b)
+        try run("overlay-C-reopen-A", on: a)
+    }
+
     /// The Overview scrolls to the card chosen from the keyboard over
     /// 0.15 s. Its frames take longer to draw off screen than the scroll
     /// does, so the scroll is read where it happens: the offset of the
