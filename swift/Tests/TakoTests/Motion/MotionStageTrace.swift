@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import Testing
 import WebKit
 
 /// Observation only, under TAKO_MOTION_DIAGNOSTICS=<directory>: when each
@@ -62,11 +63,16 @@ final class MotionStageTrace {
     /// natively and as presented. No URL or content is read.
     static func webSample(in root: NSView) -> [String: Any] {
         var visited = 0
+        // The cap is checked before a view is visited, and stops siblings too.
         func find(_ view: NSView, _ depth: Int) -> WKWebView? {
+            guard visited < 200 else { return nil }
             visited += 1
             if let web = view as? WKWebView { return web }
-            guard depth < 12, visited < 200 else { return nil }
-            for sub in view.subviews { if let found = find(sub, depth + 1) { return found } }
+            guard depth < 12 else { return nil }
+            for sub in view.subviews {
+                guard visited < 200 else { break }
+                if let found = find(sub, depth + 1) { return found }
+            }
             return nil
         }
         guard let web = find(root, 0) else { return ["present": false, "visited": visited] }
@@ -88,15 +94,19 @@ final class MotionStageTrace {
     }
 
     /// The JSON and PNGs, after the measured work; passing and failing alike.
+    /// An observation that was asked for and could not be written fails the
+    /// test: a missing image or JSON is never a pass.
     func write() {
         guard let directory = Self.directory else { return }
         let root = URL(fileURLWithPath: directory).appendingPathComponent(name)
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             for (label, image) in images {
-                if let png = image.representation(using: .png, properties: [:]) {
-                    try png.write(to: root.appendingPathComponent("\(label).png"))
+                guard let png = image.representation(using: .png, properties: [:]) else {
+                    Issue.record("motion observation \(name): image \(label) could not be encoded as PNG")
+                    continue
                 }
+                try png.write(to: root.appendingPathComponent("\(label).png"))
             }
             let report: [String: Any] = ["name": name, "stages": stages, "frames": frames, "facts": facts,
                                          "images": images.map { $0.0 }]
@@ -104,7 +114,7 @@ final class MotionStageTrace {
                 .write(to: root.appendingPathComponent("trace.json"))
             print("[motion stages] \(name): \(stages.count) stages, \(frames.count) frames, \(images.count) images -> \(root.path)/trace.json")
         } catch {
-            print("[motion stages] \(name): could not write: \(error)")
+            Issue.record("motion observation \(name): could not write to \(root.path): \(error)")
         }
     }
 }
