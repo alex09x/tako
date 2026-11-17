@@ -164,8 +164,65 @@ class KeptStateTests(unittest.TestCase):
         entries = self.run_collect(budget=walk.Budget(payload=20))["roots"][0]["entries"]
         self.assertEqual([e["decision"] for e in entries].count("archived"), 2)
         self.assertEqual([e.get("reason") for e in entries].count("payload-cap"), 3)
-        entries = self.run_collect(budget=walk.Budget(entries=3))["roots"][0]["entries"]
-        self.assertEqual([e.get("reason") for e in entries].count("entry-cap"), 2)
+
+    def test_the_entry_cap_bounds_the_index_and_makes_the_collection_partial(self):
+        work = self.root("tkw.Many11", {f"d{i}/f{j}": b"x" for i in range(20) for j in range(20)})
+        self.log(f"work kept: {work}")
+        inventory = self.run_collect(budget=walk.Budget(entries=7))
+        entries = inventory["roots"][0]["entries"]
+        self.assertEqual(len(entries), 8, "seven entries and one truncation marker, not all 420")
+        self.assertEqual(entries[-1]["decision"], "truncated")
+        self.assertIn("entry cap 7 reached", inventory["roots"][0]["errors"][-1]["error"])
+        self.assertEqual(inventory["status"], "partial")
+        self.assertEqual(kept.main(["--logs", str(self.logs), "--out", str(self.out)]), 1)
+
+    def test_the_driver_provider_home_is_never_opened_or_archived(self):
+        work = self.root("tkw.Prov11", {"k/config.toml": b'api_key = "sk-ant-not-a-known-pattern"\n',
+                                        "k/.codex/auth.json": b"{}", "h/.claude/settings.json": b"{}",
+                                        "config": b"font-size = 13\n"})
+        self.log(f"work kept: {work}")
+        opened = []
+        real_open = os.open
+
+        def tracking_open(path, flags, *args, **kwargs):
+            opened.append(path)
+            return real_open(path, flags, *args, **kwargs)
+        with mock.patch.object(walk.os, "open", tracking_open):
+            inventory = self.run_collect()
+        entries = {e["path"]: e for e in inventory["roots"][0]["entries"]}
+        self.assertEqual((entries["k"]["decision"], entries["k"]["reason"]), ("excluded", "privacy:provider-home"))
+        self.assertEqual(entries["h/.claude"]["reason"], "privacy:credential-home")
+        self.assertNotIn("k", opened)
+        self.assertNotIn(".claude", opened)
+        self.assertFalse(any(path.startswith("k/") for path in entries))
+        data = (self.out / "kept-tkw.Prov11.tar").read_bytes()
+        self.assertNotIn(b"sk-ant", data)
+        self.assertIn("tkw.Prov11/config", self.members("kept-tkw.Prov11.tar"))
+        self.assertEqual(inventory["status"], "complete")
+
+    def test_only_the_current_path_holds_directory_descriptors(self):
+        work = self.root("tkw.Wide11", {f"d{i:03}/a/b/f": b"x" for i in range(300)})
+        self.log(f"work kept: {work}")
+        live, peak = set(), [0]
+        real_open, real_close = os.open, os.close
+
+        def counting_open(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if flags & os.O_DIRECTORY:
+                live.add(fd)
+                peak[0] = max(peak[0], len(live))
+            return fd
+
+        def counting_close(fd):
+            live.discard(fd)
+            return real_close(fd)
+        with mock.patch.object(walk.os, "open", counting_open), mock.patch.object(walk.os, "close", counting_close):
+            inventory = self.run_collect()
+        self.assertLessEqual(peak[0], 4, "root, d###, a, b: never the 300 siblings at once")
+        self.assertEqual(live, set(), "every directory descriptor is closed")
+        self.assertEqual(sum(e["path"].endswith("/b/f") and e["decision"] == "archived"
+                             for e in inventory["roots"][0]["entries"]), 300)
+        self.assertEqual(inventory["status"], "complete")
 
     def test_a_file_swapped_after_lstat_is_refused_not_followed(self):
         work = self.root("tkw.Race11", {"victim": b"original", "other": b"replacement"})
