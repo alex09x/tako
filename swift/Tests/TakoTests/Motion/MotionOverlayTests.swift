@@ -71,10 +71,22 @@ struct MotionOverlayTests {
             _ = OverlayStore.shared.closeOverlay(paneId: surface.id)
             try? FileManager.default.removeItem(at: file)
         }
+        // Diagnostics only (TAKO_MOTION_DIAGNOSTICS): stage times and frames, written last.
+        let trace = MotionStageTrace("overlay")
+        defer { trace?.write() }
+        trace?.mark("probe.init.start")
         let probe = SwiftUIMotionProbe(Tako.InspectableSurface(surfaceView: surface), size: CGSize(width: 240, height: 140))
+        trace?.mark("probe.init.end")
         defer { probe.close() }
         probe.settle(0.8)
-        let before = SwiftUIMotionProbe.light(probe.snapshot())
+        trace?.mark("settle.end")
+        let initial = probe.snapshot()
+        trace?.mark("before.snapshot.end")
+        trace?.keep("before", initial)
+        trace?.set("window", ["frame": "\(probe.window.frame)", "visible": probe.window.isVisible,
+                              "occlusion": probe.window.occlusionState.rawValue, "host": "\(probe.host.bounds)",
+                              "pixels": [initial.pixelsWide, initial.pixelsHigh]])
+        let before = SwiftUIMotionProbe.light(initial)
         var opened: Error?
         let coming = probe.frames(after: {
             do {
@@ -82,13 +94,13 @@ struct MotionOverlayTests {
                                                         surfacePwd: file.deletingLastPathComponent().path)
             } catch { opened = error }
         }, for: 0.5,
-                                  measure: SwiftUIMotionProbe.light)
+                                  measure: SwiftUIMotionProbe.light, trace: trace, phase: "coming", keepImages: 96)
         #expect(opened == nil, "\(String(describing: opened))")
         #expect(OverlayStore.shared.overlay(for: surface.id) != nil)
         try expectAnimated(coming, from: before, "a file overlay coming in")
         let shown = try #require(coming.last).value
         let going = probe.frames(after: { _ = OverlayStore.shared.closeOverlay(paneId: surface.id) }, for: 0.5,
-                                 measure: SwiftUIMotionProbe.light)
+                                 measure: SwiftUIMotionProbe.light, trace: trace, phase: "going", keepImages: 8)
         try expectAnimated(going, from: shown, "a file overlay going")
     }
 

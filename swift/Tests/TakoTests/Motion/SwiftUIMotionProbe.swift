@@ -48,15 +48,42 @@ final class SwiftUIMotionProbe {
     }
 
     /// `measure` of each frame drawn for `seconds` after `change`.
+    /// With a `trace` (diagnostics only), each stage's start and end are also
+    /// recorded, and up to `keepImages` frames kept; the frames are the same.
     func frames(after change: () -> Void, for seconds: TimeInterval,
-                measure: (NSBitmapImageRep) -> Double) -> [(t: TimeInterval, value: Double)] {
+                measure: (NSBitmapImageRep) -> Double,
+                trace: MotionStageTrace? = nil, phase: String = "", keepImages: Int = 0) -> [(t: TimeInterval, value: Double)] {
+        guard let trace else {
+            change()
+            let start = Date()
+            var out: [(t: TimeInterval, value: Double)] = []
+            while Date().timeIntervalSince(start) < seconds {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.006))
+                out.append((Date().timeIntervalSince(start), measure(snapshot())))
+            }
+            return out
+        }
+        // The same steps in the same order: the frame's time is read before
+        // its snapshot, as the tuple above evaluates it.
+        trace.mark("\(phase).change.start")
         change()
+        trace.mark("\(phase).change.end")
         let start = Date()
         var out: [(t: TimeInterval, value: Double)] = []
         while Date().timeIntervalSince(start) < seconds {
+            let runLoopStart = trace.now()
             RunLoop.current.run(until: Date().addingTimeInterval(0.006))
-            out.append((Date().timeIntervalSince(start), measure(snapshot())))
+            let runLoopEnd = trace.now()
+            let t = Date().timeIntervalSince(start)
+            let rep = snapshot()
+            let snapshotEnd = trace.now()
+            let value = measure(rep)
+            out.append((t, value))
+            trace.frame(phase: phase, index: out.count - 1, runLoopStart: runLoopStart, runLoopEnd: runLoopEnd,
+                        snapshotEnd: snapshotEnd, frameT: t, value: value, image: rep,
+                        keepImage: out.count <= keepImages, root: host)
         }
+        trace.mark("\(phase).loop.end")
         return out
     }
 

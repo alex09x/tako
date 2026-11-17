@@ -24,13 +24,30 @@ struct MotionClockTests {
     /// The views' own asyncAfter and tasks run on the main queue: it runs while the test waits.
     private func wait(_ seconds: TimeInterval) async { try? await Task.sleep(nanoseconds: UInt64(seconds * 1e9)) }
 
-    private func frames(_ key: String, over seconds: TimeInterval) async -> Int {
+    private func frames(_ key: String, over seconds: TimeInterval, trace: MotionStageTrace? = nil) async -> Int {
         var n = 0
-        LivingAnimationState.shared.onFrame = { if $0 == key { n += 1 } }
+        LivingAnimationState.shared.onFrame = { if $0 == key { n += 1; trace?.mark("\(key).frame") } }
         defer { LivingAnimationState.shared.onFrame = nil }
+        trace?.mark("frames.wait.start")
         await wait(seconds)
+        trace?.mark("frames.wait.end")
         diagnostics("\(key): \(n) frames over \(seconds)s")
         return n
+    }
+
+    /// Diagnostics only: the motion clock's own pause inputs and the probe's
+    /// window, content and bitmap sizes, as they are at `label`.
+    private func record(_ trace: MotionStageTrace?, _ label: String, _ probe: SwiftUIMotionProbe, bitmap: NSBitmapImageRep? = nil) {
+        guard let trace else { return }
+        let motion = LivingAnimationState.shared
+        trace.set(label, ["t": trace.now(), "reduce": motion.reduceMotion, "paused": motion.isTimelinePaused,
+                          "occludedOrIdle": motion.isOccludedOrIdle, "shown": motion.statusShown,
+                          "animates": motion.statusAnimates, "fixedTime": motion.fixedTimeOverride != nil,
+                          "appActive": NSApp.isActive, "window": "\(probe.window.frame)",
+                          "windowVisible": probe.window.isVisible, "occlusion": probe.window.occlusionState.rawValue,
+                          "content": "\(probe.host.bounds)",
+                          "bitmap": bitmap.map { [$0.pixelsWide, $0.pixelsHigh] } ?? [],
+                          "screenFps": NSScreen.main?.maximumFramesPerSecond ?? 0])
     }
 
     /// Retain the actual clock prerequisites on hosted runners. A paused
@@ -75,11 +92,21 @@ struct MotionClockTests {
     }
 
     @Test func theOverviewTakesThirtyFramesASecondAtRest() async {
+        // Diagnostics only (TAKO_MOTION_DIAGNOSTICS): the rest-rate control, timed the same way.
+        let trace = MotionStageTrace("clock-rest")
+        defer { trace?.write() }
         await withMotionOn {
+            trace?.mark("probe.init.start")
             let (probe, _) = overview([.working, .needsApproval])
+            trace?.mark("probe.init.end")
             defer { probe.close() }
+            record(trace, "mounted", probe)
+            trace?.mark("settle.wait.start")
             await wait(0.4)
-            let n = await frames("overview", over: 1)
+            trace?.mark("settle.wait.end")
+            let n = await frames("overview", over: 1, trace: trace)
+            record(trace, "counted", probe)
+            trace?.set("count", n)
             #expect((20...40).contains(n), "\(n) frames in a second, not 30")
         }
     }
@@ -101,18 +128,32 @@ struct MotionClockTests {
     @Test func theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts() async {
         // The sixth card is measured as light over the dark body: a light
         // shell's body is brighter than the card that arrives on it.
+        // Diagnostics only (TAKO_MOTION_DIAGNOSTICS): every overview frame's time from the
+        // probe's creation, how long creation and the first snapshot took, and the wait itself.
+        let trace = MotionStageTrace("clock-still")
+        defer { trace?.write() }
         await withDarkShell { await withMotionOn {
             var n = 0
-            LivingAnimationState.shared.onFrame = { if $0 == "overview" { n += 1 } }
+            LivingAnimationState.shared.onFrame = { if $0 == "overview" { n += 1; trace?.mark("overview.frame") } }
             defer { LivingAnimationState.shared.onFrame = nil }
             let store = PaneOverviewStore()
             store.items = (0..<12).map { _ in PaneOverviewItem(id: UUID(), title: "pane", status: .working) }
+            trace?.mark("probe.init.start")
             let probe = SwiftUIMotionProbe(PaneOverviewView(isPresented: .constant(true), showsBackdrop: false, store: store),
                                            size: CGSize(width: 1100, height: 760))
+            trace?.mark("probe.init.end")
             defer { probe.close() }
+            trace?.mark("firstRep.start")
             let firstRep = probe.snapshot()
+            trace?.mark("firstRep.end")
             let still = n
+            trace?.set("still", still)
+            record(trace, "firstRep", probe, bitmap: firstRep)
+            trace?.mark("wait.start")
             await wait(0.4)
+            trace?.mark("wait.end")
+            trace?.set("counted", n - still)
+            record(trace, "waited", probe)
             #expect(n - still >= 4, "the Overview's clock never started: \(n - still) frames")
             // Three to a row: the sixth card is the second row's third, there
             // only once the clock runs.
