@@ -305,6 +305,13 @@ jobs:
           CI_STAGE: ${{ matrix.stage }}
         run: ./scripts/ci.sh --local "$CI_STAGE"
 
+      # The hosted VM goes away with the job: archive only what a failed case
+      # said it kept (validated paths, no links followed, privacy exclusions).
+      # The failed test stage stays the verdict; this adds evidence only.
+      - name: Collect state kept by failed native cases
+        if: ${{ failure() && (startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests') }}
+        run: python3 scripts/ci_kept_state.py --logs target/ci-logs --persist target/e2e-persist-evidence --out target/ci-kept-state
+
       - name: Report native crash diagnostics on failure
         if: failure()
         run: |
@@ -348,6 +355,7 @@ jobs:
             target/ci-ios.*/
             target/uitest-results/
             target/e2e-persist-evidence/
+            target/ci-kept-state/
             target/selftest-frame.png
             target/e2e-registry.txt
             target/e2e-shard.txt
