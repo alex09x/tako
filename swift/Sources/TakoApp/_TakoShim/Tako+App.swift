@@ -122,6 +122,16 @@ extension Tako {
         }
 
         public func reloadConfig(soft: Bool = false) {
+            // Both @Published config and the window notification have UI
+            // subscribers. A file watcher or worker may request a reload, but
+            // may not run those subscribers on its own thread. Main-thread
+            // callers stay synchronous; worker calls enqueue the whole reload.
+            guard Thread.isMainThread else {
+                DispatchQueue.main.async(execute: DispatchWorkItem {
+                    self.reloadConfig(soft: soft)
+                })
+                return
+            }
             // Reload the file we actually loaded. Passing nil here sent every
             // reload back to the default search path, so an app started
             // against a specific config -- a UI test, or anyone using
