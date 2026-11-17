@@ -146,11 +146,21 @@ struct MotionWiringTests {
         a.contentView?.addSubview(bar)
         try #require(bar.windows.count > 1, "the bar sees \(bar.windows.count) tab(s)")
         #expect(Tako.TabBarView.commandBadgeDelay == 0.15)
+        let began = ProcessInfo.processInfo.systemUptime
         bar.commandKeyChanged(held: true)
-        try await Task.sleep(nanoseconds: 100_000_000)
-        #expect(!bar.showingBadges, "the numbers showed before 150 ms")
-        try await Task.sleep(nanoseconds: 120_000_000)
-        #expect(bar.showingBadges, "the numbers did not show after 150 ms")
+        #expect(!bar.showingBadges, "the numbers appeared at the press")
+        // A requested 100 ms sleep can resume after the 150 ms deadline on a
+        // loaded host. Measure when showing is observed, without assuming
+        // Task.sleep resumed on time. Keep the same nominal 220 ms wait budget.
+        var firstShownAt: TimeInterval?
+        repeat {
+            let elapsed = ProcessInfo.processInfo.systemUptime - began
+            if bar.showingBadges { firstShownAt = elapsed; break }
+            if elapsed >= 0.22 { break }
+            try await Task.sleep(nanoseconds: 4_000_000)
+        } while true
+        let shownAt = try #require(firstShownAt, "the numbers did not show after 150 ms within the 220 ms observation")
+        #expect(shownAt >= 0.15, "the numbers appeared before 150 ms, observed at \(shownAt)s")
         bar.commandKeyChanged(held: false)
         #expect(!bar.showingBadges, "the numbers stayed after ⌘ was let go")
     }
