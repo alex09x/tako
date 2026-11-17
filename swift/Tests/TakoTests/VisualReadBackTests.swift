@@ -152,6 +152,9 @@ struct VisualReadBackTests {
     @Test func tuiRenderedLookAssertion() throws {
         let app = Tako.App()
         let surface = Tako.SurfaceView(app, baseConfig: .init(), uuid: UUID())
+        // A screenshot of the TUI must not depend on the startup banner's cursor.
+        let blankOrigin = "\u{1b}[0m\u{1b}[2J\u{1b}[H\u{1b}[?25l"
+        surface.core.feed(bytes: Data(blankOrigin.utf8))
 
         // Simulated TUI header and status bar
         surface.core.feed(bytes: Data("\u{1b}[7m [TUI Header: Main Menu] \u{1b}[0m\r\n\u{1b}[32mStatus: Running\u{1b}[0m\r\n".utf8))
@@ -183,12 +186,12 @@ struct VisualReadBackTests {
         #expect(rep.pixelsHigh == h)
 
         // 1. Positive assertion: verify stable expected pixel regions in the returned capture.
-        // Row 3 contains the reverse video TUI header ("\u{1b}[7m [TUI Header: Main Menu] \u{1b}[0m"),
+        // Row 0 contains the reverse video TUI header after the explicit home,
         // which renders foreground text color as background across the cell width.
         let rows = max(1, Int(surface.core.rows()))
         let cellHeight = max(1, h / rows)
         let highlightThreshold: CGFloat = 0.35
-        let headerRowY = 3 * cellHeight + cellHeight / 2 // Row 3 of rendered raster (y=56)
+        let headerRowY = cellHeight / 2
 
         var headerHighlightCount = 0
         for x in stride(from: 10, to: min(w - 10, 150), by: 5) {
@@ -199,9 +202,9 @@ struct VisualReadBackTests {
                 }
             }
         }
-        #expect(headerHighlightCount >= 15, "Expected bright highlighted reverse-video header pixels in row 3 (got \(headerHighlightCount))")
+        #expect(headerHighlightCount >= 15, "Expected bright highlighted reverse-video header pixels in row 0 (got \(headerHighlightCount))")
 
-        // Non-header region (row 15, y=248) must remain dark background under the same threshold
+        // Non-header row 15 must remain dark under the same threshold.
         let nonHeaderY = cellHeight * 15 + cellHeight / 2
         var nonHeaderHighlightCount = 0
         for x in stride(from: 10, to: min(w - 10, 150), by: 5) {
@@ -215,8 +218,9 @@ struct VisualReadBackTests {
         #expect(nonHeaderHighlightCount == 0, "Non-header rows must remain dark background")
 
         // 2. Negative control: an empty surface without reverse header must NOT contain bright highlight
-        // under the exact same coordinate window (row 3, y=56) and threshold (0.35).
+        // under the exact same coordinate window (row 0) and threshold (0.35).
         let emptySurface = Tako.SurfaceView(app, baseConfig: .init(), uuid: UUID())
+        emptySurface.core.feed(bytes: Data(blankOrigin.utf8))
         let (emptyPng, ew, eh) = try ControlCommands.captureScreenshot(emptySurface)
         guard let emptyRep = NSBitmapImageRep(data: emptyPng) else {
             Issue.record("Failed to decode empty PNG image data")
@@ -224,7 +228,7 @@ struct VisualReadBackTests {
         }
         let emptyRows = max(1, Int(emptySurface.core.rows()))
         let emptyCellHeight = max(1, eh / emptyRows)
-        let emptyHeaderRowY = 3 * emptyCellHeight + emptyCellHeight / 2
+        let emptyHeaderRowY = emptyCellHeight / 2
         var emptyHeaderHighlightCount = 0
         for x in stride(from: 10, to: min(ew - 10, 150), by: 5) {
             if let color = emptyRep.colorAt(x: x, y: emptyHeaderRowY) {
