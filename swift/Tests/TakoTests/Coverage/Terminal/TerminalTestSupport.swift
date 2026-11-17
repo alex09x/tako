@@ -128,6 +128,7 @@ enum TerminalTestSupport {
                 defer: false)
             window.isReleasedWhenClosed = false
             controller.window = window
+            window.delegate = controller
             controller.windowDidLoad()
         })
     }

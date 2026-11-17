@@ -12,6 +12,26 @@ import Testing
 
 @Suite(.serialized) @MainActor
 struct TerminalFixtureLifecycleTests {
+    @Test func anInjectedFixtureAlsoClosesItsGraphThroughTheRealDelegate() throws {
+        var configuration = Tako.SurfaceConfiguration()
+        configuration.program = ["/bin/sleep", "600"]
+        configuration.allowsSessionPersistence = false
+        let app = Tako.App()
+        let controller = TerminalController(app, withBaseConfig: configuration, withSurfaceTree: nil)
+        TerminalTestSupport.injectedWindowSystem().attachWindow(controller)
+        let window = try #require(controller.window as? TerminalWindow)
+        defer {
+            TerminalTestSupport.tearDown(controller, window)
+            withExtendedLifetime(app) {}
+        }
+        _ = try #require(window.contentView)
+        _ = Tako.CustomTabGroup.group(for: window)
+        #expect(window.delegate === controller)
+        window.close()
+        #expect(window.contentView == nil)
+        #expect(Tako.CustomTabGroup.isClosed(window))
+    }
+
     @Test func aLoadedFixtureClosesItsHostingGraphThroughTheRealDelegate() throws {
         var configuration = Tako.SurfaceConfiguration()
         configuration.program = ["/bin/sleep", "600"]
