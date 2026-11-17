@@ -18,10 +18,12 @@ import sys
 RESULT = re.compile(r"^\[result\] (\S+) (ok|FAIL)$", re.M)
 
 
-def problems(status, text, names):
+def problems(status, text, names, tee_status=0):
     found = []
     if status != 0:
         found.append(f"the runner exited with status {status}")
+    if tee_status != 0:
+        found.append(f"the runner log was not written completely (tee status {tee_status})")
     if not re.search(r"^tako e2e: ok$", text, re.M):
         found.append("the runner did not report `tako e2e: ok`")
     results = RESULT.findall(text)
@@ -43,6 +45,7 @@ def problems(status, text, names):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--status", type=int, required=True)
+    parser.add_argument("--tee-status", type=int, default=0)
     parser.add_argument("--log", required=True)
     parser.add_argument("names", nargs="*")
     args = parser.parse_args(argv)
@@ -52,7 +55,7 @@ def main(argv=None):
     except OSError as error:
         found = [f"no runner log: {error}"]
     else:
-        found = problems(args.status, text, args.names)
+        found = problems(args.status, text, args.names, args.tee_status)
     for problem in found:
         print(f"  FAIL: {problem}", file=sys.stderr)
     if found:
