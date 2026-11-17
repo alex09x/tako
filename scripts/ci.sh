@@ -136,6 +136,14 @@ SH
             ci_require "$stage" '^OK'
             ;;
         swift-tests)
+            # Swift hook/PTY integration tests need the actual CLI too. Reuse
+            # the verified producer rather than relying on an operator install.
+            if [ -n "${TAKO_PREBUILT_DIR:-}" ]; then
+                ci_logged "$stage-cli" python3 scripts/swift_test_cli.py "$TAKO_PREBUILT_DIR"
+                ci_require "$stage-cli" '^swift test CLI: verified '
+            else
+                ci_logged "$stage-cli" mitts build --locked --manifest-path takoctl/Cargo.toml
+            fi
             TAKO_TEST_NEW_ZMX=$(./scripts/build-zmx.sh)
             TAKO_TEST_OLD_ZMX=$(./scripts/build-zmx.sh --legacy-test-runtime)
             export TAKO_TEST_NEW_ZMX="$PWD/$TAKO_TEST_NEW_ZMX"
