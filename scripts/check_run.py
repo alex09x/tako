@@ -33,6 +33,8 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+import ci_log  # noqa: E402
 
 SWIFT_FLAGS = ["--no-parallel", "-Xlinker", "-L../target/macos", "-Xlinker", "-ltako_core",
                "-Xcc", "-I../target/bindings"]
@@ -41,17 +43,22 @@ report = []
 failed = False
 
 
+CHECK_LOGS = os.path.join("target", "check-logs")
+_runs = 0
+
+
 def run(cmd, cwd=None, env=None):
-    """Runs `cmd`, echoing its output; returns (seconds, exit code, output)."""
-    started = time.monotonic()
-    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True, errors="replace")
-    out = []
-    for line in proc.stdout:
-        sys.stdout.write(line)
-        out.append(line)
-    proc.wait()
-    return time.monotonic() - started, proc.returncode, "".join(out)
+    """Runs `cmd`; returns (seconds, exit code, complete output).
+
+    Every byte goes to its own file under target/check-logs; the console gets
+    start/end, a heartbeat, summaries and failures (scripts/ci_log.py), or
+    everything with TAKO_CI_VERBOSE=1. The pass/count parsers read the
+    complete output returned here, never the console."""
+    global _runs
+    _runs += 1
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", " ".join(os.path.basename(str(c)) for c in cmd[:3])).strip("-")
+    path = os.path.join(CHECK_LOGS, f"{os.getpid()}-{_runs:02d}-{name[:60]}.log")
+    return ci_log.run_logged(cmd, path, label=name[:40], cwd=cwd, env=env)
 
 
 def note(check, ok, detail, build=None, lock=None, run_s=None):

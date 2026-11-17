@@ -61,6 +61,8 @@ class CiStageTests(unittest.TestCase):
                 f.write(body)
             os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
         shutil.copy(os.path.join(HERE, "e2e_shards.py"), os.path.join(self.dir, "scripts"))
+        # ci_logged runs the real console/log wrapper around each stand-in.
+        shutil.copy(os.path.join(HERE, "ci_log.py"), os.path.join(self.dir, "scripts"))
         shutil.copy(os.path.join(HERE, "e2e", "durations.json"), os.path.join(self.dir, "scripts", "e2e"))
 
     def generated(self, stage: str) -> str:

@@ -49,11 +49,15 @@ fi
 stages=("$@")
 [ ${#stages[@]} -gt 0 ] || stages=(rust cli swift apps persist uitest)
 
+# Every byte the command prints goes to target/ci-logs/NAME.log, which the
+# completion checks below read. The console shows start/end, a sparse
+# heartbeat, summaries and failures (scripts/ci_log.py); TAKO_CI_VERBOSE=1
+# shows everything live. The status is the command's own.
 ci_logged() {
     local name="$1"
     shift
     mkdir -p target/ci-logs
-    "$@" 2>&1 | tee "target/ci-logs/$name.log"
+    python3 scripts/ci_log.py --log "target/ci-logs/$name.log" --label "$name" -- "$@"
 }
 
 ci_require() {
