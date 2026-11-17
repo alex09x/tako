@@ -57,7 +57,8 @@ def extract(archive, destination):
     assert sha(archive) == ARCHIVE_SHA, "archive identity mismatch"
     with tarfile.open(archive) as package:
         members = package.getmembers()
-        assert len(members) == 100, "archive member count changed"
+        # This exact hosted archive was built without zmx: 76 files + 18 dirs.
+        assert len(members) == 94, "archive member count changed"
         for member in members:
             parts = Path(member.name).parts
             assert parts and parts[0] == "Tako.app" and ".." not in parts

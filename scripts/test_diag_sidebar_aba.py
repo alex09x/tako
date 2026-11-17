@@ -6,8 +6,12 @@
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
 import unittest
+from pathlib import Path
+import tarfile
+import tempfile
+from unittest.mock import patch
 
-from diag_sidebar_aba import validate_case, verify_reseal
+from diag_sidebar_aba import ARCHIVE_SHA, extract, validate_case, verify_reseal
 
 
 def log(verdict="ok", mode="off"):
@@ -23,6 +27,20 @@ def log(verdict="ok", mode="off"):
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_the_pinned_nonpersistent_archive_has_94_members(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / "app.tar"
+            with tarfile.open(archive, "w") as package:
+                folder = tarfile.TarInfo("Tako.app")
+                folder.type = tarfile.DIRTYPE
+                package.addfile(folder)
+                for index in range(93):
+                    package.addfile(tarfile.TarInfo(f"Tako.app/file{index}"))
+            with patch("diag_sidebar_aba.sha", return_value=ARCHIVE_SHA):
+                extract(archive, root / "extracted")
+            self.assertEqual(len(list((root / "extracted/Tako.app").iterdir())), 93)
+
     def test_a_performance_failure_is_retained_as_a_failure(self):
         self.assertEqual(validate_case(log(), 0, "off"), "ok")
         self.assertEqual(validate_case(log("FAIL", "on"), 1, "on"), "FAIL")
