@@ -23,13 +23,21 @@ DIR="${TAKO_MAC_DIR:-ci/tako}"
 XCODE="${TAKO_MAC_XCODE:-/Applications/Xcode-26.3.app/Contents/Developer}"
 
 [ $# -gt 0 ] || { echo "usage: $0 <command...>" >&2; exit 2; }
+SURFACE_DEVICE_EXPORT=""
+if [ -n "${TAKO_IOS_SURFACE_DEVICE:-}" ]; then
+    [[ "$TAKO_IOS_SURFACE_DEVICE" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || {
+        echo "invalid TAKO_IOS_SURFACE_DEVICE UUID; nothing was sent" >&2
+        exit 2
+    }
+    SURFACE_DEVICE_EXPORT="export TAKO_IOS_SURFACE_DEVICE=$TAKO_IOS_SURFACE_DEVICE"
+fi
 cd "$(dirname "$0")/.."
 
 RUN="/tmp/tako-remote-$$-$RANDOM"
 # The command travels base64-encoded: nothing in it is expanded on this side.
 CMD_B64=$(printf '%s\n' "set -e" "cd \"$DIR\"" "export DEVELOPER_DIR=\"$XCODE\"" \
     'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"' \
-    "export TAKO_REMOTE_EXEC=1" "$*" | base64)
+    "export TAKO_REMOTE_EXEC=1" "$SURFACE_DEVICE_EXPORT" "$*" | base64)
 
 # The remote login shell may not be bash, so scripts go through `bash -s`
 # on stdin rather than through ssh's command string. The first connection

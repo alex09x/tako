@@ -139,7 +139,12 @@ swiftc -target arm64-apple-ios17.0-simulator \
     "$BUILD_DIR/main.swift" \
     -framework UIKit -framework Foundation -framework CoreText -framework XCTest
 
-SIM_DEVICE="$(xcrun simctl list devices booted | grep -E -o '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' | head -n 1 || true)"
+# A shared test Mac may have an operator's simulator booted. The caller can
+# select its own already-booted fixture explicitly; hosted defaults stay as before.
+SIM_DEVICE="${TAKO_IOS_SURFACE_DEVICE:-}"
+if [ -z "$SIM_DEVICE" ]; then
+    SIM_DEVICE="$(xcrun simctl list devices booted | grep -E -o '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' | head -n 1 || true)"
+fi
 if [ -z "$SIM_DEVICE" ]; then
     SIM_DEVICE="$(xcrun simctl list devices available | grep -E 'iPhone|iPad' | grep -E -o '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' | head -n 1)"
     xcrun simctl boot "$SIM_DEVICE" || true
