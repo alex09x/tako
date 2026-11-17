@@ -83,13 +83,29 @@ python3 scripts/selftest_verdict.py --status "${statuses[0]}" --tee-status "${st
 # The disposable copy goes only after a passing run whose app is proved gone;
 # anything less keeps it, and says where. Nothing else is ever removed.
 if [ -n "$copy_dir" ]; then
-    running=$(pgrep -f "$copy_dir/Tako.app/Contents/" 2>/dev/null || true)
-    if [ "${statuses[0]}" -eq 0 ] && [ "$verdict" -eq 0 ] && [ -z "$running" ] \
-        && [ "$(dirname "$copy_dir")" = "$copies" ] && [[ "$(basename "$copy_dir")" =~ ^run\.[A-Za-z0-9]{6}$ ]]; then
+    # pgrep -f takes an extended regex: match the copy's path literally.
+    # Only its "no process matched" status (1) proves nothing runs from it.
+    pattern=$(printf '%s' "$copy_dir/Tako.app/Contents/" | sed 's/[][\.*^$()+?{}|]/\\&/g')
+    set +e
+    running=$(pgrep -f "$pattern" 2>&1)
+    census=$?
+    set -e
+    if [ "$census" -eq 0 ]; then
+        reason="still running: $(echo $running)"
+    elif [ "$census" -ne 1 ]; then
+        reason="the process census failed (pgrep status $census): $running"
+    elif [ "${statuses[0]}" -ne 0 ] || [ "$verdict" -ne 0 ]; then
+        reason="the run did not pass"
+    elif [ "$(dirname "$copy_dir")" != "$copies" ] || ! [[ "$(basename "$copy_dir")" =~ ^run\.[A-Za-z0-9]{6}$ ]]; then
+        reason="it is not this run's own copy directory"
+    else
+        reason=""
+    fi
+    if [ -z "$reason" ]; then
         rm -rf "$copy_dir" && echo "self-test: removed its disposable copy $copy_dir" \
             || echo "self-test: could not remove its disposable copy; kept: $copy_dir" >&2
     else
-        echo "self-test: kept the disposable copy: $copy_dir${running:+ (still running: $running)}" >&2
+        echo "self-test: kept the disposable copy: $copy_dir ($reason)" >&2
     fi
 fi
 exit "$verdict"

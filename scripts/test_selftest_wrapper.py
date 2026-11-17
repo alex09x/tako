@@ -130,6 +130,20 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(os.path.isdir(ran), "an incomplete verdict keeps the copy")
         self.assertIn(f"kept the disposable copy: {os.path.dirname(ran)}", err)
 
+    def test_a_failed_process_census_keeps_the_copy(self):
+        app = self.app("com.tako-core.terminal")
+        bin_dir = os.path.join(self.root, "fakebin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "pgrep"), "w") as f:
+            f.write("#!/bin/sh\necho 'pgrep: cannot read the process table' >&2\nexit 3\n")
+        os.chmod(os.path.join(bin_dir, "pgrep"), 0o755)
+        rc, out, err = self.finish(self.start(app, "--scroll-only", env={"PATH": bin_dir + ":" + os.environ["PATH"]}))
+        self.assertEqual(rc, 0, "the self-test itself passed")
+        self.assertIn("macapp self-test: ok", out)
+        [(ran, _, _, _)] = self.calls()
+        self.assertTrue(os.path.isdir(ran), "an error is not 'nothing runs from it'")
+        self.assertIn("the process census failed (pgrep status 3)", err)
+
     def test_an_unusable_identifier_is_refused_before_anything_runs(self):
         for bad in ("", "no-dots", "com.tako core.x"):
             with self.subTest(identifier=bad):
