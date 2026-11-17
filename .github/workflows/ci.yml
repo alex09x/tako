@@ -42,13 +42,40 @@ jobs:
           sudo dscl . -create "/Users/$(id -un)" UserShell "$bash_path"
           test "$(python3 -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_shell)')" = "$bash_path"
           printf 'TAKO_TEST_BASH=%s\n' "$bash_path" >> "$GITHUB_ENV"
-      - name: Sample both switch scenarios
+      - name: Sample both switch scenarios and verify fractional scrolling
+        id: timing
         run: |
           set -euo pipefail
           export APP="$PWD/target/timing-app/Tako.app"
           export TAKO_BUNDLE_ID=com.tako-core.terminal.e2e-timing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
           export TAKO_E2E_SAMPLE_DIR="$PWD/target/e2e-samples"
-          python3 scripts/ci_log.py --log target/ci-logs/timing.log --label timing -- bash scripts/e2e-macapp.sh workspace-journey sidebar-switch-speed
+          python3 scripts/ci_log.py --log target/ci-logs/timing.log --label timing -- bash scripts/e2e-macapp.sh workspace-journey sidebar-switch-speed app-selftest-scroll
+      - name: Check sample coverage independently of the scenario verdict
+        if: ${{ always() && (steps.timing.outcome == 'success' || steps.timing.outcome == 'failure') }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          samples = Path('target/e2e-samples')
+          expected = {'workspace-journey-controlled-pair': 1,
+                      **{f'sidebar-switch-round-{i}': 5 for i in range(3)}}
+          failures = []
+          for label, blocks in expected.items():
+              try:
+                  record = json.loads((samples / f'{label}.json').read_text())
+                  profile = samples / f'{label}.txt'
+                  if record['label'] != label or len(record['blocks']) != blocks:
+                      raise ValueError('sample label or block count differs')
+                  if record['complete'] is not True or record['problems']:
+                      raise ValueError(str(record['problems']))
+                  if not profile.is_file() or profile.stat().st_size == 0:
+                      raise ValueError('sample report is missing')
+              except (KeyError, OSError, TypeError, ValueError) as error:
+                  failures.append(f'{label}: {error}')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          print('Four sample reports cover the workspace pair and 15 sidebar clicks')
+          PY
       - name: Collect failed fixture state
         if: failure()
         run: python3 scripts/ci_kept_state.py --logs target/ci-logs --out target/ci-kept-state
