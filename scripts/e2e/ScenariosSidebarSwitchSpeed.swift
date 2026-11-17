@@ -112,6 +112,18 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     }
     var timings: [Double] = []
     var lines: [String] = []
+    struct Boundary {
+        let name: String
+        let down: Double
+        let up: Double
+        let shown: Double
+        let wallMS: Double
+        let polls: Int
+        let maxPoll: Double
+        let lastUnchangedStart: Double
+        let changedPollStart: Double
+    }
+    var boundaries: [Boundary] = []
     // Two rounds on the row's name (where a double click renames), one beside
     // it. SwA is shown at the start; no order clicks the tab already shown.
     let orders = [["SwB", "SwC", "SwD", "SwE", "SwA"], ["SwC", "SwE", "SwB", "SwD", "SwA"], ["SwE", "SwD", "SwC", "SwB", "SwA"]]
@@ -127,16 +139,31 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             try d.requireAXOwnedTarget(at: point)
             CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             usleep(30_000)
+            let downAt = ProcessInfo.processInfo.systemUptime
             let started = Date()
             CGEvent(mouseEventSource: d.source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             usleep(20_000)
             CGEvent(mouseEventSource: d.source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+            let upAt = ProcessInfo.processInfo.systemUptime
             var changed = false
+            var polls = 0, maxPoll = 0.0
+            var lastUnchangedStart = downAt, changedPollStart = downAt
             while Date().timeIntervalSince(started) < 3 {
-                if d.onScreenWindowNumbers() != before { changed = true; break }
+                let pollStart = ProcessInfo.processInfo.systemUptime
+                let numbers = d.onScreenWindowNumbers()
+                let pollEnd = ProcessInfo.processInfo.systemUptime
+                polls += 1
+                maxPoll = max(maxPoll, pollEnd - pollStart)
+                if numbers != before { changed = true; changedPollStart = pollStart; break }
+                lastUnchangedStart = pollStart
                 usleep(5_000)
             }
             let shown = Date().timeIntervalSince(started)
+            let shownAt = ProcessInfo.processInfo.systemUptime
+            boundaries.append(Boundary(name: (beside ? "beside " : "name ") + name,
+                                       down: downAt, up: upAt, shown: shownAt, wallMS: shown * 1000,
+                                       polls: polls, maxPoll: maxPoll,
+                                       lastUnchangedStart: lastUnchangedStart, changedPollStart: changedPollStart))
             lines.append(String(format: "%@%@ %.0f ms", beside ? "beside " : "name ", name, shown * 1000))
             guard changed else { throw Failure("a click on \(name)'s row did not switch tabs: \(lines)") }
             timings.append(shown * 1000)
@@ -147,6 +174,26 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     print("[timing] sidebar switch: " + lines.joined(separator: "; "))
     print(String(format: "[timing] sidebar switch: %d switches, median %.0f ms, max %.0f ms",
                  timings.count, sorted[sorted.count / 2], sorted.last ?? 0))
+    // Read the existing public app history once, after ALL timed clicks. No
+    // control request or AX read is inserted into a click's measured interval.
+    // Its timestamp uses the same systemUptime clock as these boundaries.
+    let history = try d.tabTransitions()
+    guard let origin = boundaries.first?.down else {
+        throw Failure("no app-side transition history for the timed sidebar switches")
+    }
+    let timedHistory = history.filter { ((($0["timestamp"] as? NSNumber)?.doubleValue) ?? -1) >= origin }
+    guard !timedHistory.isEmpty else { throw Failure("no app-side transition recorded after the timed clicks began") }
+    for b in boundaries {
+        print(String(format: "[timing boundary] %@ down@%.1f up@%.1f shown@%.1f ms; wall=%.1f mono=%.1f ms; polls=%d maxCG=%.1f lastOldQuery@%.1f changedQuery@%.1f ms",
+                     b.name, (b.down-origin)*1000, (b.up-origin)*1000, (b.shown-origin)*1000,
+                     b.wallMS, (b.shown-b.down)*1000, b.polls, b.maxPoll*1000,
+                     (b.lastUnchangedStart-origin)*1000, (b.changedPollStart-origin)*1000))
+    }
+    for event in timedHistory.prefix(50) {
+        guard let time = (event["timestamp"] as? NSNumber)?.doubleValue, time >= origin else { continue }
+        print(String(format: "[timing model] %@ -> %@ @%.1f ms",
+                     event["from_id"] as? String ?? "missing", event["to_id"] as? String ?? "missing", (time-origin)*1000))
+    }
     // A click on the name used to wait out the double-click interval (~480 ms).
     guard let slowest = sorted.last, slowest < 250 else {
         throw Failure(String(format: "a sidebar switch took %.0f ms to reach the screen", sorted.last ?? 0))
