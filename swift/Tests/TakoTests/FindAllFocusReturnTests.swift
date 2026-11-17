@@ -90,8 +90,12 @@ struct FindAllFocusReturnTests {
         #expect(group.selectedWindow === shown.window)
         shown.window.contentView?.layoutSubtreeIfNeeded()
         try #require(shown.pane.window === shown.window, "the terminal must be in its window for focus to land on it")
+        // The window's own first focus completes once; let it, then take the
+        // keyboard away and check nothing but the panel's close gives it back.
+        try await Task.sleep(for: .milliseconds(500))
         shown.window.makeFirstResponder(nil)
-        try #require(shown.window.firstResponder !== shown.pane)
+        try await Task.sleep(for: .milliseconds(500))
+        try #require(shown.window.firstResponder !== shown.pane, "control: nothing else returns the keyboard")
 
         try await openAndClosePanel(shown.controller)
 

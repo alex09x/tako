@@ -134,12 +134,6 @@ let scenarios: [Scenario] = [
         try d.run("tty > \(d.path("tty1")); printf 'found-%s\\n' \(id)")
         let first = try d.file("tty1")
         let firstPane = try d.focusedPaneId()
-        d.key(Key.t, .maskCommand)
-        guard d.wait(for: { (try? d.focusedPaneId()).flatMap { $0 }.map { $0 != firstPane } ?? false }, timeout: 5) else {
-            throw Failure("cmd+t did not focus a new pane: \(d.debugFocusState())")
-        }
-        try d.run("tty > \(d.path("tty2")); printf 'other output\\n'")
-        guard try d.file("tty2") != first else { throw Failure("cmd+t did not open a second terminal") }
 
         /// The focused element, as the app reports it: its role, placeholder
         /// and value; the find field is the text field with this placeholder.
@@ -158,6 +152,29 @@ let scenarios: [Scenario] = [
             let pane = (try? d.focusedPaneId()).flatMap { $0 } ?? "none"
             return "focused role=\(f.role) placeholder=[\(f.placeholder)] value=[\(f.value)]; pane \(pane) (first \(firstPane ?? "none")); texts \(d.staticTexts())"
         }
+
+        // The panel closed with Escape in the tab it covers gives the keyboard
+        // back to that terminal: the next typed command reaches it unassisted.
+        d.key(Key.f, [.maskCommand, .maskShift])
+        guard d.wait(for: fieldFocused, timeout: 5) else {
+            throw Failure("cmd+shift+f did not focus the find field: \(state())")
+        }
+        d.key(Key.escape)
+        guard d.wait(for: { !fieldFocused() }, timeout: 5) else {
+            throw Failure("Escape did not close the find panel: \(state())")
+        }
+        try d.run("tty > \(d.path("tty1-escape"))")
+        guard try d.file("tty1-escape") == first, try d.focusedPaneId() == firstPane else {
+            throw Failure("after Escape the keyboard did not return to the same terminal: \(state())")
+        }
+
+        d.key(Key.t, .maskCommand)
+        guard d.wait(for: { (try? d.focusedPaneId()).flatMap { $0 }.map { $0 != firstPane } ?? false }, timeout: 5) else {
+            throw Failure("cmd+t did not focus a new pane: \(d.debugFocusState())")
+        }
+        try d.run("tty > \(d.path("tty2")); printf 'other output\\n'")
+        guard try d.file("tty2") != first else { throw Failure("cmd+t did not open a second terminal") }
+
         d.key(Key.f, [.maskCommand, .maskShift])
         guard d.wait(for: fieldFocused, timeout: 5) else {
             throw Failure("cmd+shift+f did not focus the find field: \(state())")
