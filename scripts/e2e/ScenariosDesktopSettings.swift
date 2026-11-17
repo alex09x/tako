@@ -288,13 +288,50 @@ func runDesktopSettingsContainmentScenario(_ d: Driver) throws {
 
 func runPermanentSidebarScenario(_ d: Driver) throws {
     let keys = DesktopKeys(d: d)
+    let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
     func shown() -> Bool { keys.exact("SessionSidebarHeader") != nil }
     guard d.wait(for: shown, timeout: 5) else { throw Failure("the session sidebar is not shown at launch") }
+    // Who receives the keyboard, read only: the AX focused element (its
+    // owner, role and id), the focused window and takoctl's focused pane.
+    func recipient(_ label: String) throws -> (owner: pid_t, role: String, id: String, window: CGWindowID?, pane: String?) {
+        let element: AXUIElement? = d.attribute(d.axApp, kAXFocusedUIElementAttribute)
+        var owner: pid_t = 0
+        if let element { AXUIElementGetPid(element, &owner) }
+        let role = element.flatMap { d.attribute($0, kAXRoleAttribute) as String? } ?? "nil"
+        let id = element.flatMap { d.attribute($0, "AXIdentifier") as String? } ?? "nil"
+        let window: AXUIElement? = d.attribute(d.axApp, kAXFocusedWindowAttribute)
+        let pane = try d.treeFacts(ctl, saveAs: "sidebar-tree-\(label).json").focused
+        return (owner, role, id, window.flatMap { d.windowID(for: $0) }, pane)
+    }
+    func diagnostics() -> String {
+        let flags = CGEventSource.flagsState(.combinedSessionState).rawValue
+        let screen = d.screenText().split(separator: "\n", omittingEmptySubsequences: false).suffix(6).joined(separator: "\\n")
+        return String(format: "modifier flags 0x%llx; ", flags) + "\(d.debugFocusState()); own pane last lines: [\(screen.suffix(600))]"
+    }
+    let before = try recipient("before")
+    guard before.owner == d.pid, before.role == kAXTextAreaRole as String, before.window != nil, before.pane != nil else {
+        throw Failure("before Cmd+Opt+S the keyboard is not on Tako's terminal: \(before); \(diagnostics())")
+    }
     // The legacy toggle and Escape leave the permanent sidebar where it is.
     d.key(Key.s, [.maskCommand, .maskAlternate])
     d.key(Key.escape)
     usleep(800_000)
     guard shown() else { throw Failure("Cmd+Opt+S or Escape hid the permanent session sidebar") }
-    try d.run("echo 'sidebar_ok' > \(d.path("sidebar_witness"))")
-    try d.expect("sidebar_witness", "sidebar_ok\n", "terminal keyboard input after Cmd+Opt+S")
+    // The same terminal pane must still be the keyboard's recipient. This is
+    // checked before Ctrl+C, which could not bring back a lost recipient.
+    let after = try recipient("after")
+    guard after.owner == d.pid, after.role == before.role, after.window == before.window, after.pane == before.pane else {
+        throw Failure("Cmd+Opt+S or Escape moved the keyboard off the terminal: before \(before), after \(after); \(diagnostics())")
+    }
+    // The Escape reached that shell, which then holds it as a pending Meta
+    // prefix: readline would take the next typed letter with it. Ctrl+C,
+    // through the same key path, clears the line and that state.
+    d.key(Key.c, .maskControl)
+    usleep(300_000)
+    do {
+        try d.run("echo 'sidebar_ok' > \(d.path("sidebar_witness"))")
+        try d.expect("sidebar_witness", "sidebar_ok\n", "terminal keyboard input after Cmd+Opt+S")
+    } catch {
+        throw Failure("\(error); recipient \(after); \(diagnostics())")
+    }
 }

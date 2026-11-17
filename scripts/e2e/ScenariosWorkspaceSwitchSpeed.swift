@@ -52,20 +52,34 @@ func runWorkspaceSwitchSpeedScenario(_ d: Driver) throws {
     }
     // The fast user route in the permanent-sidebar design is its workspace
     // header, not the retired tab-bar picker. Keep the same 300 ms bound.
+    // The bound covers the real click: from the mouse-down, posted after
+    // every ownership check, to the expected window set alone on screen
+    // (5 ms polling). The ownership checks before it and the takoctl
+    // verification after it are timed and printed, but outside the bound.
     for target in ["E2ESpeed", "Default", "E2ESpeed", "Default"] {
         let want = target == "E2ESpeed" ? speedWindows : defaultWindows
         guard let window = d.activeOnScreenWindow(),
               let header = d.element(withIdentifier: "SessionSidebarWorkspace-\(target)", root: window),
               let frame = d.axFrame(header) else { throw Failure("no visible \(target) workspace header") }
-        let started = Date()
-        try d.click(at: CGPoint(x: frame.midX, y: frame.midY))
-        guard d.wait(for: { d.onScreenWindowNumbers() == want }, timeout: 5),
-              (try d.workspaceCurrent()?["name"] as? String) == target else {
-            throw Failure("sidebar switch to \(target) did not show its workspace alone")
+        let harness = ProcessInfo.processInfo.systemUptime
+        let pressed = try d.clickTimed(at: CGPoint(x: frame.midX, y: frame.midY))
+        var visible: TimeInterval?
+        while ProcessInfo.processInfo.systemUptime - pressed < 5 {
+            if d.onScreenWindowNumbers() == want { visible = ProcessInfo.processInfo.systemUptime; break }
+            usleep(5_000)
         }
-        let shown = Date().timeIntervalSince(started)
+        guard let visible else {
+            throw Failure("sidebar switch to \(target): its window never came on screen alone (\(d.onScreenWindowNumbers()) vs \(want))")
+        }
+        let current = try d.workspaceCurrent()?["name"] as? String
+        let verified = ProcessInfo.processInfo.systemUptime
+        guard current == target else {
+            throw Failure("sidebar switch to \(target) showed its windows but takoctl reports \(current ?? "nil")")
+        }
+        let shown = visible - pressed
         slowest = max(slowest, shown)
-        timings.append(String(format: "sidebar %@ on screen %.0f ms", target, shown * 1000))
+        timings.append(String(format: "sidebar %@ on screen %.0f ms (checks %.0f, verify %.0f, harness %.0f)", target,
+                              shown * 1000, (pressed - harness) * 1000, (verified - visible) * 1000, (verified - harness) * 1000))
         usleep(300_000)
     }
     // The current application Workspace menu remains usable. The old

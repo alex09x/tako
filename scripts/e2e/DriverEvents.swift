@@ -191,6 +191,16 @@ extension Driver {
     }
 
     func click(at point: CGPoint, count: Int = 1) throws {
+        _ = try clickTimed(at: point, count: count)
+    }
+
+    /// `click(at:count:)` with the same ownership checks and events, returning
+    /// the monotonic time (`ProcessInfo.systemUptime`) taken immediately
+    /// before the first mouse-down is posted, after every check: the start
+    /// of what the click itself costs, without the checks' own time.
+    @discardableResult
+    func clickTimed(at point: CGPoint, count: Int = 1) throws -> TimeInterval {
+        var pressed: TimeInterval?
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline {
             if let owner = topmostOwner(at: point), owner == pid { break }
@@ -212,11 +222,13 @@ extension Driver {
             else { throw Failure("could not create mouse events") }
             down.setIntegerValueField(.mouseEventClickState, value: Int64(i))
             up.setIntegerValueField(.mouseEventClickState, value: Int64(i))
+            if pressed == nil { pressed = ProcessInfo.processInfo.systemUptime }
             down.post(tap: .cghidEventTap)
             usleep(20_000)
             up.post(tap: .cghidEventTap)
             usleep(20_000)
         }
+        return pressed ?? ProcessInfo.processInfo.systemUptime
     }
 
     /// Window-list filtering misses some system overlays. Check the actual
