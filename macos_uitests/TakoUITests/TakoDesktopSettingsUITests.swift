@@ -40,6 +40,7 @@ final class TakoDesktopSettingsUITests: TakoDesktopDesignCase {
         XCTAssertEqual(size.value as? String, "13.5")
         selectSection("interface", in: app)
         let light = settings(in: app).buttons["DesktopAppAppearance-light"].firstMatch
+        reveal(light, in: app)
         XCTAssertTrue(light.isHittable)
         light.click()
         captureSettings(app, name: "Light application interface with independent terminal typography")

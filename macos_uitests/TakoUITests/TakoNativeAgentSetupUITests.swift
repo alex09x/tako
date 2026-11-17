@@ -54,14 +54,16 @@ final class TakoNativeAgentSetupUITests: TakoCustomConfigCase {
             let skill = try String(contentsOf: directory.appendingPathComponent("skills/tako/SKILL.md"), encoding: .utf8)
             XCTAssertTrue(skill.contains("Tako Terminal Integration") || skill.contains("name: tako"))
         }
-        let qwen = try object(home.appendingPathComponent(".qwen/settings.json"))
-        XCTAssertNotNil((qwen["hooks"] as? [String: Any])?["UserPromptSubmit"])
-        let museDirectory = home.appendingPathComponent(".config/muse")
-        let muse = try object(museDirectory.appendingPathComponent("settings.json"))
-        XCTAssertEqual(Set(try XCTUnwrap(muse["managed_hooks_env_vars"] as? [String])), Set(["TAKO_SURFACE_ID", "TAKO_SOCKET"]))
-        let managed = try XCTUnwrap(muse["managed_hooks_path"] as? String)
-        let hooks = try object(museDirectory.appendingPathComponent(managed))
-        XCTAssertNotNil((hooks["hooks"] as? [String: Any])?["Stop"])
+        // Connect installs the skill. Status now arrives through OSC 7501;
+        // it must not create the removed status hooks or rewrite unrelated settings.
+        for root in [".qwen", ".config/muse"] {
+            let path = home.appendingPathComponent(root).appendingPathComponent("settings.json")
+            XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), #"{"test-preserved":true}"#)
+            let settings = try object(path)
+            XCTAssertNil(settings["hooks"])
+            XCTAssertNil(settings["managed_hooks_path"])
+            XCTAssertNil(settings["managed_hooks_env_vars"])
+        }
         for other in [".claude/settings.json", ".codex/hooks.json", ".gemini/settings.json"] {
             XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(other).path))
         }

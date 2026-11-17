@@ -324,6 +324,12 @@ extension TakoScopedAppearanceHelpers {
     /// current theme and font, whatever covers it on screen.
     func rendererImage(of paneID: String) throws -> CGImage {
         let socket = try String(contentsOf: testRoot.appendingPathComponent("control-socket"), encoding: .utf8)
+        return try Self.rendererImage(of: paneID, socket: socket)
+    }
+
+    /// Read-only observation shared by setup: it uses the socket and pane ID
+    /// reported by that fixture's shell before any modal panel opens.
+    static func rendererImage(of paneID: String, socket: String) throws -> CGImage {
         let hosts = NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID)
         guard hosts.count == 1, let host = hosts.first?.bundleURL else {
             throw ObservationError.unavailable("Expected exactly one isolated host, found \(hosts.count)")

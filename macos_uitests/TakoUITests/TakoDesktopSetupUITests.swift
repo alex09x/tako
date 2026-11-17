@@ -7,9 +7,108 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import XCTest
 
 final class TakoDesktopSetupUITests: TakoDesktopDesignCase {
+    /// Setup chooses terminal colours, independently of the application's
+    /// palette. Observe the covered terminal through its own renderer.
+    func testAppearanceAppliesAndEscapeResumesAtTheSameStep() throws {
+        let app = try launchDesktop(appearance: "light", configuration: """
+        theme = TakoCore
+        font-family = Monaco
+        font-size = 17
+        font-weight = 550
+        remote-control = on
+        working-directory = \(designDirectory.path)
+        """)
+        let id = try XCTUnwrap(paneIDs(in: app).first)
+        let process = try shellPID(id, phase: "SETUP_COLOR_BEFORE", in: app)
+        let receipt = designDirectory.appendingPathComponent("setup-source")
+        app.typeText("printf '%s\\n%s' \"$TAKO_SURFACE_ID\" \"$TAKO_SOCKET\" > setup-source\n")
+        try requireSetup { FileManager.default.fileExists(atPath: receipt.path) }
+        let fields = try String(contentsOf: receipt, encoding: .utf8).split(separator: "\n").map(String.init)
+        XCTAssertEqual(fields.count, 2)
+        XCTAssertEqual(fields.first?.lowercased(), id.lowercased())
+        let socket = try XCTUnwrap(fields.last)
+        func terminalBackground() throws -> [Double] {
+            let image = try TakoScopedAppearanceHelpers.rendererImage(of: id, socket: socket)
+            let bitmap = NSBitmapImageRep(cgImage: image)
+            return try rgb(bitmap, x: bitmap.pixelsWide - 10, y: bitmap.pixelsHigh - 10)
+        }
+        try openSetupForAppearance(app)
+        let wizard = app.descendants(matching: .any)["SetupWizard"].firstMatch
+        let shellColor = try setupBackground(wizard)
+        XCTAssertGreaterThan(shellColor.reduce(0, +), 2.4, "The application was explicitly launched with a light interface")
+        let before = try terminalBackground()
+        func choose(_ name: String, light: Bool) throws {
+            let card = app.buttons["SetupTheme-\(name)"]
+            XCTAssertTrue(card.isHittable)
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).click()
+            try requireSetup { card.value as? String == "Selected" }
+            try requireSetup { guard let c = try? terminalBackground() else { return false }
+                return light ? c.reduce(0, +) > 2.4 : c.reduce(0, +) < 1.0 }
+            XCTAssertEqual(try configText().components(separatedBy: "\n").filter { $0.hasPrefix("theme = ") }, ["theme = \(name)"])
+            for line in ["font-family = Monaco", "font-size = 17", "font-weight = 550", "app-appearance = light"] {
+                XCTAssertTrue(try configText().contains(line), line)
+            }
+            for (actual, expected) in zip(try setupBackground(wizard), shellColor) {
+                XCTAssertEqual(actual, expected, accuracy: 0.03, "A terminal theme must not recolor app chrome")
+            }
+        }
+        try choose("Tako Forest", light: false)
+        let forest = try terminalBackground()
+        XCTAssertGreaterThan(zip(before, forest).reduce(0) { $0 + abs($1.0 - $1.1) }, 0.03)
+        XCTAssertFalse(app.popUpButtons["SetupFont"].exists)
+        XCTAssertFalse(app.steppers["SetupFontSize"].exists)
+        try choose("Tako Dawn", light: true)
+        try choose("Tako Forest", light: false)
+        attachCanvas(app, named: "Setup changes terminal colours and preserves app appearance")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(wizard.waitForNonExistence(timeout: 5))
+        let terminal = pane(id, in: app).textViews.firstMatch
+        XCTAssertTrue(terminal.exists)
+        XCTAssertEqual(terminal.frame.maxY, pane(id, in: app).frame.maxY - Self.paneBodyBottomInset, accuracy: 2)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: terminal.screenshot().pngRepresentation))
+        for (actual, expected) in zip(try rgb(bitmap, x: bitmap.pixelsWide - 10, y: bitmap.pixelsHigh - 10), forest) {
+            XCTAssertEqual(actual, expected, accuracy: 0.035, "The uncovered terminal shows the chosen background")
+        }
+        try openSetupForAppearance(app)
+        let title = app.staticTexts["SetupStepTitle"].firstMatch
+        XCTAssertEqual((title.value as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title.label, "Theme")
+        XCTAssertEqual(app.buttons["SetupTheme-Tako Forest"].value as? String, "Selected")
+        app.buttons["SetupLater"].click()
+        XCTAssertEqual(try shellPID(id, phase: "SETUP_COLOR_AFTER", in: app, focus: false), process)
+    }
+
+    private func requireSetup(_ predicate: @escaping () -> Bool) throws {
+        guard TakoScopedAppearanceHelpers.wait(predicate) else {
+            throw TakoScopedAppearanceHelpers.ObservationError.unavailable("Setup did not reach the expected UI or rendered state")
+        }
+    }
+
+    private func openSetupForAppearance(_ app: XCUIApplication) throws {
+        app.menuBars.menuBarItems.element(boundBy: 1).click()
+        let item = app.menuItems["Set Up Tako…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        item.click()
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
+        if !app.buttons["SetupStep-appearance"].exists { app.buttons["SetupNext"].click() }
+        app.buttons["SetupStep-appearance"].click()
+    }
+
+    private func setupBackground(_ wizard: XCUIElement) throws -> [Double] {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: wizard.screenshot().pngRepresentation))
+        // The footer's empty bottom padding, six logical points above its edge.
+        let scale = Double(bitmap.pixelsHigh) / wizard.frame.height
+        return try rgb(bitmap, x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh - Int((6 * scale).rounded()))
+    }
+
+    private func rgb(_ bitmap: NSBitmapImageRep, x: Int, y: Int) throws -> [Double] {
+        let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+        return [color.redComponent, color.greenComponent, color.blueComponent]
+    }
+
     func testFiveStageSetupCanFinishWithoutInstallingSkillsOrGrantingPermissions() throws {
         let app = try launchDesktop(setup: true)
         let wizard = app.descendants(matching: .any)["SetupWizard"].firstMatch

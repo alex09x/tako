@@ -52,7 +52,8 @@ final class TakoFloatingTerminalPersistenceUITests: TakoFloatingTerminalCase {
         XCTAssertEqual(restored.minX, area.minX + gap, accuracy: 3)
         XCTAssertEqual(restored.minY, area.minY + gap, accuracy: 3)
         XCTAssertEqual(restored.width, area.width - 2 * gap, accuracy: 3)
-        XCTAssertLessThanOrEqual(restored.maxY, minimizedCard(second, in: app).frame.minY - 4)
+        XCTAssertEqual(restored.maxY, area.maxY - gap, accuracy: 3,
+                       "The overlay shelf reserves no terminal height, including after restore")
         XCTAssertEqual(try shellPID(first, phase: "PERSIST_A_AFTER", in: app, focus: false), firstProcess)
 
         minimizedCard(second, in: app).click()

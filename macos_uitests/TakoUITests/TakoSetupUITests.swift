@@ -108,93 +108,6 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertFalse(wizard.waitForExistence(timeout: 2), "Completed setup must not reappear on relaunch")
     }
 
-    func testAppearanceAppliesAndEscapeResumesAtTheSameStep() async throws {
-        let app = try isolatedApplication()
-        let initialConfig = try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"])
-        var initial = try String(contentsOfFile: initialConfig, encoding: .utf8)
-        initial += "\nfont-family = Monaco\nfont-size = 17\nfont-weight = 550\n"
-        try initial.write(toFile: initialConfig, atomically: true, encoding: .utf8)
-        app.launch()
-        try openSetup(app)
-        app.buttons["SetupStep-appearance"].click()
-        let themes = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "SetupTheme-"))
-        XCTAssertTrue(themes.firstMatch.waitForExistence(timeout: 5))
-        let choice = try XCTUnwrap(themes.allElementsBoundByIndex.first { ($0.value as? String) == "Not selected" })
-        let chosenName = choice.label
-        let preview = app.descendants(matching: .any)["SetupWizard"].firstMatch
-        XCTAssertTrue(preview.waitForExistence(timeout: 5))
-        let before = try previewBackground(preview)
-        choice.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).click()
-        let selected = NSPredicate(format: "value == %@", "Selected")
-        let selectedExpectation = expectation(for: selected, evaluatedWith: choice)
-        await fulfillment(of: [selectedExpectation], timeout: 5)
-        let configPath = try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"])
-        let text = try String(contentsOfFile: configPath, encoding: .utf8)
-        XCTAssertTrue(text.contains("theme = \(chosenName)"), "Choosing a preset must persist immediately")
-        XCTAssertTrue(text.contains("font-family = Monaco"))
-        XCTAssertTrue(text.contains("font-size = 17"))
-        XCTAssertTrue(text.contains("font-weight = 550"))
-        attach(app, name: "Setup whole window after color selection")
-        print("Setup colors before=\(before), after=\(try previewBackground(preview))")
-        let changed = NSPredicate { _, _ in
-            guard let after = try? self.previewBackground(preview) else { return false }
-            return zip(before, after).reduce(0.0) { $0 + abs($1.0 - $1.1) } > 0.03
-        }
-        await fulfillment(of: [expectation(for: changed, evaluatedWith: preview)], timeout: 5)
-        let appliedBackground = try previewBackground(preview)
-        XCTAssertFalse(app.popUpButtons["SetupFont"].exists)
-        XCTAssertFalse(app.steppers["SetupFontSize"].exists)
-        let light = app.buttons["SetupTheme-Tako Dawn"]
-        light.click()
-        XCTAssertEqual(light.value as? String, "Selected")
-        XCTAssertGreaterThan(try previewBackground(preview).reduce(0, +), 2.4,
-                             "The whole setup window must use the selected light palette")
-        choice.click()
-        XCTAssertEqual(choice.value as? String, "Selected")
-        XCTAssertLessThan(try previewBackground(preview).reduce(0, +), 1.0,
-                          "Switching back must also recolor the whole window")
-        attach(app, name: "Setup selected theme")
-        app.typeKey(.escape, modifierFlags: [])
-        XCTAssertTrue(app.buttons["SetupNext"].waitForNonExistence(timeout: 5))
-        try assertTerminalFillsItsHost(app, background: appliedBackground)
-        try openSetup(app)
-        let title = app.staticTexts["SetupStepTitle"].firstMatch
-        XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertEqual(title.label, "Theme", "reopening resumes at the Theme stage")
-        XCTAssertEqual(app.buttons["SetupTheme-\(chosenName)"].value as? String, "Selected")
-        app.buttons["SetupLater"].click()
-        try await assertKeyboardReturnsToTerminal(app)
-    }
-
-    private func previewBackground(_ preview: XCUIElement) throws -> [Double] {
-        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: preview.screenshot().pngRepresentation))
-        let color = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide - 40, y: 80)?.usingColorSpace(.sRGB))
-        return [color.redComponent, color.greenComponent, color.blueComponent]
-    }
-
-    private func assertTerminalFillsItsHost(_ app: XCUIApplication, background: [Double]) throws {
-        let terminal = app.descendants(matching: .any)["terminal"].firstMatch
-        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
-        let window = app.windows.firstMatch
-        XCTAssertEqual(terminal.frame.minX, window.frame.minX, accuracy: 1.5)
-        XCTAssertEqual(terminal.frame.maxX, window.frame.maxX, accuracy: 1.5)
-        XCTAssertEqual(terminal.frame.maxY, window.frame.maxY, accuracy: 1.5)
-        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: terminal.screenshot().pngRepresentation))
-        // Skip the native window's one-pixel outline and rounded corner.
-        // Exact drawable corners are covered by Metal and CPU bitmap tests.
-        for (x, y) in [(bitmap.pixelsWide - 5, 12), (bitmap.pixelsWide - 28, bitmap.pixelsHigh - 28),
-                       (bitmap.pixelsWide / 2, bitmap.pixelsHigh - 5), (5, bitmap.pixelsHigh / 2)] {
-            let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-            for (actual, expected) in zip([color.redComponent, color.greenComponent, color.blueComponent], background) {
-                XCTAssertEqual(actual, expected, accuracy: 0.035, "Terminal edge at \(x),\(y) must match the selected background")
-            }
-        }
-        let evidence = XCTAttachment(screenshot: terminal.screenshot())
-        evidence.name = "Edge to edge terminal after theme selection"
-        evidence.lifetime = .keepAlways
-        add(evidence)
-    }
-
     func testReentryIsSingleInstanceAndNotificationStepIsOptional() async throws {
         let app = try isolatedApplication()
         app.launch()
@@ -279,7 +192,7 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10))
         let config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any])
         XCTAssertEqual(config["setup-test-preserved"] as? Bool, true)
-        XCTAssertNotNil(config["hooks"])
+        XCTAssertNil(config["hooks"], "Connect installs a skill, not removed status hooks")
         let skillText = try String(contentsOf: skill, encoding: .utf8)
         XCTAssertTrue(skillText.contains("name: tako") || skillText.contains("Tako Terminal Integration"))
         XCTAssertEqual(try String(contentsOf: codex, encoding: .utf8), "{}")

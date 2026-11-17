@@ -12,7 +12,8 @@ import AppKit
 import XCTest
 
 class TakoFloatingTerminalCase: TakoCustomConfigCase {
-    static let expectedPaneHeaderHeight: CGFloat = 32
+    /// Frozen desktop reference: `DesktopCanvasMetrics.paneHeaderHeight`.
+    static let expectedPaneHeaderHeight: CGFloat = 28
     /// `DesktopCanvasMetrics.paneGap`: a tile and the maximized card sit this far in from the canvas.
     static let canvasPaneGap: CGFloat = 8
     /// `FloatingPaneGeometry.bodyInsets.bottom`: the terminal's margin inside its card.

@@ -70,8 +70,9 @@ final class TakoFloatingDesignUITests: TakoFloatingTerminalCase {
         let card = minimizedCard(second, in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertEqual(card.frame.height, 30, accuracy: 2)
-        XCTAssertLessThanOrEqual(pane(first, in: app).frame.maxY, card.frame.minY - 4,
-                                 "The capsule must not cover background terminal rows")
+        assertRect(pane(first, in: app).frame, equals: backgroundFrame)
+        // The approved shelf overlays the field; it reserves no terminal height.
+        XCTAssertEqual(card.frame.maxY, canvas(in: app).frame.maxY - 14, accuracy: 2)
         attachCanvas(app, named: "Right-hand capsule without a full-width shelf bar")
         card.click()
         waitForPaneCount(2, in: app)

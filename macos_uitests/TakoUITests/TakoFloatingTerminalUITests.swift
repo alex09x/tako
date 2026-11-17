@@ -125,8 +125,8 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         XCTAssertEqual(restoredMaximum.minX, workspace.minX + gap, accuracy: 3)
         XCTAssertEqual(restoredMaximum.minY, workspace.minY + gap, accuracy: 3)
         XCTAssertEqual(restoredMaximum.width, workspace.width - 2 * gap, accuracy: 3)
-        XCTAssertLessThanOrEqual(restoredMaximum.maxY, minimizedCard(second, in: app).frame.minY - 4,
-                                 "The shelf must not cover a maximized terminal's last rows")
+        XCTAssertEqual(restoredMaximum.maxY, workspace.maxY - gap, accuracy: 3,
+                       "The overlay shelf reserves no terminal height")
         XCTAssertEqual(try shellPID(first, phase: "SHELF_A_AFTER", in: app, focus: false), firstProcess)
 
         minimizedCard(second, in: app).click()
