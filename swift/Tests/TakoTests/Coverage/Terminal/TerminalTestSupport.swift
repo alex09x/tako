@@ -76,6 +76,9 @@ enum TerminalTestSupport {
             defer: false)
         window.isReleasedWhenClosed = false
         controller.window = window
+        // Terminal.xib wires this outlet; the manual fixture must do it too,
+        // or close never retires its hosting graph through windowWillClose.
+        window.delegate = controller
         return (controller, window)
     }
 
