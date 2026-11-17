@@ -82,6 +82,10 @@ struct SessionListScreen: View {
                     HostKeyPrompt(
                         host: host,
                         presented: presented,
+                        // The requested 1 s, unless a Debug UI test holds it (LaunchOptions).
+                        sleepBeforeArming: { requested in
+                            try await Task.sleep(for: LaunchOptions.hostKeyArmingHold ?? requested)
+                        },
                         onTrust: {
                             KnownHosts.trust(
                                 host: draft.host,

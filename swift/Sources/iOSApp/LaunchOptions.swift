@@ -116,6 +116,19 @@ enum LaunchOptions {
 #endif
     }
 
+    /// `-takoHostKeyArmingHold`: the host-key prompt's Trust and Cancel stay
+    /// dead labels for a fixed 5 s instead of 1 s. Only the UI test that taps
+    /// a dead label uses it, so its tap can land before arming on a slow
+    /// simulator; the 1 s policy itself is held by the default-launch test
+    /// and the controlled-clock unit test. Debug only; Release returns nil.
+    static var hostKeyArmingHold: Duration? {
+#if DEBUG
+        return arguments.contains("-takoHostKeyArmingHold") ? .seconds(5) : nil
+#else
+        return nil
+#endif
+    }
+
     /// `-takoTrustHostKey` accepts the first host key without asking, which
     /// is exactly what a screenshot run needs and exactly what a real one
     /// must not do.
