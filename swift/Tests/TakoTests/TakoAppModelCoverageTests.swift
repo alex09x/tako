@@ -146,7 +146,13 @@ struct TakoNamespaceHelperCoverageTests {
         defer { view.close() }
         let window = NSWindow(
             contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = view
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        #expect(window.isVisible)
+        #expect(window.makeFirstResponder(window))
+        #expect(window.firstResponder === window)
 
         Tako.moveFocus(to: view)
         #expect(window.firstResponder === view)

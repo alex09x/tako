@@ -209,6 +209,8 @@ struct TerminalControllerMultiTabGroupTests {
             TerminalTestSupport.tearDown(a, aWindow)
             TerminalTestSupport.tearDown(b, bWindow)
         }
+        let group = Tako.CustomTabGroup.group(for: aWindow)
+        group.select(aWindow)
         aWindow.makeKeyAndOrderFront(nil)
         let node = try #require(a.surfaceTree.root)
 
@@ -216,10 +218,18 @@ struct TerminalControllerMultiTabGroupTests {
 
         #expect(a.surfaceTree.isEmpty)
         #expect(aWindow.isVisible)
-        #expect(bWindow.isVisible)
+        // An inactive tab need not be onscreen; it must remain open and intact.
+        #expect(group.selectedWindow === aWindow)
+        #expect(group.windows.contains(bWindow))
+        #expect(!b.surfaceTree.isEmpty)
 
         a.close(aWindow)
         #expect(!aWindow.isVisible)
+        #expect(group.selectedWindow === bWindow)
+        let deadline = Date().addingTimeInterval(1)
+        while !bWindow.isVisible && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
         #expect(bWindow.isVisible)
     }
 }
