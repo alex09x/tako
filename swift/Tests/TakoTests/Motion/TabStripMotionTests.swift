@@ -22,71 +22,83 @@ struct TabStripMotionTests {
     private let key = ObjectIdentifier(NSObject())
 
     @Test func aPillThatFailsShakesOnTheDesignsCurveFromThatMoment() {
-        let bar = Tako.TabBarView(frame: .zero)
-        #expect(bar.shakeOffset(for: key, state: .failed, previous: .working, now: 100) == 0)
-        for t in stride(from: 0.02, to: 0.448, by: 0.03) {
-            let dx = bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 100 + t)
-            #expect(abs(dx - LivingAnimationState.failedShakeOffset(elapsed: t)) < 0.001, "at \(t)")
+        withMotionOn {
+            let bar = Tako.TabBarView(frame: .zero)
+            #expect(bar.shakeOffset(for: key, state: .failed, previous: .working, now: 100) == 0)
+            for t in stride(from: 0.02, to: 0.448, by: 0.03) {
+                let dx = bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 100 + t)
+                #expect(abs(dx - LivingAnimationState.failedShakeOffset(elapsed: t)) < 0.001, "at \(t)")
+            }
+            #expect(bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 100.5) == 0)
+            #expect(bar.failedSince.isEmpty)
         }
-        #expect(bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 100.5) == 0)
-        #expect(bar.failedSince.isEmpty)
     }
 
     @Test func aPillAlreadyFailedOrSeenFirstAsFailedDoesNotShake() {
-        let bar = Tako.TabBarView(frame: .zero)
-        #expect(bar.shakeOffset(for: key, state: .failed, previous: nil, now: 0) == 0)
-        #expect(bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 0.064) == 0)
-        _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 1)
-        // Leaving failed mid-shake stops it.
-        #expect(bar.shakeOffset(for: key, state: .working, previous: .failed, now: 1.064) == 0)
-        #expect(bar.failedSince.isEmpty)
+        withMotionOn {
+            let bar = Tako.TabBarView(frame: .zero)
+            #expect(bar.shakeOffset(for: key, state: .failed, previous: nil, now: 0) == 0)
+            #expect(bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 0.064) == 0)
+            _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 1)
+            // Leaving failed mid-shake stops it.
+            #expect(bar.shakeOffset(for: key, state: .working, previous: .failed, now: 1.064) == 0)
+            #expect(bar.failedSince.isEmpty)
+        }
     }
 
     @Test func theChipSlidesToItsNewWidthInsteadOfJumping() {
-        let bar = Tako.TabBarView(frame: .zero)
-        #expect(bar.displayedChipWidth(target: 80, now: 10) == 80)
-        #expect(bar.displayedChipWidth(target: 100, now: 20) == 80)
-        let mid = bar.displayedChipWidth(target: 100, now: 20.075)
-        #expect(mid > 85 && mid < 100, "half way: \(mid)")
-        #expect(bar.displayedChipWidth(target: 100, now: 20.16) == 100)
-        #expect(bar.chipSlide == nil)
-        // Back down when the badge goes, from wherever it is.
-        #expect(bar.displayedChipWidth(target: 80, now: 30) == 100)
-        #expect(bar.displayedChipWidth(target: 80, now: 30.2) == 80)
+        withMotionOn {
+            let bar = Tako.TabBarView(frame: .zero)
+            #expect(bar.displayedChipWidth(target: 80, now: 10) == 80)
+            #expect(bar.displayedChipWidth(target: 100, now: 20) == 80)
+            let mid = bar.displayedChipWidth(target: 100, now: 20.075)
+            #expect(mid > 85 && mid < 100, "half way: \(mid)")
+            #expect(bar.displayedChipWidth(target: 100, now: 20.16) == 100)
+            #expect(bar.chipSlide == nil)
+            // Back down when the badge goes, from wherever it is.
+            #expect(bar.displayedChipWidth(target: 80, now: 30) == 100)
+            #expect(bar.displayedChipWidth(target: 80, now: 30.2) == 80)
+        }
     }
 
     /// Every tab is a window; those behind the selected one are laid out on
     /// every refresh but never drawn, so a slide there would never end.
     @Test func aHiddenTabWindowTakesTheNewWidthAtOnceAndRunsNoFrames() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        defer { window.close() }
-        let bar = Tako.TabBarView(frame: .zero)
-        window.contentView?.addSubview(bar)
-        #expect(!window.isVisible)
-        _ = bar.displayedChipWidth(target: 80, now: 0)
-        #expect(bar.displayedChipWidth(target: 100, now: 1) == 100)
-        #expect(bar.chipSlide == nil)
-        _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 2)
-        #expect(bar.motionLink == nil)
+        withMotionOn {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            defer { window.close() }
+            let bar = Tako.TabBarView(frame: .zero)
+            window.contentView?.addSubview(bar)
+            #expect(!window.isVisible)
+            _ = bar.displayedChipWidth(target: 80, now: 0)
+            #expect(bar.displayedChipWidth(target: 100, now: 1) == 100)
+            #expect(bar.chipSlide == nil)
+            _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 2)
+            #expect(bar.motionLink == nil)
+        }
     }
 
     @Test func motionThatRanItsTimeEndsUndrawn() {
-        let bar = Tako.TabBarView(frame: .zero)
-        _ = bar.displayedChipWidth(target: 80, now: 0)
-        _ = bar.displayedChipWidth(target: 100, now: 1)
-        _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 1)
-        #expect(bar.expireMotion(now: 1.1))
-        #expect(!bar.expireMotion(now: 1.5))
-        #expect(bar.chipSlide == nil && bar.failedSince.isEmpty)
+        withMotionOn {
+            let bar = Tako.TabBarView(frame: .zero)
+            _ = bar.displayedChipWidth(target: 80, now: 0)
+            _ = bar.displayedChipWidth(target: 100, now: 1)
+            _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 1)
+            #expect(bar.expireMotion(now: 1.1))
+            #expect(!bar.expireMotion(now: 1.5))
+            #expect(bar.chipSlide == nil && bar.failedSince.isEmpty)
+        }
     }
 
     @Test func aChangeMidSlideStartsFromWhereTheChipIs() {
-        let bar = Tako.TabBarView(frame: .zero)
-        _ = bar.displayedChipWidth(target: 80, now: 0)
-        _ = bar.displayedChipWidth(target: 100, now: 1)
-        let there = bar.displayedChipWidth(target: 100, now: 1.05)
-        #expect(bar.displayedChipWidth(target: 80, now: 1.05) == there)
+        withMotionOn {
+            let bar = Tako.TabBarView(frame: .zero)
+            _ = bar.displayedChipWidth(target: 80, now: 0)
+            _ = bar.displayedChipWidth(target: 100, now: 1)
+            let there = bar.displayedChipWidth(target: 100, now: 1.05)
+            #expect(bar.displayedChipWidth(target: 80, now: 1.05) == there)
+        }
     }
 
     @Test func enablingReduceMotionStopsASlideAndShakeAlreadyInProgress() {
