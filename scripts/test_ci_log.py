@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -225,12 +226,16 @@ class CiLogTests(unittest.TestCase):
 
 # Like scripts/ci-swift-watchdog.py: starts the real work in its own session
 # and stops that group from its SIGTERM handler. A SIGKILL would skip it.
+# Every process names the test's own directory on its command line, so
+# cleanup can tell it from an unrelated process that reused its PID.
+WORKER = "import sys, time; time.sleep(300)"
 WATCHDOG_LIKE = r"""
 import os, signal, subprocess, sys, time
 state = sys.argv[1]
-worker = subprocess.Popen(["sleep", "300"], start_new_session=True)
+open(os.path.join(state, "watchdog.pid"), "w").write(str(os.getpid()))
+worker = subprocess.Popen([sys.executable, "-c", %r, state], start_new_session=True)
 open(os.path.join(state, "worker.pid"), "w").write(str(worker.pid))
-def stop(number, _frame):
+def stop(number, _frame):""" % WORKER + r"""
     os.killpg(worker.pid, signal.SIGTERM)
     worker.wait()
     print("watchdog cleanup: worker group stopped", flush=True)
@@ -242,6 +247,17 @@ while True:
     time.sleep(0.1)
 """
 
+# Closes both output streams, ignores SIGTERM and stays alive.
+SILENT_STAYER = r"""
+import os, signal, sys, time
+state = sys.argv[1]
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(os.path.join(state, "watchdog.pid"), "w").write(str(os.getpid()))
+os.close(1)
+os.close(2)
+time.sleep(300)
+"""
+
 
 class CiLogStopTests(unittest.TestCase):
     def setUp(self):
@@ -251,6 +267,25 @@ class CiLogStopTests(unittest.TestCase):
         self.script = os.path.join(self.dir, "watchdog_like.py")
         with open(self.script, "w") as f:
             f.write(WATCHDOG_LIKE)
+        # Runs before the directory is removed (cleanups are LIFO), whether
+        # the test passed, failed or met a mutant.
+        self.addCleanup(self.end_owned_processes)
+
+    def owned_pid(self, name):
+        """The PID in `name` if that process is still this test's own."""
+        try:
+            with open(os.path.join(self.dir, name)) as f:
+                pid = int(f.read())
+        except (OSError, ValueError):
+            return None
+        r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True)
+        return pid if r.returncode == 0 and self.dir in r.stdout else None
+
+    def end_owned_processes(self):
+        for name in ("watchdog.pid", "worker.pid"):
+            pid = self.owned_pid(name)
+            if pid is not None:
+                _kill_quietly(pid)
 
     def wait_for(self, name, seconds=10):
         path = os.path.join(self.dir, name)
@@ -259,15 +294,10 @@ class CiLogStopTests(unittest.TestCase):
             time.sleep(0.05)
         return os.path.exists(path)
 
-    def worker_alive(self):
-        with open(os.path.join(self.dir, "worker.pid")) as f:
-            pid = int(f.read())
-        self.addCleanup(lambda: _kill_quietly(pid))
+    def worker_alive(self, name="worker.pid"):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+            if self.owned_pid(name) is None:
                 return False
             time.sleep(0.05)
         return True
@@ -313,6 +343,34 @@ class CiLogStopTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 5)
         self.assertFalse(os.path.exists(os.path.join(self.dir, "cleaned")))
         proc.stdout.close()
+        # Its worker is still running (no cleanup ran); tearDown ends it.
+        self.assertIsNotNone(self.owned_pid("worker.pid"))
+
+    def test_a_signalled_command_that_closed_its_output_is_still_stopped_after_the_grace(self):
+        script = os.path.join(self.dir, "silent_stayer.py")
+        with open(script, "w") as f:
+            f.write(SILENT_STAYER)
+
+        def cancel():
+            if self.wait_for("watchdog.pid"):
+                time.sleep(0.5)  # past the child's os.close: the wrapper is waiting after EOF
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        threading.Thread(target=cancel, daemon=True).start()
+        started = time.monotonic()
+        seconds, status, _ = ci_log.run_logged([sys.executable, script, self.dir], os.path.join(self.dir, "raw.log"),
+                                               out=io.StringIO(), grace=0.5)
+        self.assertEqual(status, 128 + signal.SIGTERM)
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertFalse(self.worker_alive("watchdog.pid"), "the command was killed after the grace")
+        self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL, "the wrapper restored the handler")
+
+    def test_an_ordinary_command_that_closes_its_output_early_still_finishes_normally(self):
+        code = "import os, time; print('done', flush=True); os.close(1); os.close(2); time.sleep(0.6)"
+        seconds, status, text = ci_log.run_logged(
+            [sys.executable, "-c", code], os.path.join(self.dir, "raw.log"), out=io.StringIO(), grace=0.1)
+        self.assertEqual((status, text), (0, "done\n"))
+        self.assertGreaterEqual(seconds, 0.5, "the wrapper waited for the command itself, not its EOF")
 
 
 def _kill_quietly(pid):

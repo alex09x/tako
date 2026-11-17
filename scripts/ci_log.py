@@ -180,7 +180,7 @@ def stop_child(proc, grace=None):
 
 
 def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
-               verbose=None, heartbeat=HEARTBEAT_SECONDS, exclusive=False):
+               verbose=None, heartbeat=HEARTBEAT_SECONDS, exclusive=False, grace=None):
     """Runs `cmd` with its stdout and stderr in `raw_path` byte for byte.
     Returns (seconds, exit code, complete output as text).
 
@@ -189,10 +189,13 @@ def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
 
     SIGINT, SIGTERM and SIGHUP sent to the wrapper are passed on to the
     command, whose output is still logged while it cleans up; the result is
-    then 128+signal, never a pass. If the wrapper itself fails, the command
+    then 128+signal, never a pass. A command still running `grace` seconds
+    (STOP_GRACE_SECONDS) after the first signal is killed, whether or not it
+    still holds its output open. If the wrapper itself fails, the command
     is stopped (stop_child) and the error propagates."""
     out = out or sys.stdout
     label = label or os.path.basename(str(cmd[0]))
+    grace = STOP_GRACE_SECONDS if grace is None else grace
     if verbose is None:
         verbose = os.environ.get("TAKO_CI_VERBOSE") == "1"
     parent = os.path.dirname(raw_path)
@@ -221,7 +224,7 @@ def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
             pending = b""
             while True:
                 # A command that ignores the relayed signal is stopped.
-                if received and time.monotonic() - received[0][1] >= STOP_GRACE_SECONDS and proc.poll() is None:
+                if received and time.monotonic() - received[0][1] >= grace and proc.poll() is None:
                     proc.kill()
                 if not selector.select(timeout=min(heartbeat, 0.5 if received else 5.0)):
                     if time.monotonic() - console.last_print >= heartbeat:
@@ -242,11 +245,21 @@ def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
             if pending:
                 console.feed(pending)
             selector.close()
-            code = proc.wait()
+            # The command may close its output and keep running: the same
+            # heartbeat and the same bounded stop after a relayed signal.
+            while True:
+                if received and time.monotonic() - received[0][1] >= grace and proc.poll() is None:
+                    proc.kill()
+                try:
+                    code = proc.wait(timeout=0.2 if received else min(heartbeat, 5.0))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() - console.last_print >= heartbeat:
+                        console.heartbeat(started, raw_path)
         except BaseException:
             # The wrapper failed: never leave the command running unobserved,
             # and let it clean up its own children first.
-            stop_child(proc)
+            stop_child(proc, grace)
             raise
         finally:
             for number, handler in previous.items():
