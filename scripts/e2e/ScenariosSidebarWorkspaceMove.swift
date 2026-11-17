@@ -131,7 +131,12 @@ func runSidebarWorkspaceMoveScenario(_ d: Driver) throws {
 func runSidebarLongListScenario(_ d: Driver) throws {
     d.quit()
     forgetLayout(d)
-    try d.launch(config: "session-persistence = true\nwindow-save-state = always\nremote-control = on\n")
+    // New tabs at the end: the list then holds ListItem00…14 in the order they
+    // were made, ListItem14 last above the destination. With the default
+    // (`current`, each tab right after its parent since 498e307b) the
+    // --no-select tabs stack in reverse and ListItem14 is the first row,
+    // which a 600 pt window cannot show together with the destination.
+    try d.launch(config: "session-persistence = true\nwindow-save-state = always\nremote-control = on\nwindow-new-tab-position = end\n")
     d.setPosition(CGPoint(x: 60, y: 40))
     d.setSize(CGSize(width: 1000, height: 600))
     let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"

@@ -170,9 +170,32 @@ let scenarios: [Scenario] = [
         }
         let before = state()
         print("find-all before Return: \(before)")
+        /// Every window of the app: on screen or not, its terminal's
+        /// selection and its last line, in AX order; and the focused pane.
+        func timeline() -> String {
+            let shown = Set(d.onScreenWindows().compactMap { d.windowID(for: $0) })
+            let windows = d.windows().map { w -> String in
+                let area = d.descendants(of: w, role: kAXTextAreaRole as String).first
+                let selected: String = area.flatMap { d.attribute($0, kAXSelectedTextAttribute) } ?? ""
+                let value: String = area.flatMap { d.attribute($0, kAXValueAttribute) } ?? ""
+                let last = value.split(separator: "\n").last { $0.contains("tty") || $0.contains("output") || $0.contains("found") }
+                return "[\(d.windowID(for: w).map { shown.contains($0) ? "shown" : "hidden" } ?? "?") sel=\(selected) last=\(last ?? "")]"
+            }
+            let f = focused()
+            return "pane \((try? d.focusedPaneId()).flatMap { $0 } ?? "none") focused \(f.role) windows \(windows.joined(separator: " "))"
+        }
         d.key(Key.returnKey)
-
-        guard d.wait(for: { d.selectedText() == query }, timeout: 5) else {
+        let pressed = Date()
+        var seen = ""
+        let selectedInTime = d.wait(for: {
+            let now = timeline()
+            if now != seen {
+                seen = now
+                print(String(format: "find-all +%.2fs: %@", Date().timeIntervalSince(pressed), now))
+            }
+            return d.selectedText() == query
+        }, timeout: 5)
+        guard selectedInTime else {
             throw Failure("selection after Return is [\(d.selectedText())]; before Return: \(before); after: \(state())")
         }
         let after = try d.focusedPaneId()
