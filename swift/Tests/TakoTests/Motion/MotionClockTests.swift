@@ -99,7 +99,9 @@ struct MotionClockTests {
     /// The Overview opens on a frame of five cards; 0.05 s later its clock
     /// starts and the rest of the cards come in.
     @Test func theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts() async {
-        await withMotionOn {
+        // The sixth card is measured as light over the dark body: a light
+        // shell's body is brighter than the card that arrives on it.
+        await withDarkShell { await withMotionOn {
             var n = 0
             LivingAnimationState.shared.onFrame = { if $0 == "overview" { n += 1 } }
             defer { LivingAnimationState.shared.onFrame = nil }
@@ -125,7 +127,7 @@ struct MotionClockTests {
             }
             let before = sixthCard(firstRep), after = sixthCard(probe.snapshot())
             #expect(after > before * 1.12, "the sixth card was there in the first frame: \(before) -> \(after)")
-        }
+        } }
     }
 
     /// Nobody can see Tako: the Overview takes no frames until it is seen.

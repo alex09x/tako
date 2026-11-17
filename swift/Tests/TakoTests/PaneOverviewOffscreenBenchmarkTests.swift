@@ -16,6 +16,12 @@ import Foundation
 
 // MARK: - Offscreen Capture Benchmark (30 Panes Rasterization)
 
+/// A window AppKit does not fit to the screen: `constrainFrameRect` keeps the
+/// frame as given, so a fixture larger than a small display is not shrunk.
+final class UnconstrainedWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
 extension PaneOverviewTests {
     /// Offscreen capture benchmark verifying rasterization of 30 panes to an offscreen bitmap within budget (< 3.5s),
     /// verifying non-blank rendered cards with distinct visual elements.
@@ -56,11 +62,12 @@ extension PaneOverviewTests {
             warmupView.cacheDisplay(in: warmupView.bounds, to: warmupRep)
         }
 
-        // Create an actual buffered window for live UI presentation measurement. Its
-        // content fits the smallest display these run on (a hosted runner's 1024×768),
-        // so AppKit never clamps it and the capture is the size asked for.
+        // Create an actual buffered window for live UI presentation measurement, at
+        // the full fixture size. A titled 700 pt window does not fit a hosted runner's
+        // 1024×768 below its menu bar, and AppKit clamped it to 642 pt; this window
+        // keeps the frame it is given, so the capture is the size asked for.
         let fixture = NSSize(width: 1000, height: 700)
-        let window = NSWindow(
+        let window = UnconstrainedWindow(
             contentRect: NSRect(origin: .zero, size: fixture),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
