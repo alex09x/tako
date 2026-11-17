@@ -49,6 +49,8 @@ func runSidebarSwitchSpeedScenario(_ d: Driver) throws {
     print("owner history: \(historyKept ? "unchanged" : "CHANGED")")
     if failure == nil, !historyKept { failure = Failure("the owner's shell history changed") }
     if let error = OwnedProcesses.outcome(failure: failure, problems: problems) { throw error }
+    // DIAGNOSTIC: only after the scenario's own outcome, so its errors stay first.
+    try d.requireCompleteSamples()
 }
 
 private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout OwnedProcesses) throws {
@@ -129,6 +131,11 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     let orders = [["SwB", "SwC", "SwD", "SwE", "SwA"], ["SwC", "SwE", "SwB", "SwD", "SwA"], ["SwE", "SwD", "SwC", "SwB", "SwA"]]
     for (round, order) in orders.enumerated() {
         let beside = round == 2
+        // DIAGNOSTIC (TAKO_E2E_SAMPLE_DIR only): one sample per round of five
+        // clicks, started before the round's checks and finished after its
+        // last settle; each click's down..shown interval must be covered.
+        let roundSample = d.sampleOwnedApp(label: "sidebar-switch-round-\(round)", seconds: 6)
+        defer { roundSample?.finish() }
         for name in order {
             guard let r = row(name) else { throw Failure("no row \(name)") }
             var point = try center(r)
@@ -167,8 +174,10 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             lines.append(String(format: "%@%@ %.0f ms", beside ? "beside " : "name ", name, shown * 1000))
             guard changed else { throw Failure("a click on \(name)'s row did not switch tabs: \(lines)") }
             timings.append(shown * 1000)
+            roundSample?.cover((beside ? "beside " : "name ") + name, from: downAt, to: shownAt)
             usleep(450_000)
         }
+        roundSample?.finish()
     }
     let sorted = timings.sorted()
     print("[timing] sidebar switch: " + lines.joined(separator: "; "))

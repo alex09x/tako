@@ -3482,6 +3482,10 @@ let scenarios: [Scenario] = [
         let workspaceCtl = quotedWorkspaceArgument(d.appURL.path + "/Contents/MacOS/takoctl")
             + " --bundle-id " + quotedWorkspaceArgument(d.bundleID)
         let controlBaseline = (try d.workspaceTransitions()).compactMap { ($0["sequence"] as? NSNumber)?.int64Value }.max() ?? 0
+        // DIAGNOSTIC (TAKO_E2E_SAMPLE_DIR only): started and finished outside
+        // the pair's clocks; it must cover the requests and both transitions.
+        let pairSample = d.sampleOwnedApp(label: "workspace-journey-controlled-pair", seconds: 3)
+        defer { pairSample?.finish() }
         // Prepare the two public-protocol connections first. CLI startup and
         // child reaping between commands are not part of the intended race.
         let requests = try d.controlPair(
@@ -3501,6 +3505,7 @@ let scenarios: [Scenario] = [
             throw Failure("controlled workspace race did not execute both exact ordered transitions: \(controlled)")
         }
         let controlledInterval = (control1 - control0) * 1000
+        pairSample?.cover("controlled pair requests and transitions", from: requests.first, to: max(requests.second, control1))
         print("workspace race coverage: HID keyboard dispatch and exact transitions; control request dispatch and app-side interval below140ms")
         print("controlled workspace app interval: \(controlledInterval)ms; keyboard interval: \(wsTransitionIntervalMs)ms")
         guard controlledInterval < 140 else {
@@ -3676,6 +3681,9 @@ let scenarios: [Scenario] = [
         guard try d.file("ws2_control_tab.txt").trimmingCharacters(in: .whitespacesAndNewlines) == ws2_tab1 else {
             throw Failure("controlled tab race did not preserve Tab1 keyboard routing")
         }
+        // DIAGNOSTIC: after every original assertion, so a functional error stays first.
+        pairSample?.finish()
+        try d.requireCompleteSamples()
     }),
     ("workspace-frame-sync", "workspace switch inherits departing window frame when enabled and preserves independent frames when disabled", { d in
         // Clean start with pill style config
@@ -4095,6 +4103,7 @@ let scenarios: [Scenario] = [
     }),
     ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended; the driver's own app cleanup checks identity the same way and keeps unproven work", { d in
         try runOwnedProcessesSelfTest()
+        try runSampleSelfTest()
         try runDriverLifecycleSelfTest(app: d.appURL)
         try runControlRequestSocketSelfTest(work: d.work)
     }),
