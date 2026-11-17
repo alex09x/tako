@@ -20,11 +20,17 @@ private let selftestConfig = "window-save-state = never\nauto-update = off\nremo
 /// Launch with FLAG, require exactly one nonpersistent pane, record the pane's
 /// shell, and return the report once READY accepts it within TIMEOUT seconds.
 /// No report at all fails as the old wrapper did.
-private func runAppSelftest(_ d: Driver, flag: String, report name: String, timeout: TimeInterval,
+private func runAppSelftest(_ d: Driver, flag: String, report name: String, timeout: TimeInterval, quietChild: Bool = false,
                             ready: @escaping (String) -> Bool) throws -> String {
     let previous = d.environment
     d.environment["TAKO_SELFTEST_DIR"] = d.work.path
     defer { d.environment = previous }
+    if quietChild {
+        // The driver has already proved its shell is private. Keep zsh from
+        // appending a startup prompt to the scroll test's synthetic history.
+        try "exec /bin/sleep 600\n".write(to: d.work.appendingPathComponent("h/.zshenv"),
+                                          atomically: true, encoding: .utf8)
+    }
     try d.launch(config: selftestConfig, settleTerminal: false, arguments: [flag])
 
     func quoted(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
@@ -70,6 +76,11 @@ private func runAppSelftest(_ d: Driver, flag: String, report name: String, time
         throw Failure("the app produced no report at all")
     }
     print(text)
+    if quietChild {
+        let command = shellPID.flatMap { try? d.exec("ps -o comm= -p \($0)").trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard command == "/bin/sleep" else { throw Failure("scroll fixture child was \(command ?? "unavailable"), expected /bin/sleep") }
+        print("scroll fixture child: /bin/sleep")
+    }
     return text
 }
 
@@ -122,7 +133,7 @@ func runAppSelftestInputScenario(_ d: Driver) throws {
 
 /// scroll: a precise delta must move the grid by a fraction of a row.
 func runAppSelftestScrollScenario(_ d: Driver) throws {
-    let report = try runAppSelftest(d, flag: "--selftest-scroll", report: "tako-scrolltest.txt", timeout: 25) {
+    let report = try runAppSelftest(d, flag: "--selftest-scroll", report: "tako-scrolltest.txt", timeout: 25, quietChild: true) {
         lines($0).contains("complete")
     }
     var problems: [String] = []
