@@ -130,22 +130,55 @@ let scenarios: [Scenario] = [
     }),
     ("find-all", "cmd+shift+f finds output in another tab and shows it there, selected", { d in
         let id = d.work.lastPathComponent
+        let query = "found-\(id)"
         try d.run("tty > \(d.path("tty1")); printf 'found-%s\\n' \(id)")
         let first = try d.file("tty1")
+        let firstPane = try d.focusedPaneId()
         d.key(Key.t, .maskCommand)
-        usleep(1_200_000)
+        guard d.wait(for: { (try? d.focusedPaneId()).flatMap { $0 }.map { $0 != firstPane } ?? false }, timeout: 5) else {
+            throw Failure("cmd+t did not focus a new pane: \(d.debugFocusState())")
+        }
         try d.run("tty > \(d.path("tty2")); printf 'other output\\n'")
         guard try d.file("tty2") != first else { throw Failure("cmd+t did not open a second terminal") }
 
+        /// The focused element, as the app reports it: its role, placeholder
+        /// and value; the find field is the text field with this placeholder.
+        func focused() -> (role: String, placeholder: String, value: String) {
+            let element: AXUIElement? = d.attribute(d.axApp, kAXFocusedUIElementAttribute)
+            return (element.flatMap { d.attribute($0, kAXRoleAttribute) } ?? "nil",
+                    element.flatMap { d.attribute($0, kAXPlaceholderValueAttribute) } ?? "",
+                    element.flatMap { d.attribute($0, kAXValueAttribute) } ?? "")
+        }
+        func fieldFocused() -> Bool {
+            let f = focused()
+            return f.role == kAXTextFieldRole as String && f.placeholder.hasPrefix("Find in all tabs")
+        }
+        func state() -> String {
+            let f = focused()
+            let pane = (try? d.focusedPaneId()).flatMap { $0 } ?? "none"
+            return "focused role=\(f.role) placeholder=[\(f.placeholder)] value=[\(f.value)]; pane \(pane) (first \(firstPane ?? "none")); texts \(d.staticTexts())"
+        }
         d.key(Key.f, [.maskCommand, .maskShift])
-        usleep(600_000)
-        try d.type("found-\(id)")
-        usleep(800_000)
+        guard d.wait(for: fieldFocused, timeout: 5) else {
+            throw Failure("cmd+shift+f did not focus the find field: \(state())")
+        }
+        try d.type(query)
+        // The query is in the field and its result is listed: Return then opens it.
+        guard d.wait(for: { fieldFocused() && focused().value == query
+                            && d.staticTexts().contains { $0.contains(query) } }, timeout: 10) else {
+            throw Failure("the find field did not list the query's result: \(state())")
+        }
+        let before = state()
+        print("find-all before Return: \(before)")
         d.key(Key.returnKey)
-        usleep(1_000_000)
 
-        guard d.wait(for: { d.selectedText() == "found-\(id)" }, timeout: 5) else {
-            throw Failure("selection after Return is [\(d.selectedText())]")
+        guard d.wait(for: { d.selectedText() == query }, timeout: 5) else {
+            throw Failure("selection after Return is [\(d.selectedText())]; before Return: \(before); after: \(state())")
+        }
+        let after = try d.focusedPaneId()
+        print("find-all after Return: pane \(after ?? "none")")
+        guard after == firstPane else {
+            throw Failure("Return focused pane \(after ?? "none"), not the match's \(firstPane ?? "none")")
         }
         try d.run("tty > \(d.path("tty3"))")
         guard try d.file("tty3") == first else {

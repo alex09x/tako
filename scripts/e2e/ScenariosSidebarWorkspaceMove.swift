@@ -172,43 +172,73 @@ func runSidebarLongListScenario(_ d: Driver) throws {
         throw Failure("dragging the sidebar edge did not resize it")
     }
 
-    guard let scroll = d.descendants(of: window, role: kAXScrollAreaRole as String).first,
-          let viewport = frame(scroll) else { throw Failure("sidebar scroll area missing") }
-    let point = CGPoint(x: viewport.midX, y: viewport.midY)
-    CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved,
-            mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-    for _ in 0..<6 {
-        let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1, wheel1: -8, wheel2: 0, wheel3: 0)
-        wheel?.location = point
-        wheel?.post(tap: .cghidEventTap)
-        usleep(120_000)
+    // The session list's own scroll area: the tallest one under SessionSidebar,
+    // not whichever scroll area of the window accessibility lists first. Every
+    // scroll area of the window is printed with whether it is the sidebar's,
+    // so a run shows which one was taken and why.
+    guard let sidebar = d.element(withIdentifier: "SessionSidebar", root: window) else {
+        throw Failure("no SessionSidebar in the window")
     }
+    let sidebarAreas = d.descendants(of: sidebar, role: kAXScrollAreaRole as String)
+    let windowAreas = d.descendants(of: window, role: kAXScrollAreaRole as String)
+    for (i, area) in windowAreas.enumerated() {
+        let own = sidebarAreas.contains { CFEqual($0, area) }
+        let id: String = d.attribute(area, "AXIdentifier") ?? "-"
+        print("long-list scroll area[\(i)]: sidebar=\(own) id=\(id) frame=\(frame(area).map { "\($0)" } ?? "nil")")
+    }
+    guard let scroll = sidebarAreas.max(by: { (frame($0)?.height ?? 0) < (frame($1)?.height ?? 0) }),
+          let windowFrame = d.windowFrame(window),
+          let area = frame(scroll) else { throw Failure("sidebar scroll area missing") }
+    let viewport = area.intersection(windowFrame).intersection(CGDisplayBounds(CGMainDisplayID()))
+    print("long-list viewport: area=\(area) window=\(windowFrame) visible=\(viewport)")
+    guard viewport.width > 10, viewport.height > 10 else { throw Failure("no visible sidebar viewport: \(viewport)") }
+    let point = CGPoint(x: viewport.midX, y: viewport.midY)
     func visible(_ text: String) -> CGRect? {
         guard let item = element(kAXStaticTextRole as String, containing: text),
               let rect = frame(item), viewport.contains(CGPoint(x: rect.midX, y: rect.midY)) else { return nil }
         return rect
     }
+    func rows() -> String {
+        ["ListItem00", "ListItem14", "SCROLLDESTINATION"].map { text in
+            "\(text)=\(element(kAXStaticTextRole as String, containing: text).flatMap(frame).map { "\($0)" } ?? "nil")"
+        }.joined(separator: " ")
+    }
+    /// Wheel ticks over the sidebar viewport, each one only while the fixture
+    /// owns the point, until `done` holds; at most `limit` ticks.
+    func wheel(until done: () -> Bool, limit: Int, label: String) throws -> Int {
+        guard d.topmostOwner(at: point) == d.pid else { throw Failure("\(label): the wheel point is not the fixture's") }
+        try d.requireAXOwnedTarget(at: point)
+        CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved,
+                mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        var ticks = 0
+        while ticks < limit, !done() {
+            guard d.topmostOwner(at: point) == d.pid else { throw Failure("\(label): the wheel point left the fixture after \(ticks) ticks") }
+            let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1, wheel1: -8, wheel2: 0, wheel3: 0)
+            wheel?.location = point
+            wheel?.post(tap: .cghidEventTap)
+            ticks += 1
+            usleep(120_000)
+            print("long-list \(label) tick \(ticks): \(rows())")
+        }
+        return ticks
+    }
+    print("long-list before scrolling: \(rows())")
+    let down = try wheel(until: { visible("ListItem14") != nil && visible("SCROLLDESTINATION") != nil }, limit: 40, label: "scroll")
     guard d.wait(for: { visible("ListItem14") != nil && visible("SCROLLDESTINATION") != nil }, timeout: 8) else {
-        throw Failure("scrolling a long sidebar did not reveal the last row and workspace: \(d.staticTexts())")
+        throw Failure("scrolling a long sidebar did not reveal the last row and workspace after \(down) ticks: viewport \(viewport); \(rows()); \(d.staticTexts())")
     }
     guard let scrollbar = d.descendants(of: scroll, role: kAXScrollBarRole as String).first,
           let bar = frame(scrollbar) else { throw Failure("sidebar scrollbar missing from accessibility") }
     try d.drag(from: CGPoint(x: bar.midX, y: bar.maxY - 8),
                to: CGPoint(x: bar.midX, y: bar.minY + 8), steps: 24)
     guard d.wait(for: { visible("ListItem00") != nil }, timeout: 8) else {
-        throw Failure("dragging the scrollbar thumb did not scroll to the start")
+        throw Failure("dragging the scrollbar thumb did not scroll to the start: \(rows())")
     }
-    CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved,
-            mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-    for _ in 0..<6 {
-        let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1, wheel1: -8, wheel2: 0, wheel3: 0)
-        wheel?.location = point
-        wheel?.post(tap: .cghidEventTap)
-        usleep(120_000)
-    }
+    print("long-list after the thumb drag: \(rows())")
+    let again = try wheel(until: { visible("ListItem14") != nil && visible("SCROLLDESTINATION") != nil }, limit: 40, label: "return")
     guard d.wait(for: { visible("ListItem14") != nil && visible("SCROLLDESTINATION") != nil }, timeout: 8),
           let row = visible("ListItem14"), let destination = visible("SCROLLDESTINATION") else {
-        throw Failure("the last row and destination did not return after scrolling")
+        throw Failure("the last row and destination did not return after \(again) ticks: \(rows())")
     }
     let pidBefore = try d.exec("\(ctl) tree --json")
     let dragStart = CGPoint(x: row.midX, y: row.midY)
