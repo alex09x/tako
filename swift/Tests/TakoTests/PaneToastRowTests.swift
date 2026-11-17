@@ -70,6 +70,7 @@ struct PaneToastRowTests {
         try await Task.sleep(for: .milliseconds(30))
         try draw()
         let updated = try #require(target(in: host))
+        try #require(updated === first, "this update check must reuse the native target rather than recreate it")
         #expect(updated.accessibilityLabel()?.contains("updated") == true)
         updated.performClick(nil)
         #expect(opened == ["first", "updated"], "a reused native target must open the current toast")
