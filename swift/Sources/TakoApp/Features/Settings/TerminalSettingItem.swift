@@ -159,7 +159,7 @@ public enum TerminalSettingRegistry {
             id: "cursor-style-blink",
             title: "Cursor Blinking",
             category: "Terminal",
-            type: .boolean(defaultValue: false),
+            type: .boolean(defaultValue: TerminalTheme.takoDefault.cursorBlink),
             description: "Animate terminal cursor blinking"
         ),
         TerminalSettingItem(
