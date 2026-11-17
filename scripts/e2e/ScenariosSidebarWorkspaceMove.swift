@@ -218,6 +218,7 @@ func runSidebarLongListScenario(_ d: Driver) throws {
         var ticks = 0
         while ticks < limit, !done() {
             guard d.topmostOwner(at: point) == d.pid else { throw Failure("\(label): the wheel point left the fixture after \(ticks) ticks") }
+            try d.requireAXOwnedTarget(at: point)
             let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1, wheel1: -8, wheel2: 0, wheel3: 0)
             wheel?.location = point
             wheel?.post(tap: .cghidEventTap)
