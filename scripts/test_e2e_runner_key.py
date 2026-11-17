@@ -38,7 +38,9 @@ class RunnerKeyTests(unittest.TestCase):
         for name in ("e2e-macapp.sh", "app_locations.py"):
             shutil.copy(os.path.join(HERE, name), os.path.join(self.dir, "scripts", name))
         with open(os.path.join(HERE, "e2e-macapp.sh")) as f:
-            sources = re.search(r"^sources=\((.*)\)$", f.read(), re.M).group(1).split()
+            # The script may append source groups after its first declaration.
+            groups = re.findall(r"^sources(?:\+)?=\((.*)\)$", f.read(), re.M)
+            sources = [source for group in groups for source in group.split()]
         self.sources = [s for s in sources if s.startswith("scripts/e2e/")]
         self.assertGreater(len(self.sources), 10)
         for source in self.sources:
@@ -73,10 +75,15 @@ class RunnerKeyTests(unittest.TestCase):
             f.write("// changed\n")
         self.assertIn("compiled", self.compile("scripts/e2e-macapp.sh"))
         self.assertEqual(self.compiles(), 2)
+        # Also hold the appended group, not just the initial source array.
+        with open(os.path.join(self.dir, self.sources[-1]), "a") as f:
+            f.write("// appended source changed\n")
+        self.assertIn("compiled", self.compile("scripts/e2e-macapp.sh"))
+        self.assertEqual(self.compiles(), 3)
         with open(os.path.join(self.dir, "scripts", "e2e-macapp.sh"), "a") as f:
             f.write("\n# flags changed\n")
         self.assertIn("compiled", self.compile("./scripts/e2e-macapp.sh"))
-        self.assertEqual(self.compiles(), 3)
+        self.assertEqual(self.compiles(), 4)
 
 
 if __name__ == "__main__":
