@@ -17,8 +17,14 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FAKE_RUNNER = """#!/usr/bin/env bash
-printf '%s\\n' "$APP" "$TAKO_BUNDLE_ID" "$*" >> target/runner-calls
+plist_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")
+printf '%s\\n' "$APP" "$TAKO_BUNDLE_ID" "$*" "$plist_id" >> target/runner-calls
 sleep 0.3
+if [ -n "${FAKE_RUNNER_FAIL:-}" ]; then
+    for name in "$@"; do echo "[result] $name FAIL"; done
+    echo "tako e2e: $# FAILED"
+    exit 1
+fi
 for name in "$@"; do echo "[result] $name ok"; done
 echo "tako e2e: ok"
 """
@@ -65,14 +71,15 @@ class WrapperTests(unittest.TestCase):
             return []
         with open(path) as f:
             lines = f.read().splitlines()
-        return [lines[i:i + 3] for i in range(0, len(lines), 3)]
+        return [lines[i:i + 4] for i in range(0, len(lines), 4)]
 
     def test_a_prepared_bundle_runs_as_itself(self):
         app = self.app("com.tako-core.terminal.e2e")
         rc, out, _ = self.finish(self.start(app, "--scroll-only"))
         self.assertEqual(rc, 0)
         self.assertIn("macapp self-test: ok", out)
-        self.assertEqual(self.calls(), [[app, "com.tako-core.terminal.e2e", "app-selftest-scroll"]])
+        self.assertEqual(self.calls(), [[app, "com.tako-core.terminal.e2e", "app-selftest-scroll",
+                                         "com.tako-core.terminal.e2e"]])
 
     def test_an_explicit_mismatch_fails_before_anything_runs(self):
         app = self.app("com.tako-core.terminal.e2e")
@@ -88,15 +95,38 @@ class WrapperTests(unittest.TestCase):
             with open(plist, "rb") as f:
                 return hashlib.sha256(f.read()).hexdigest()
         before = digest()
+        copies = os.path.join(self.root, "target/selftest-copies")
+        os.makedirs(os.path.join(copies, "run.Older1"))  # someone else's: never removed
         rc, out, _ = self.finish(self.start(app, "--scroll-only"))
         self.assertEqual(rc, 0, out)
-        [(ran, identifier, names)] = self.calls()
+        [(ran, identifier, names, ran_as)] = self.calls()
         self.assertNotEqual(ran, app)
         self.assertTrue(identifier.startswith("com.tako-core.terminal.e2e-selftest-"), identifier)
-        with open(os.path.join(ran, "Contents/Info.plist"), "rb") as f:
-            self.assertEqual(plistlib.load(f)["CFBundleIdentifier"], identifier)
+        self.assertEqual(ran_as, identifier, "the copy was resealed under the identifier the runner got")
         self.assertEqual(digest(), before, "the original is untouched")
-        self.assertTrue(ran.startswith(os.path.join(self.root, "target/selftest-copies/")))
+        self.assertTrue(ran.startswith(copies + "/"))
+        self.assertFalse(os.path.exists(os.path.dirname(ran)), "a passing run removes its own copy")
+        self.assertIn("removed its disposable copy", out)
+        self.assertTrue(os.path.isdir(os.path.join(copies, "run.Older1")))
+
+    def test_a_failed_run_keeps_its_copy_and_says_where(self):
+        app = self.app("com.tako-core.terminal")
+        rc, _, err = self.finish(self.start(app, "--scroll-only", env={"FAKE_RUNNER_FAIL": "1"}))
+        self.assertEqual(rc, 1)
+        [(ran, _, _, _)] = self.calls()
+        self.assertTrue(os.path.isdir(ran))
+        self.assertIn(f"kept the disposable copy: {os.path.dirname(ran)}", err)
+
+    def test_an_unusable_identifier_is_refused_before_anything_runs(self):
+        for bad in ("", "no-dots", "com.tako core.x"):
+            with self.subTest(identifier=bad):
+                app = self.app("placeholder." + str(abs(hash(bad))))
+                with open(os.path.join(app, "Contents/Info.plist"), "wb") as f:
+                    plistlib.dump({"CFBundleIdentifier": bad, "CFBundleExecutable": "Tako"}, f)
+                rc, _, err = self.finish(self.start(app))
+                self.assertEqual(rc, 1)
+                self.assertIn("nothing was launched", err)
+        self.assertEqual(self.calls(), [])
 
     def test_concurrent_runs_keep_distinct_logs(self):
         app = self.app("com.tako-core.terminal.e2e")

@@ -42,6 +42,11 @@ python3 scripts/app_locations.py check-app "$APP"
 production=com.tako-core.terminal
 actual=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist") \
     || { echo "FAIL: $APP has no bundle identifier" >&2; exit 1; }
+if ! [[ "$actual" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+    echo "FAIL: $APP has an unusable bundle identifier [$actual]; nothing was launched" >&2
+    exit 1
+fi
+copy_dir=""
 if [ -n "${TAKO_BUNDLE_ID:-}" ] && [ "$TAKO_BUNDLE_ID" != "$actual" ]; then
     echo "FAIL: TAKO_BUNDLE_ID=$TAKO_BUNDLE_ID but $APP is $actual; nothing was launched" >&2
     exit 1
@@ -71,4 +76,20 @@ APP="$APP" ./scripts/e2e-macapp.sh "${names[@]}" 2>&1 | tee "$log"
 statuses=("${PIPESTATUS[@]}")
 set -e
 echo
-exec python3 scripts/selftest_verdict.py --status "${statuses[0]}" --tee-status "${statuses[1]}" --log "$log" "${names[@]}"
+verdict=0
+python3 scripts/selftest_verdict.py --status "${statuses[0]}" --tee-status "${statuses[1]}" --log "$log" "${names[@]}" \
+    || verdict=$?
+
+# The disposable copy goes only after a passing run whose app is proved gone;
+# anything less keeps it, and says where. Nothing else is ever removed.
+if [ -n "$copy_dir" ]; then
+    running=$(pgrep -f "$copy_dir/Tako.app/Contents/" 2>/dev/null || true)
+    if [ "${statuses[0]}" -eq 0 ] && [ "$verdict" -eq 0 ] && [ -z "$running" ] \
+        && [ "$(dirname "$copy_dir")" = "$copies" ] && [[ "$(basename "$copy_dir")" =~ ^run\.[A-Za-z0-9]{6}$ ]]; then
+        rm -rf "$copy_dir" && echo "self-test: removed its disposable copy $copy_dir" \
+            || echo "self-test: could not remove its disposable copy; kept: $copy_dir" >&2
+    else
+        echo "self-test: kept the disposable copy: $copy_dir${running:+ (still running: $running)}" >&2
+    fi
+fi
+exit "$verdict"
