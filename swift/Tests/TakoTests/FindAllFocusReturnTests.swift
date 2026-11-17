@@ -49,26 +49,28 @@ struct FindAllFocusReturnTests {
     }
 
     /// The panel over `controller` opens, then closes, and the main queue runs
-    /// past the close's own asynchronous focus step.
-    private func openAndClosePanel(_ controller: TerminalController) {
+    /// past the close's own asynchronous focus step. A test on the main actor
+    /// runs inside a main-queue job, where spinning the run loop would not run
+    /// the next main-queue block; suspending does.
+    private func openAndClosePanel(_ controller: TerminalController) async throws {
         controller.findAllIsShowing = true
         controller.findAllIsShowing = false
-        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        try await Task.sleep(for: .milliseconds(300))
     }
 
-    @Test func aHiddenPanelTabClosingAfterARevealLeavesTheRevealedTabChosen() throws {
+    @Test func aHiddenPanelTabClosingAfterARevealLeavesTheRevealedTabChosen() async throws {
         let old = try tab(shown: false), revealed = try tab(shown: true)
         defer { close(old, revealed) }
         Tako.CustomTabGroup.join(revealed.window, to: old.window, select: false)
         let group = Tako.CustomTabGroup.group(for: old.window)
         group.selectedWindow = revealed.window
 
-        openAndClosePanel(old.controller)
+        try await openAndClosePanel(old.controller)
 
         #expect(group.selectedWindow === revealed.window, "the tab the match was opened in stays chosen")
     }
 
-    @Test func aStillVisibleButReplacedPanelTabDoesNotTakeTheTabBack() throws {
+    @Test func aStillVisibleButReplacedPanelTabDoesNotTakeTheTabBack() async throws {
         // A tab just replaced stays on screen until its order-out runs.
         let old = try tab(shown: true), revealed = try tab(shown: true)
         defer { close(old, revealed) }
@@ -76,12 +78,12 @@ struct FindAllFocusReturnTests {
         let group = Tako.CustomTabGroup.group(for: old.window)
         group.selectedWindow = revealed.window
 
-        openAndClosePanel(old.controller)
+        try await openAndClosePanel(old.controller)
 
         #expect(group.selectedWindow === revealed.window, "being visible is not being the chosen tab")
     }
 
-    @Test func closingThePanelInTheShownTabGivesTheKeyboardBackToItsTerminal() throws {
+    @Test func closingThePanelInTheShownTabGivesTheKeyboardBackToItsTerminal() async throws {
         let shown = try tab(shown: true)
         defer { close(shown) }
         let group = Tako.CustomTabGroup.group(for: shown.window)
@@ -91,10 +93,14 @@ struct FindAllFocusReturnTests {
         shown.window.makeFirstResponder(nil)
         try #require(shown.window.firstResponder !== shown.pane)
 
-        openAndClosePanel(shown.controller)
+        try await openAndClosePanel(shown.controller)
 
-        #expect(TerminalTestSupport.waitUntil(timeout: 2) { shown.window.firstResponder === shown.pane },
-                "closing the panel in the tab it covers returns the keyboard to that terminal")
+        var returned = shown.window.firstResponder === shown.pane
+        for _ in 0..<20 where !returned {
+            try await Task.sleep(for: .milliseconds(100))
+            returned = shown.window.firstResponder === shown.pane
+        }
+        #expect(returned, "closing the panel in the tab it covers returns the keyboard to that terminal")
         #expect(group.selectedWindow === shown.window)
     }
 }
