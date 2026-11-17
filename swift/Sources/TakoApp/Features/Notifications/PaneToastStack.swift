@@ -56,7 +56,17 @@ struct PaneToastRow: View {
     private typealias T = Tako.LivingTokens
 
     var body: some View {
-        Button(action: open) {
+        label
+            .accessibilityHidden(true)
+            .overlay {
+                PaneToastButton(action: open,
+                                label: [toast.headline, toast.message, "\(toast.place) →"].filter { !$0.isEmpty }.joined(separator: ", "),
+                                identifier: "PaneToast-\(toast.surfaceID.uuidString.lowercased())")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+    }
+
+    private var label: some View {
             HStack(alignment: .top, spacing: 10) {
                 SidebarStatusLayerView(state: toast.state, ringCenter: nil, cornerRadius: 0,
                                        reduceMotion: true, paused: true, pulses: 0, ringOnly: 11)
@@ -91,10 +101,5 @@ struct PaneToastRow: View {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(nsColor: T.badge)))
             .shadow(color: .black.opacity(0.5), radius: 15, x: 0, y: 12)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("PaneToast-\(toast.surfaceID.uuidString.lowercased())")
-        .accessibilityAddTraits(.isButton)
     }
 }

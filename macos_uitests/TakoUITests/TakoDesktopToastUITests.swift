@@ -23,7 +23,9 @@ final class TakoDesktopToastUITests: TakoDesktopDesignCase {
         try Data().write(to: complete)
         let toast = app.descendants(matching: .any)["PaneToast-\(second)"].firstMatch
         XCTAssertTrue(toast.waitForExistence(timeout: 5))
-        toast.click()
+        // The decorative NSView ring must not consume the button's press.
+        // Its centre: 12pt left + 5.5pt radius, 10pt top + 2pt + 5.5pt.
+        toast.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 17.5, dy: 17.5)).click()
         waitForPaneCount(2, in: app)
         XCTAssertTrue(toast.waitForNonExistence(timeout: 5))
         XCTAssertEqual(try shellPID(second, phase: "TOAST_AFTER", in: app, focus: false), pid)
