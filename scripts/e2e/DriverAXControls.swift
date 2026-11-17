@@ -175,7 +175,7 @@ extension Driver {
         return matching.last ?? matching.first
     }
 
-    private func axFrame(_ elem: AXUIElement) -> CGRect? {
+    func axFrame(_ elem: AXUIElement) -> CGRect? {
         guard let posVal: AXValue = attribute(elem, kAXPositionAttribute),
               let sizeVal: AXValue = attribute(elem, kAXSizeAttribute) else { return nil }
         var pos = CGPoint.zero, size = CGSize.zero
@@ -186,7 +186,9 @@ extension Driver {
 
     func clickOpenMenuItem(titled title: String) throws {
         guard wait(for: { self.openMenuItem(titled: title) != nil }, timeout: 5) else {
-            let allItems = descendants(of: axApp, role: kAXMenuItemRole as String).map { (elem: AXUIElement) -> String in
+            let allItems = descendants(of: axApp, role: kAXMenuItemRole as String).filter {
+                axFrame($0).map { $0.width > 10 && $0.height > 10 } == true
+            }.map { (elem: AXUIElement) -> String in
                 let t: String = self.attribute(elem, kAXTitleAttribute) ?? "nil"
                 let r = self.axFrame(elem) ?? .zero
                 return "\(t) (\(r.width)x\(r.height) at \(r.origin.x),\(r.origin.y))"
@@ -196,33 +198,12 @@ extension Driver {
         guard let item = openMenuItem(titled: title) else {
             throw Failure("open menu item '\(title)' not found")
         }
-        press(item)
         if let f = axFrame(item) {
-            try? click(at: CGPoint(x: f.midX, y: f.midY))
+            try click(at: CGPoint(x: f.midX, y: f.midY))
+        } else {
+            throw Failure("open menu item '\(title)' has no physical frame")
         }
         usleep(500_000)
-    }
-
-    func clickWorkspacePill(in window: AXUIElement? = nil) throws {
-        if let window { _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString) }
-        guard let bar: AXUIElement = attribute(axApp, kAXMenuBarAttribute) else {
-            throw Failure("Workspace menu bar not accessible")
-        }
-        for top in (attribute(bar, kAXChildrenAttribute) as [AXUIElement]?) ?? []
-        where (attribute(top, kAXTitleAttribute) as String?) == "Workspace" {
-            if let f = axFrame(top) {
-                let center = CGPoint(x: f.midX, y: f.midY)
-                traceClick(at: center, expected: window ?? activeWindow(), target: top)
-                try click(at: center)
-                usleep(600_000)
-                return
-            }
-            if AXUIElementPerformAction(top, kAXPressAction as CFString) == .success {
-                usleep(600_000)
-                return
-            }
-        }
-        throw Failure("Workspace menu bar item not found")
     }
 
     func clickPlusButton(in window: AXUIElement? = nil) throws {
@@ -233,6 +214,9 @@ extension Driver {
                 if let elem = element(withIdentifier: id, root: root),
                    let f = axFrame(elem), f.width > 4, f.height > 4 {
                     try click(at: CGPoint(x: f.midX, y: f.midY))
+                    if id == "SessionSidebarHeaderNewSession" {
+                        try clickOpenMenuItem(titled: "New Session")
+                    }
                     usleep(1_000_000)
                     return
                 }
@@ -344,6 +328,11 @@ extension Driver {
     func clickTab(index: Int, in window: AXUIElement? = nil) throws {
         let clickPoint = try tabClickPoint(index: index, in: window)
         if ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" {
+            let root = window ?? activeWindow()
+            let viewports = root.flatMap { element(withIdentifier: "SessionSidebar", root: $0) }.map {
+                descendants(of: $0, role: kAXScrollAreaRole as String).compactMap(axFrame)
+            } ?? []
+            print("tab click geometry: index=\(index), rows=\(sidebarSessionRows(in: window).map { String(describing: axFrame($0)) }), scroll viewports=\(viewports)")
             traceClick(at: clickPoint, expected: window ?? activeWindow(),
                        target: tabElement(index: index, in: window))
         }

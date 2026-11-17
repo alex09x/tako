@@ -202,18 +202,20 @@ final class Driver {
         try own(pid, what: "the app")
         timing.mark("pid-identity")
 
-        guard wait(for: { !self.windows().isEmpty }, timeout: 15) else {
-            throw Failure("Tako started but opened no window")
-        }
-        timing.mark("window")
-
         if let app = NSRunningApplication(processIdentifier: pid) {
             app.activate()
+        }
+        timing.mark("activate")
+        guard wait(for: { !self.windows().isEmpty }, timeout: 15) else {
+            let application = NSRunningApplication(processIdentifier: pid)
+            var value: CFTypeRef?
+            let status = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value)
+            throw Failure("Tako started but opened no window: pid \(pid), terminated \(String(describing: application?.isTerminated)), active \(String(describing: application?.isActive)), hidden \(String(describing: application?.isHidden)), policy \(application?.activationPolicy.rawValue ?? -1), AX status \(status.rawValue), raw windows \((value as? [AXUIElement])?.count ?? -1)")
         }
         if let window = self.windows().first {
             AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
-        timing.mark("activate")
+        timing.mark("window")
         if settleTerminal {
             // The first command also proves where the shell runs: in this
             // launch's environment, never the owner's.

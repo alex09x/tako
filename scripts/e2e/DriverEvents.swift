@@ -81,6 +81,18 @@ enum Key {
 // MARK: - Event Dispatch
 
 extension Driver {
+    func clickElement(_ element: AXUIElement) throws {
+        guard let posVal: AXValue = attribute(element, kAXPositionAttribute),
+              let sizeVal: AXValue = attribute(element, kAXSizeAttribute) else {
+            throw Failure("cannot get AX position/size for element")
+        }
+        var pos = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(posVal, .cgPoint, &pos)
+        AXValueGetValue(sizeVal, .cgSize, &size)
+        try click(at: CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2))
+    }
+
     func key(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
@@ -165,6 +177,17 @@ extension Driver {
         let main: AXUIElement? = attribute(axApp, kAXMainWindowAttribute)
         let focused: AXUIElement? = attribute(axApp, kAXFocusedWindowAttribute)
         print("click diagnostic: point=\(point), cursor=\(String(describing: CGEvent(source: nil)?.location)), expected=\(String(describing: expected.flatMap { windowID(for: $0) })), main=\(String(describing: main.flatMap { windowID(for: $0) })), focused=\(String(describing: focused.flatMap { windowID(for: $0) })), topmost=\(topmostWindowInfo(at: point)), AXstatus=\(status.rawValue), target={\(describe(target))}, hit={\(describe(hit))}")
+        if let hit {
+            var owner: pid_t = 0
+            if AXUIElementGetPid(hit, &owner) == .success, owner == pid {
+                var ancestor: AXUIElement? = hit
+                for level in 0..<10 {
+                    guard let node = ancestor else { break }
+                    print("click hit ancestor[\(level)]: \(describe(node))")
+                    ancestor = attribute(node, kAXParentAttribute)
+                }
+            }
+        }
     }
 
     func click(at point: CGPoint, count: Int = 1) throws {

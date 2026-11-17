@@ -54,8 +54,13 @@ func runSidebarSwitchSpeedScenario(_ d: Driver) throws {
 private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout OwnedProcesses) throws {
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n"
                  + "session-persistence = false\n", settleTerminal: false)
-    d.setPosition(CGPoint(x: 100, y: 410))
-    d.setSize(CGSize(width: 1100, height: 560))
+    // Keep all five row targets on the hosted VM's 1024x768 display as well
+    // as on the larger test Mac. No click may land behind the Dock.
+    let display = CGDisplayBounds(CGMainDisplayID())
+    let height = min(560, display.height - 120)
+    d.setPosition(CGPoint(x: display.minX + 60,
+                          y: max(display.minY + 60, display.maxY - height - 80)))
+    d.setSize(CGSize(width: min(1100, display.width - 120), height: height))
     d.focus()
     usleep(800_000)
     let ctl = "'\(d.appURL.path)/Contents/MacOS/takoctl' --bundle-id \(d.bundleID)"

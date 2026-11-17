@@ -14,20 +14,6 @@ import Foundation
 
 // MARK: - Scenarios 5–8: Sidebar Interaction, Overview Selection, Attention Jump, Input Takeover & Confirm
 
-extension Driver {
-    func clickElement(_ element: AXUIElement) throws {
-        guard let posVal: AXValue = attribute(element, kAXPositionAttribute),
-              let sizeVal: AXValue = attribute(element, kAXSizeAttribute) else {
-            throw Failure("cannot get AX position/size for element")
-        }
-        var pos = CGPoint.zero
-        var size = CGSize.zero
-        AXValueGetValue(posVal, .cgPoint, &pos)
-        AXValueGetValue(sizeVal, .cgSize, &size)
-        try click(at: CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2))
-    }
-}
-
 private let humanTestConfig = "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n"
 
 private func launchCleanHumanWindow(_ d: Driver, size: CGSize = CGSize(width: 840, height: 520)) throws -> String {

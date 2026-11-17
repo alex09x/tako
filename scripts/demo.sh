@@ -37,6 +37,7 @@ SHOWCASE_SWIFT_SOURCES=(
     scripts/e2e/DriverEvents.swift
     scripts/e2e/DriverAX.swift
     scripts/e2e/DriverAXControls.swift
+    scripts/e2e/DriverWorkspaceMenu.swift
     scripts/e2e/DriverPTY.swift
     scripts/e2e/OwnedProcesses.swift
     scripts/e2e/ShowcaseTypes.swift

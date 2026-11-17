@@ -156,6 +156,7 @@ func runTerminalDialogsScenario(_ d: Driver) throws {
     d.key(Key.c, .maskControl)
     usleep(300_000)
     d.key(Key.w, .maskCommand)
+    try d.closeRetainedFixtureTab(ctl, label: "dialogs-second-window")
     guard d.wait(for: { d.windows().count == 1 }, timeout: 5) else { throw Failure("Window 2 did not close") }
     usleep(300_000)
     d.key(Key.c, .maskControl)
@@ -168,7 +169,10 @@ func runTerminalDialogsScenario(_ d: Driver) throws {
         (realHome as NSString).appendingPathComponent($0)
     }
     let beforeReal = realPaths.map { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
-    let isolatedRoot = d.path("agent-hooks-home")
+    let environment = d.launchEnvironment()
+    guard let isolatedRoot = environment["TAKO_AGENT_HOOKS_HOME"],
+          let shellHome = environment["HOME"], isolatedRoot.hasPrefix(d.work.path + "/"),
+          shellHome.hasPrefix(d.work.path + "/") else { throw Failure("agent menu fixture is not private") }
     try fm.createDirectory(atPath: (isolatedRoot as NSString).appendingPathComponent(".claude"), withIntermediateDirectories: true)
     try fm.createDirectory(atPath: (isolatedRoot as NSString).appendingPathComponent(".codex"), withIntermediateDirectories: true)
 
@@ -177,14 +181,22 @@ func runTerminalDialogsScenario(_ d: Driver) throws {
     guard d.wait(for: { okBtn = d.button(titled: "OK"); return okBtn != nil }, timeout: 5), let okBtn else {
         throw Failure("Connect AI Agents dialog did not present OK button")
     }
-    try d.assertInTerminalDialog(title: "AI Agents Connected", bodyContains: "Configured hooks for")
+    // Claude and Codex now report native OSC 7501 status. A clean fixture is
+    // already connected; the menu installs skills without adding status hooks.
+    try d.assertInTerminalDialog(title: "AI Agents Already Connected", bodyContains: "All detected agents")
     d.press(okBtn)
     guard d.wait(for: { d.button(titled: "OK") == nil }, timeout: 5) else {
         throw Failure("Connect AI Agents dialog did not dismiss after clicking OK")
     }
-    guard fm.fileExists(atPath: (isolatedRoot as NSString).appendingPathComponent(".claude/settings.json")),
-          fm.fileExists(atPath: (isolatedRoot as NSString).appendingPathComponent(".codex/hooks.json")) else {
-        throw Failure("Connect AI Agents did not write hooks into isolated agent-hooks-home")
+    for name in [".claude", ".codex"] {
+        let skill = (shellHome as NSString).appendingPathComponent("\(name)/skills/tako/SKILL.md")
+        guard let text = try? String(contentsOfFile: skill, encoding: .utf8), text.contains("takoctl") else {
+            throw Failure("Connect AI Agents did not install \(name)'s skill in the private shell home")
+        }
+    }
+    guard !fm.fileExists(atPath: (isolatedRoot as NSString).appendingPathComponent(".claude/settings.json")),
+          !fm.fileExists(atPath: (isolatedRoot as NSString).appendingPathComponent(".codex/hooks.json")) else {
+        throw Failure("Connect AI Agents added obsolete native-status hooks")
     }
     let afterReal = realPaths.map { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
     guard beforeReal == afterReal else {
@@ -341,6 +353,7 @@ func runWorkspaceCloseAndDeleteScenario(_ d: Driver) throws {
     let beforeClose = (try? d.exec("\(ctl) tree --json")) ?? "unavailable"
     let workspacesBeforeClose = (try? d.exec("\(ctl) workspace list --json")) ?? "unavailable"
     d.key(Key.w, .maskCommand)
+    try d.closeRetainedFixtureTab(ctl, label: "workspace-last-terminal")
     guard d.wait(for: {
         ((try? d.exec("\(ctl) workspace current --json")) ?? "").contains("Default")
             && (try? d.focusedPaneId()) == original
@@ -354,12 +367,10 @@ func runWorkspaceCloseAndDeleteScenario(_ d: Driver) throws {
     _ = try d.exec("\(ctl) workspace switch \(workspaceName)")
     guard d.wait(for: { (try? d.focusedPaneId()) != nil && (try? d.focusedPaneId()) != original }, timeout: 5),
           let moved = try d.focusedPaneId() else { throw Failure("temporary workspace did not create its terminal") }
-    try d.clickWorkspacePill()
-    try d.clickOpenMenuItem(titled: "Delete Current Workspace...")
-    guard d.wait(for: { d.button(titled: "Delete") != nil }, timeout: 5), let delete = d.button(titled: "Delete") else {
-        throw Failure("workspace delete confirmation did not appear")
-    }
-    d.press(delete)
+    // Occupied-workspace deletion is a CLI operation in the current sidebar
+    // design (its UI asks to move sessions first). The retired tab-bar picker
+    // offered a Delete Current Workspace confirmation; it is no longer mounted.
+    _ = try d.exec("\(ctl) workspace delete \(workspaceName)")
     guard d.wait(for: {
         let list = (try? d.exec("\(ctl) workspace list --json")) ?? ""
         return !list.isEmpty && !list.contains(workspaceName)
