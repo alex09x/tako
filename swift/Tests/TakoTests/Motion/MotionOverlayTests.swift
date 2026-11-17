@@ -155,7 +155,9 @@ struct MotionOverlayTests {
     /// detached. Each case gets its own trace (overlay-A-cold, overlay-B-fresh,
     /// overlay-C-reopen-A). It accepts no animation: the only expectations are
     /// that each close leaves no overlay and no WKWebView behind.
-    @Test func diagnosticOverlayOpenCostColdFreshAndReopen() throws {
+    @Test(.enabled(if: !(ProcessInfo.processInfo.environment["TAKO_MOTION_DIAGNOSTICS"] ?? "").isEmpty,
+                   "diagnostics only: runs under TAKO_MOTION_DIAGNOSTICS, skipped otherwise"))
+    func diagnosticOverlayOpenCostColdFreshAndReopen() throws {
         guard MotionStageTrace.directory != nil else { return }
         _ = NSApplication.shared
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("tako-fade-cost-\(UUID().uuidString).txt")
