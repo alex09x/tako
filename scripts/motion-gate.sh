@@ -66,4 +66,7 @@ if [ "${1:-}" = "--filter" ]; then
 fi
 # Every mutant still finds its code (not inside a mutant run, where one is applied).
 [ -n "${MOTION_MUTANT_RUN:-}" ] || python3 scripts/motion-mutants.py --check
-exec scripts/check.sh "swift:$FILTER"
+# These tests order AppKit windows in: share the test Mac's GUI lease with
+# native journeys and other agents. Keep the check/filter and exit status.
+args=$(printf ' %q' "swift:$FILTER")
+exec scripts/mac-remote.sh "python3 scripts/gui_lock.py -- python3 scripts/check_run.py$args"
