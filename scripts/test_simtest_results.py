@@ -40,10 +40,31 @@ class ResizeVerdictTests(unittest.TestCase):
         self.assertTrue(resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 80x24")))
 
     def test_missing_grid_pty_or_resize_fails_closed(self):
-        self.assertIn("the app reported no grid", resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 47x24", grid=None)))
+        self.assertIn("the app reported no core and view grid",
+                      resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 47x24", grid=None)))
         self.assertIn("the server saw no PTY request", resize_verdict(dump("RESIZE 47x24")))
         self.assertIn("the server saw no RESIZE", resize_verdict(dump("PTY xterm-256color 47x24")))
         self.assertTrue(resize_verdict(""))
+
+    def test_the_view_grid_must_be_present_and_equal_to_the_core(self):
+        ok = dump("PTY xterm-256color 80x24", "RESIZE 47x24")
+        for header in ["grid: 47x24 (view none)", "grid: 47x24 (view 46x24)", "grid: 47x24",
+                       "grid: 47x24 (view 47x)", "grid: 47x24 (view 0x0)"]:
+            with self.subTest(header=header):
+                text = ok.replace("grid: 47x24 (view 47x24)", header)
+                self.assertNotEqual(text, ok)
+                self.assertTrue(resize_verdict(text))
+
+    def test_the_visible_fragment_never_stands_in_for_the_buffer(self):
+        # Without the buffer section, the on-screen text alone would hide a
+        # stale RESIZE 80x24 that scrolled off.
+        head = "status: connected\ntitle: t\ngrid: 47x24 (view 47x24)\n"
+        on_screen = "── on screen ──\nPTY xterm-256color 80x24\nRESIZE 47x24\n"
+        self.assertIn("the dump has no buffer section", resize_verdict(head + on_screen))
+        self.assertIn("the dump has no buffer section", resize_verdict(head + on_screen + "── buffer ──\n  \n"))
+        # The buffer, not the screen, decides: a stale 80x24 only in the buffer fails.
+        full = head + on_screen + "── buffer ──\nPTY xterm-256color 80x24\nRESIZE 80x24\nRESIZE 47x24\n"
+        self.assertTrue(resize_verdict(full))
 
     def test_zero_sizes_fail(self):
         self.assertTrue(resize_verdict(dump("PTY xterm-256color 0x24", "RESIZE 0x24", grid="0x24")))

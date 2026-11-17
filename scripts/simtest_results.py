@@ -11,7 +11,7 @@ and judge the resize scenario against the grid the app itself reports."""
 import json
 import re
 
-_GRID = re.compile(r"^grid: (\d+)x(\d+)\b", re.M)
+_GRID = re.compile(r"^grid: (\d+)x(\d+) \(view (\d+)x(\d+)\)$", re.M)
 _PTY = re.compile(r"PTY \S+ (\d+)x(\d+)")
 _RESIZE = re.compile(r"RESIZE (\d+)x(\d+)")
 
@@ -19,8 +19,11 @@ _RESIZE = re.compile(r"RESIZE (\d+)x(\d+)")
 def resize_verdict(dump):
     """Problems with a resize run's dump; empty when it passes.
 
-    The app's own core reports its drawn grid (`grid: COLSxROWS`, written by
-    LaunchProbe in test mode). The byte-naming server reports the PTY request
+    The app reports its core grid and its view's (`grid: CxR (view CxR)`,
+    written by LaunchProbe in test mode); both must be present, positive and
+    equal, which is the drawn grid. The byte-naming server's transcript is the
+    dump's buffer section, which must be there: the on-screen section is only
+    what fits, and is never used in its place. It reports the PTY request
     and each window change. The PTY may be opened at any positive size: at the
     80x24 default or already at the laid-out size, depending on whether layout
     ran first. What must hold is that the far end is told the drawn grid: the
@@ -28,13 +31,20 @@ def resize_verdict(dump):
     sent when that is not the drawn grid.
     """
     head, _, rest = dump.partition("── on screen ──")
-    # The buffer section is the whole server transcript; the on-screen one
-    # repeats part of it.
-    server = rest.partition("── buffer ──")[2] or rest
+    # Only the buffer section is the whole server transcript; the on-screen
+    # one is what fits on screen, where an early RESIZE may have scrolled off.
+    _, marker, server = rest.partition("── buffer ──")
     problems = []
+    if not marker or not server.strip():
+        problems.append("the dump has no buffer section")
     grid = _GRID.search(head)
     if not grid:
-        problems.append("the app reported no grid")
+        problems.append("the app reported no core and view grid")
+    elif grid.group(1, 2) != grid.group(3, 4):
+        problems.append(f"the core grid {grid.group(1)}x{grid.group(2)} is not the view's "
+                        f"{grid.group(3)}x{grid.group(4)}")
+    if problems:
+        return problems
     pty = _PTY.search(server)
     if not pty:
         problems.append("the server saw no PTY request")
@@ -45,7 +55,8 @@ def resize_verdict(dump):
         return problems
     drawn = (int(grid.group(1)), int(grid.group(2)))
     opened = (int(pty.group(1)), int(pty.group(2)))
-    for label, (cols, rows) in [("drawn grid", drawn), ("initial PTY", opened)] + \
+    view = (int(grid.group(3)), int(grid.group(4)))
+    for label, (cols, rows) in [("drawn grid", drawn), ("view grid", view), ("initial PTY", opened)] + \
             [(f"RESIZE {i + 1}", size) for i, size in enumerate(resizes)]:
         if cols <= 0 or rows <= 0:
             problems.append(f"{label} is {cols}x{rows}")
