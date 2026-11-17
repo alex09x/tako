@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,20 +46,33 @@ failed = False
 
 CHECK_LOGS = os.path.join("target", "check-logs")
 _runs = 0
+_run_dir = None
+
+
+def run_dir():
+    """This invocation's own log directory, created exclusively: a reused
+    PID or a repeated command never reaches an earlier run's files."""
+    global _run_dir
+    if _run_dir is None:
+        os.makedirs(CHECK_LOGS, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        _run_dir = tempfile.mkdtemp(prefix=f"{stamp}-{os.getpid()}-", dir=CHECK_LOGS)
+    return _run_dir
 
 
 def run(cmd, cwd=None, env=None):
     """Runs `cmd`; returns (seconds, exit code, complete output).
 
-    Every byte goes to its own file under target/check-logs; the console gets
-    start/end, a heartbeat, summaries and failures (scripts/ci_log.py), or
-    everything with TAKO_CI_VERBOSE=1. The pass/count parsers read the
-    complete output returned here, never the console."""
+    Every byte goes to its own file in this invocation's directory under
+    target/check-logs (never replacing one); the console gets start/end, a
+    heartbeat, summaries and failures (scripts/ci_log.py), or everything with
+    TAKO_CI_VERBOSE=1. The pass/count parsers read the complete output
+    returned here, never the console."""
     global _runs
     _runs += 1
     name = re.sub(r"[^A-Za-z0-9_.-]+", "-", " ".join(os.path.basename(str(c)) for c in cmd[:3])).strip("-")
-    path = os.path.join(CHECK_LOGS, f"{os.getpid()}-{_runs:02d}-{name[:60]}.log")
-    return ci_log.run_logged(cmd, path, label=name[:40], cwd=cwd, env=env)
+    path = os.path.join(run_dir(), f"{_runs:02d}-{name[:60]}.log")
+    return ci_log.run_logged(cmd, path, label=name[:40], cwd=cwd, env=env, exclusive=True)
 
 
 def note(check, ok, detail, build=None, lock=None, run_s=None):

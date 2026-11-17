@@ -20,9 +20,12 @@ check_run.py uses `run_logged` the same way and gets the complete output back.
 """
 import os
 import re
+import select
 import selectors
+import signal
 import subprocess
 import sys
+import threading
 import time
 
 MAX_LINE = 300            # console characters per line; the raw log keeps all
@@ -30,6 +33,8 @@ MAX_SHOWN = 200           # console lines per command before the rest are only c
 MAX_ERRORS = 40           # error lines shown per command
 FAILURE_TAIL = 40         # raw lines repeated on the console when the command fails
 HEARTBEAT_SECONDS = 60.0  # longest console silence while the command runs
+STOP_GRACE_SECONDS = 20.0  # cleanup time after SIGTERM before SIGKILL
+RELAYED_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 
 # Completed summaries and stage markers worth a line each.
 SUMMARY = re.compile(
@@ -149,10 +154,43 @@ class Console:
                   f"{self.lines} lines, {self.errors} failure lines, {self.warnings} warnings (raw: {raw_path})")
 
 
+def stop_child(proc, grace=None):
+    """Ends the command the way an interrupted shell would: SIGTERM, so its
+    own cleanup runs (the Swift watchdog stops the test process group it
+    started in a separate session), then SIGKILL only after `grace` seconds.
+    Its output is drained meanwhile so cleanup never blocks on a full pipe."""
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    deadline = time.monotonic() + (STOP_GRACE_SECONDS if grace is None else grace)
+    fd = proc.stdout.fileno() if proc.stdout else None
+    while proc.poll() is None and time.monotonic() < deadline:
+        if fd is not None:
+            try:
+                ready, _, _ = select.select([fd], [], [], 0.1)
+                if ready and not os.read(fd, 65536):
+                    fd = None
+            except OSError:
+                fd = None
+        else:
+            time.sleep(0.05)
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait()
+
+
 def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
-               verbose=None, heartbeat=HEARTBEAT_SECONDS):
+               verbose=None, heartbeat=HEARTBEAT_SECONDS, exclusive=False):
     """Runs `cmd` with its stdout and stderr in `raw_path` byte for byte.
-    Returns (seconds, exit code, complete output as text)."""
+    Returns (seconds, exit code, complete output as text).
+
+    `exclusive` refuses to replace an existing file (check_run's per-command
+    logs); ci.sh's stage logs are rewritten per run as before.
+
+    SIGINT, SIGTERM and SIGHUP sent to the wrapper are passed on to the
+    command, whose output is still logged while it cleans up; the result is
+    then 128+signal, never a pass. If the wrapper itself fails, the command
+    is stopped (stop_child) and the error propagates."""
     out = out or sys.stdout
     label = label or os.path.basename(str(cmd[0]))
     if verbose is None:
@@ -163,16 +201,29 @@ def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
     console = Console(label, out, verbose)
     started = time.monotonic()
     chunks = []
-    with open(raw_path, "wb") as raw:
+    received = []
+    with open(raw_path, "xb" if exclusive else "wb") as raw:
         # One console line, however long or multi-line the arguments are.
         console.emit(Console.clip(f"[{label}] start: " + " ".join(" ".join(map(str, cmd)).split())))
         proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+        def relay(number, _frame):
+            received.append((number, time.monotonic()))
+            if proc.poll() is None:
+                proc.send_signal(number)
+
+        previous = {}
+        if threading.current_thread() is threading.main_thread():
+            previous = {n: signal.signal(n, relay) for n in RELAYED_SIGNALS}
         try:
             selector = selectors.DefaultSelector()
             selector.register(proc.stdout, selectors.EVENT_READ)
             pending = b""
             while True:
-                if not selector.select(timeout=min(heartbeat, 5.0)):
+                # A command that ignores the relayed signal is stopped.
+                if received and time.monotonic() - received[0][1] >= STOP_GRACE_SECONDS and proc.poll() is None:
+                    proc.kill()
+                if not selector.select(timeout=min(heartbeat, 0.5 if received else 5.0)):
                     if time.monotonic() - console.last_print >= heartbeat:
                         console.heartbeat(started, raw_path)
                     continue
@@ -193,13 +244,19 @@ def run_logged(cmd, raw_path, label=None, cwd=None, env=None, out=None,
             selector.close()
             code = proc.wait()
         except BaseException:
-            # The wrapper failed: never leave the command running unobserved.
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
+            # The wrapper failed: never leave the command running unobserved,
+            # and let it clean up its own children first.
+            stop_child(proc)
             raise
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
     if code < 0:
         code = 128 - code
+    if received:
+        number = received[0][0]
+        console.emit(f"[{label}] interrupted by signal {number}; the command was asked to stop")
+        code = 128 + number
     seconds = time.monotonic() - started
     text = b"".join(chunks).decode("utf-8", "replace")
     if code != 0 and not verbose:

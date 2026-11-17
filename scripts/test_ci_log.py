@@ -10,9 +10,11 @@ build, no test campaign, nothing outside a temporary directory."""
 
 import io
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -177,13 +179,147 @@ class CiLogTests(unittest.TestCase):
             "secs, code, out = ns['run']([sys.executable, '-c', \"print('test result: ok. 3 passed; 0 failed');print('warning: x')\"])\n"
             "assert code == 0, code\n"
             "assert 'warning: x' in out and 'test result: ok. 3 passed' in out, out\n"
-            "logs = os.listdir('target/check-logs')\n"
+            "runs = os.listdir('target/check-logs')\n"
+            "assert len(runs) == 1, runs\n"
+            "logs = os.listdir(os.path.join('target/check-logs', runs[0]))\n"
             "assert len(logs) == 1, logs\n"
             "print('CHECKED', logs[0])\n")], capture_output=True, text=True, env=env, cwd=self.dir)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("CHECKED", r.stdout)
         self.assertIn("test result: ok. 3 passed", r.stdout)
         self.assertNotIn("\nwarning: x\n", r.stdout, "the warning stays in the per-check file")
+
+    def test_check_run_keeps_both_runs_when_the_pid_and_command_repeat(self):
+        script = (
+            "import os, sys, time, runpy\n"
+            f"sys.path.insert(0, {HERE!r})\n"
+            "os.getpid = lambda: 4242\n"
+            "time.strftime = lambda *a: '20261117-000000'\n"
+            f"ns = runpy.run_path({os.path.join(HERE, 'check_run.py')!r}, run_name='check_run_test')\n"
+            f"os.chdir({self.dir!r})\n"
+            "secs, code, out = ns['run']([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(sys.argv[1].encode())', sys.argv[1]])\n"
+            "assert code == 0, code\n")
+        for payload in ("first run bytes\n", "second run bytes\n"):
+            r = subprocess.run([sys.executable, "-c", script, payload], capture_output=True, text=True, cwd=self.dir)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        root = os.path.join(self.dir, "target", "check-logs")
+        runs = sorted(os.listdir(root))
+        self.assertEqual(len(runs), 2, runs)
+        self.assertTrue(all(name.startswith("20261117-000000-4242-") for name in runs), runs)
+        kept = set()
+        for run in runs:
+            (log,) = os.listdir(os.path.join(root, run))
+            with open(os.path.join(root, run, log), "rb") as f:
+                kept.add(f.read())
+        self.assertEqual(kept, {b"first run bytes\n", b"second run bytes\n"})
+
+    def test_an_exclusive_log_never_replaces_an_existing_file(self):
+        path = os.path.join(self.dir, "kept.log")
+        with open(path, "wb") as f:
+            f.write(b"earlier evidence")
+        with self.assertRaises(FileExistsError):
+            ci_log.run_logged(["true"], path, out=io.StringIO(), exclusive=True)
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), b"earlier evidence")
+
+
+# Like scripts/ci-swift-watchdog.py: starts the real work in its own session
+# and stops that group from its SIGTERM handler. A SIGKILL would skip it.
+WATCHDOG_LIKE = r"""
+import os, signal, subprocess, sys, time
+state = sys.argv[1]
+worker = subprocess.Popen(["sleep", "300"], start_new_session=True)
+open(os.path.join(state, "worker.pid"), "w").write(str(worker.pid))
+def stop(number, _frame):
+    os.killpg(worker.pid, signal.SIGTERM)
+    worker.wait()
+    print("watchdog cleanup: worker group stopped", flush=True)
+    open(os.path.join(state, "cleaned"), "w").write("yes")
+    sys.exit(128 + number)
+signal.signal(signal.SIGTERM, signal.SIG_IGN if len(sys.argv) > 2 else stop)
+print("== stage", flush=True)
+while True:
+    time.sleep(0.1)
+"""
+
+
+class CiLogStopTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+        self.script = os.path.join(self.dir, "watchdog_like.py")
+        with open(self.script, "w") as f:
+            f.write(WATCHDOG_LIKE)
+
+    def wait_for(self, name, seconds=10):
+        path = os.path.join(self.dir, name)
+        deadline = time.monotonic() + seconds
+        while not os.path.exists(path) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return os.path.exists(path)
+
+    def worker_alive(self):
+        with open(os.path.join(self.dir, "worker.pid")) as f:
+            pid = int(f.read())
+        self.addCleanup(lambda: _kill_quietly(pid))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            time.sleep(0.05)
+        return True
+
+    def test_a_failing_console_lets_the_command_clean_up_and_never_passes(self):
+        class BrokenConsole(io.StringIO):
+            def write(self, text):
+                if "== stage" in text:
+                    raise BrokenPipeError("console went away")
+                return super().write(text)
+
+        with self.assertRaises(BrokenPipeError):
+            ci_log.run_logged([sys.executable, self.script, self.dir], os.path.join(self.dir, "raw.log"),
+                              out=BrokenConsole())
+        self.assertTrue(self.wait_for("cleaned", 1), "the command's SIGTERM cleanup ran")
+        self.assertFalse(self.worker_alive(), "the separate-session worker was stopped")
+
+    def test_cancelling_the_wrapper_reaches_the_command_and_keeps_its_cleanup_output(self):
+        raw = os.path.join(self.dir, "raw.log")
+        wrapper = subprocess.Popen([sys.executable, os.path.join(HERE, "ci_log.py"), "--log", raw, "--",
+                                    sys.executable, self.script, self.dir],
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertTrue(self.wait_for("worker.pid"))
+        time.sleep(0.3)  # the handler is installed after the pid file
+        wrapper.send_signal(signal.SIGTERM)
+        out, _ = wrapper.communicate(timeout=30)
+        self.assertEqual(wrapper.returncode, 128 + signal.SIGTERM, out)
+        self.assertTrue(self.wait_for("cleaned", 1))
+        self.assertFalse(self.worker_alive())
+        with open(raw, "rb") as f:
+            self.assertIn(b"watchdog cleanup: worker group stopped", f.read())
+        self.assertIn(b"interrupted by signal 15", out)
+        self.assertNotIn(b"] ok in", out)
+
+    def test_a_command_that_ignores_sigterm_is_killed_after_the_grace(self):
+        proc = subprocess.Popen([sys.executable, self.script, self.dir, "ignore-term"],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertTrue(self.wait_for("worker.pid"))
+        time.sleep(0.3)
+        started = time.monotonic()
+        ci_log.stop_child(proc, grace=0.5)
+        self.assertEqual(proc.returncode, -signal.SIGKILL)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "cleaned")))
+        proc.stdout.close()
+
+
+def _kill_quietly(pid):
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 if __name__ == "__main__":
