@@ -158,7 +158,7 @@ final class Driver {
         return condition()
     }
 
-    func launch(config: String = Driver.defaultConfig, settleTerminal: Bool = true) throws {
+    func launch(config: String = Driver.defaultConfig, settleTerminal: Bool = true, arguments: [String] = []) throws {
         var timing = DriverLaunchClock()
         quit()
         timing.mark("quit")
@@ -183,7 +183,7 @@ final class Driver {
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = ["-n", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
             + env.flatMap { ["--env", "\($0.key)=\($0.value)"] }
-            + [appURL.path, "--args", "--no-update", "--no-launch-notices"]
+            + [appURL.path, "--args", "--no-update", "--no-launch-notices"] + arguments
         timing.mark("prepare")
         try open.run()
         open.waitUntilExit()
