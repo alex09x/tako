@@ -142,9 +142,13 @@ enum LaunchProbe {
         // is the difference between "the app lost it" and "the app is not
         // showing it" -- and only one of those is a data bug.
         let onScreen = session.surface?.accessibilityValue ?? "<no surface>"
+        // The grid the core holds -- what the far end must have been told --
+        // and the view's own, for comparison. Read only; test mode only.
+        let view = session.surface.map { "\($0.cols)x\($0.rows)" } ?? "none"
         let report = """
             status: \(session.status.label)
             title: \(session.title)
+            grid: \(session.core.cols())x\(session.core.rows()) (view \(view))
             ── on screen ──
             \(onScreen)
             ── buffer ──

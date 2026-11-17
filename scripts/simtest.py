@@ -35,7 +35,7 @@ OUT = "target/simtest"
 # Off any external volume, where macOS would ask for access (app_locations.py).
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import app_locations  # noqa: E402
-from simtest_results import walkthrough_verdict  # noqa: E402
+from simtest_results import resize_verdict, walkthrough_verdict  # noqa: E402
 DERIVED = app_locations.app_dir("ios-sim-derived")
 FIXTURE = os.path.join(OUT, "sshd")
 BUNDLE_ID = "dev.prod.takocore"
@@ -383,10 +383,12 @@ BEHAVIOUR = [
         # and the window change as text. A real shell only reacts to them,
         # and a scenario that reads a reaction is a scenario that passes when
         # the size is wrong in a way the shell does not mind.
+        # The PTY may be opened at the 80x24 default or already at the laid-out
+        # size, whichever comes first; the last RESIZE must be the grid the
+        # app's core reports, and no stale 80x24 (simtest_results.resize_verdict).
         "port": "echo",
         "send": r"\x0c",
-        "expect": ["PTY xterm-256color 80x24", "RESIZE "],
-        "reject": ["RESIZE 80x24"],
+        "verdict": resize_verdict,
     },
 ]
 
@@ -622,6 +624,8 @@ def scenario(spec):
     screen = text.partition("── on screen ──")[2].partition("── buffer ──")[0]
     missing = [e for e in spec.get("expect", []) if e not in text]
     missing += [e for e in spec.get("expect_on_screen", []) if e not in screen]
+    if spec.get("verdict"):
+        missing += spec["verdict"](text)
     leaked = [r for r in spec.get("reject", []) if r in text]
     wanted_status = spec.get("expect_status", "connected")
     status_ok = f"status: {wanted_status}" in text

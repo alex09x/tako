@@ -9,7 +9,45 @@ import json
 import subprocess
 import unittest
 
-from simtest_results import walkthrough_verdict
+from simtest_results import resize_verdict, walkthrough_verdict
+
+
+def dump(*server, grid="47x24"):
+    """A dump as LaunchProbe writes it, the server transcript in both sections."""
+    head = "status: connected\ntitle: 127.0.0.1 · ssh\n" + (f"grid: {grid} (view {grid})\n" if grid else "")
+    body = "\n".join(server)
+    return head + "── on screen ──\n" + body + "\n── buffer ──\n" + body + "\n"
+
+
+class ResizeVerdictTests(unittest.TestCase):
+    def test_the_default_initial_size_then_the_drawn_grid_passes(self):
+        self.assertEqual(resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 47x24")), [])
+
+    def test_an_already_laid_out_initial_size_then_the_drawn_grid_passes(self):
+        # CI 44003398521: layout ran before the PTY request.
+        self.assertEqual(resize_verdict(dump("PTY xterm-256color 47x23", "RESIZE 47x24")), [])
+
+    def test_a_true_80x24_grid_is_not_rejected_as_stale(self):
+        self.assertEqual(resize_verdict(dump("PTY xterm-256color 47x23", "RESIZE 80x24", grid="80x24")), [])
+
+    def test_a_final_size_that_is_not_the_drawn_grid_fails(self):
+        for final in ["RESIZE 47x23", "RESIZE 46x24"]:
+            with self.subTest(final=final):
+                self.assertTrue(resize_verdict(dump("PTY xterm-256color 80x24", final)))
+
+    def test_a_stale_80x24_fails_even_if_the_drawn_grid_follows(self):
+        self.assertTrue(resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 80x24", "RESIZE 47x24")))
+        self.assertTrue(resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 80x24")))
+
+    def test_missing_grid_pty_or_resize_fails_closed(self):
+        self.assertIn("the app reported no grid", resize_verdict(dump("PTY xterm-256color 80x24", "RESIZE 47x24", grid=None)))
+        self.assertIn("the server saw no PTY request", resize_verdict(dump("RESIZE 47x24")))
+        self.assertIn("the server saw no RESIZE", resize_verdict(dump("PTY xterm-256color 47x24")))
+        self.assertTrue(resize_verdict(""))
+
+    def test_zero_sizes_fail(self):
+        self.assertTrue(resize_verdict(dump("PTY xterm-256color 0x24", "RESIZE 0x24", grid="0x24")))
+        self.assertTrue(resize_verdict(dump("PTY xterm-256color 47x0", "RESIZE 47x24")))
 
 
 class WalkthroughResultsTests(unittest.TestCase):
