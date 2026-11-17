@@ -177,25 +177,32 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     // Read the existing public app history once, after ALL timed clicks. No
     // control request or AX read is inserted into a click's measured interval.
     // Its timestamp uses the same systemUptime clock as these boundaries.
-    let history = try d.tabTransitions()
     guard let origin = boundaries.first?.down else {
         throw Failure("no app-side transition history for the timed sidebar switches")
     }
-    let timedHistory = history.filter { ((($0["timestamp"] as? NSNumber)?.doubleValue) ?? -1) >= origin }
-    guard !timedHistory.isEmpty else { throw Failure("no app-side transition recorded after the timed clicks began") }
     for b in boundaries {
         print(String(format: "[timing boundary] %@ down@%.1f up@%.1f shown@%.1f ms; wall=%.1f mono=%.1f ms; polls=%d maxCG=%.1f lastOldQuery@%.1f changedQuery@%.1f ms",
                      b.name, (b.down-origin)*1000, (b.up-origin)*1000, (b.shown-origin)*1000,
                      b.wallMS, (b.shown-b.down)*1000, b.polls, b.maxPoll*1000,
                      (b.lastUnchangedStart-origin)*1000, (b.changedPollStart-origin)*1000))
     }
-    for event in timedHistory.prefix(50) {
-        guard let time = (event["timestamp"] as? NSNumber)?.doubleValue, time >= origin else { continue }
-        print(String(format: "[timing model] %@ -> %@ @%.1f ms",
-                     event["from_id"] as? String ?? "missing", event["to_id"] as? String ?? "missing", (time-origin)*1000))
+    var historyFailure: Error?
+    do {
+        let history = try d.tabTransitions()
+        let timedHistory = history.filter { ((($0["timestamp"] as? NSNumber)?.doubleValue) ?? -1) >= origin }
+        guard !timedHistory.isEmpty else { throw Failure("no app-side transition recorded after the timed clicks began") }
+        for event in timedHistory.prefix(50) {
+            guard let time = (event["timestamp"] as? NSNumber)?.doubleValue else { continue }
+            print(String(format: "[timing model] %@ -> %@ @%.1f ms",
+                         event["from_id"] as? String ?? "missing", event["to_id"] as? String ?? "missing", (time-origin)*1000))
+        }
+    } catch {
+        historyFailure = error
+        print("[timing model] unavailable: \(error)")
     }
     // A click on the name used to wait out the double-click interval (~480 ms).
     guard let slowest = sorted.last, slowest < 250 else {
         throw Failure(String(format: "a sidebar switch took %.0f ms to reach the screen", sorted.last ?? 0))
     }
+    if let historyFailure { throw historyFailure }
 }
