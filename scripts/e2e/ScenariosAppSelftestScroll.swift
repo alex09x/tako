@@ -16,6 +16,14 @@ func runAppSelftestScrollScenario(_ d: Driver) throws {
     let previous = d.environment
     d.environment["TAKO_SELFTEST_DIR"] = d.work.path
     defer { d.environment = previous }
+    let quietChild = ProcessInfo.processInfo.environment["TAKO_DIAG_QUIET_SCROLL_CHILD"] == "1"
+    print("scroll child mode: \(quietChild ? "quiet" : "baseline")")
+    if quietChild {
+        // Set the private zsh startup file after the driver's bootstrap.
+        // The scroll scenario feeds its own history directly to the engine.
+        let startup = d.work.appendingPathComponent("h/.zshenv")
+        try "exec /bin/sleep 600\n".write(to: startup, atomically: true, encoding: .utf8)
+    }
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\n"
                  + "session-persistence = false\nactivity-alert = never\n",
                  settleTerminal: false, arguments: ["--selftest-scroll"])
@@ -59,6 +67,16 @@ func runAppSelftestScrollScenario(_ d: Driver) throws {
     }, timeout: 25) else { throw Failure("the app scroll self-test did not complete") }
     let report = try String(contentsOfFile: reportPath, encoding: .utf8)
     print(report)
+    let pid = (panes[0]["pid"] as? NSNumber)?.int32Value ?? 0
+    let command = pid > 0 ? (try? d.exec("ps -p \(pid) -o comm=").trimmingCharacters(in: .whitespacesAndNewlines)) : nil
+    print("scroll child witness: \(command ?? "unavailable")")
+    let screen = d.screenText()
+    if let lastLine = screen.range(of: "history line 399", options: .backwards) {
+        let tail = screen[lastLine.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        print("scroll output after synthetic history: \(String(reflecting: String(tail.prefix(600))))")
+    } else {
+        print("scroll output after synthetic history: unavailable (last line not in AX text)")
+    }
     guard !report.split(whereSeparator: \.isNewline).contains(where: { $0.hasPrefix("FAIL") }) else {
         throw Failure("the app scroll self-test reported a failed assertion")
     }

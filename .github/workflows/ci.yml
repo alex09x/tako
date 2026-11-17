@@ -1,20 +1,20 @@
-# tako — Hosted workspace and sidebar timing diagnosis
+# tako — Hosted scroll fixture comparison
 # Copyright (c) 2026 Alexander Panasenko
 # Contact: alex@prod.codes
 # Author: https://prod.codes/about/
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
-name: RC workspace and sidebar timing diagnosis
+name: RC scroll child comparison
 on:
   workflow_dispatch:
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: rc-hosted-workspace-sidebar
+  group: rc-hosted-scroll-child
   cancel-in-progress: false
 jobs:
-  sample-switches:
+  compare-scroll:
     runs-on: macos-26
     timeout-minutes: 20
     defaults:
@@ -42,52 +42,28 @@ jobs:
           sudo dscl . -create "/Users/$(id -un)" UserShell "$bash_path"
           test "$(python3 -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_shell)')" = "$bash_path"
           printf 'TAKO_TEST_BASH=%s\n' "$bash_path" >> "$GITHUB_ENV"
-      - name: Sample both switch scenarios and verify fractional scrolling
-        id: timing
+      - name: Compare the baseline shell and a quiet child
         run: |
           set -euo pipefail
           export APP="$PWD/target/timing-app/Tako.app"
           export TAKO_BUNDLE_ID=com.tako-core.terminal.e2e-timing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
-          export TAKO_E2E_SAMPLE_DIR="$PWD/target/e2e-samples"
-          python3 scripts/ci_log.py --log target/ci-logs/timing.log --label timing -- bash scripts/e2e-macapp.sh workspace-journey sidebar-switch-speed app-selftest-scroll
-      - name: Check sample coverage independently of the scenario verdict
-        if: ${{ always() && (steps.timing.outcome == 'success' || steps.timing.outcome == 'failure') }}
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          samples = Path('target/e2e-samples')
-          expected = {'workspace-journey-controlled-pair': 1,
-                      **{f'sidebar-switch-round-{i}': 5 for i in range(3)}}
-          failures = []
-          for label, blocks in expected.items():
-              try:
-                  record = json.loads((samples / f'{label}.json').read_text())
-                  profile = samples / f'{label}.txt'
-                  if record['label'] != label or len(record['blocks']) != blocks:
-                      raise ValueError('sample label or block count differs')
-                  if record['complete'] is not True or record['problems']:
-                      raise ValueError(str(record['problems']))
-                  if not profile.is_file() or profile.stat().st_size == 0:
-                      raise ValueError('sample report is missing')
-              except (KeyError, OSError, TypeError, ValueError) as error:
-                  failures.append(f'{label}: {error}')
-          if failures:
-              raise SystemExit('\n'.join(failures))
-          print('Four sample reports cover the workspace pair and 15 sidebar clicks')
-          PY
+          baseline=0
+          quiet=0
+          TAKO_DIAG_QUIET_SCROLL_CHILD=0 python3 scripts/ci_log.py --log target/ci-logs/scroll-baseline.log --label scroll-baseline -- bash scripts/e2e-macapp.sh app-selftest-scroll || baseline=$?
+          TAKO_DIAG_QUIET_SCROLL_CHILD=1 python3 scripts/ci_log.py --log target/ci-logs/scroll-quiet.log --label scroll-quiet -- bash scripts/e2e-macapp.sh app-selftest-scroll || quiet=$?
+          printf 'baseline=%s quiet=%s\n' "$baseline" "$quiet" | tee target/ci-logs/scroll-status.txt
+          [ "$baseline" -eq 0 ] && [ "$quiet" -eq 0 ]
       - name: Collect failed fixture state
         if: failure()
         run: python3 scripts/ci_kept_state.py --logs target/ci-logs --out target/ci-kept-state
-      - name: Retain timing evidence
+      - name: Retain comparison evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: rc-workspace-sidebar-timing
+          name: rc-scroll-child-comparison
           path: |
             target/timing-app/identity.json
             target/tako-e2e.inputs
-            target/e2e-samples/
             target/ci-logs/
             target/ci-kept-state/
           if-no-files-found: error
