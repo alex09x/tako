@@ -12,69 +12,94 @@ import XCTest
 
 @MainActor
 final class TakoSetupUITests: TakoCustomConfigCase {
-    func testPermissionsAreOptionalAndNotificationCheckGivesVisibleFeedback() async throws {
-        let volumePrompt = addUIInterruptionMonitor(withDescription: "Isolated Tako on the external test disk") { alert in
-            let text = ([alert.label] + alert.staticTexts.allElementsBoundByIndex.map(\.label)).joined(separator: " ")
-            guard text.contains("TakoCore"), text.localizedCaseInsensitiveContains("removable volume") else { return false }
-            let allow = alert.buttons["Allow"]
-            guard allow.isHittable else { return false }
-            allow.click()
-            return true
+    /// The A16 access list (SetupPermissionPanel): five main rows with their
+    /// passive status, an action and a ? help each, three extras behind a
+    /// collapsed disclosure, no camera. Only navigation is exercised: no row
+    /// action runs, so nothing is requested and System Settings is not opened.
+    /// Sending a test notification is covered by the model/unit tests, not
+    /// here: this identity's notifications are Unavailable.
+    func testPermissionsPanelShowsOptionalAccessStatusAndHelpWithoutRequestingAnything() async throws {
+        // Every precondition throws: with continueAfterFailure = false XCTest
+        // can tear the app down at the next suspension while a body that only
+        // recorded a failure would go on against a terminated app.
+        func require(_ condition: Bool, _ message: @autoclosure () -> String) throws {
+            guard condition else { throw SetupPrecondition(message: message()) }
         }
-        defer { removeUIInterruptionMonitor(volumePrompt) }
+        func shown(_ element: XCUIElement) -> String {
+            (element.value as? String).flatMap { $0.isEmpty ? nil : $0 } ?? element.label
+        }
         let app = try isolatedApplication()
         app.launch()
         try openSetup(app)
-        // The Permissions stage (A16) is named by its first step, notifications.
         app.buttons["SetupStep-notifications"].click()
-        XCTAssertTrue(app.staticTexts["Permissions"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["SetupAgentsCard"].exists)
-        XCTAssertFalse(app.buttons["SetupSystemPermissionsCard"].exists)
-        XCTAssertFalse(app.buttons["SetupPermission-notifications"].exists)
-        let folders = app.buttons["SetupPermission-protectedFolders"]
-        XCTAssertTrue(folders.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["SetupChooseFolder"].exists)
-        XCTAssertTrue(folders.isHittable)
-        let disk = app.buttons["SetupPermission-fullDiskAccess"]
-        XCTAssertTrue(disk.isHittable)
-        for kind in ["localNetwork", "microphone", "systemAudio", "screenCapture", "automation"] {
-            XCTAssertTrue(app.buttons["SetupPermission-\(kind)"].isHittable)
-        }
-        disk.click()
-        app.activate()
-        let dragApp = app.descendants(matching: .any)["SetupDiskDragApp"].firstMatch
-        XCTAssertTrue(dragApp.waitForExistence(timeout: 5))
-        XCTAssertTrue(dragApp.isHittable)
-        XCTAssertFalse(app.descendants(matching: .any)["SetupDiskAccessGuide"].exists)
-        XCTAssertFalse(app.buttons["SetupDiskCopyPath"].exists)
-        XCTAssertFalse(app.buttons["SetupDiskGuideBack"].exists)
-        app.descendants(matching: .any)["SetupWizard"].firstMatch.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -180)
-        let audio = app.buttons["SetupPermission-systemAudio"]
-        audio.click()
-        app.activate()
-        XCTAssertFalse(app.descendants(matching: .any)["SetupPermissionExplanation-systemAudio"].exists)
-        XCTAssertTrue(dragApp.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(audio.isHittable)
-        XCTAssertFalse(app.descendants(matching: .any)["SetupPermission-camera"].exists)
-        XCTAssertFalse(app.buttons["SetupRequestPermission-camera"].exists)
+        let title = app.staticTexts["SetupStepTitle"].firstMatch
+        try require(title.waitForExistence(timeout: 5), "no SetupStepTitle")
+        // A SwiftUI Text exposes its words as the static text's value.
+        try require(shown(title) == "macOS Permissions", "title: \(shown(title))")
+        try require(!app.buttons["SetupAgentsCard"].exists, "SetupAgentsCard is shown")
+        try require(!app.buttons["SetupSystemPermissionsCard"].exists, "SetupSystemPermissionsCard is shown")
         let scopeNote = app.staticTexts["SetupPermissionScopeNote"]
-        XCTAssertTrue(scopeNote.exists)
-        XCTAssertTrue((scopeNote.label + " " + (scopeNote.value as? String ?? ""))
-            .contains("Checks apply to Tako"))
+        try require(scopeNote.exists, "no SetupPermissionScopeNote")
+        try require((scopeNote.label + " " + (scopeNote.value as? String ?? "")).contains("permissions apply to Tako"),
+                    "scope note: \(scopeNote.label) \(scopeNote.value ?? "")")
+        func row(_ kind: String) -> XCUIElement { app.descendants(matching: .any)["SetupPermissionRow-\(kind)"].firstMatch }
+        func texts(_ element: XCUIElement) -> [String] { element.staticTexts.allElementsBoundByIndex.map(shown) }
+        // Main rows: title, purpose and a status each, one action, one ?.
+        let main = ["notifications", "protectedFolders", "microphone", "fullDiskAccess", "localNetwork"]
+        for kind in main {
+            try require(row(kind).waitForExistence(timeout: 5), "no row \(kind)")
+            try require(texts(row(kind)).count == 3, "\(kind): title, purpose and status \(texts(row(kind)))")
+            try require(app.buttons["SetupPermissionHelp-\(kind)"].isHittable, "\(kind): ? is not hittable")
+        }
+        try require(app.buttons["SetupEnableNotifications"].isHittable, "SetupEnableNotifications is not hittable")
+        try require(!app.buttons["SetupPermission-notifications"].exists, "SetupPermission-notifications is shown")
+        for kind in main.dropFirst() {
+            try require(app.buttons["SetupPermission-\(kind)"].isHittable, "\(kind): action is not hittable")
+        }
+        try require(texts(row("notifications")).last == "Unavailable",
+                    "this test identity cannot post notifications: \(texts(row("notifications")))")
+        try require(!app.buttons["SetupChooseFolder"].exists, "SetupChooseFolder is shown")
+        try require(!app.descendants(matching: .any)["SetupPermission-camera"].exists, "a camera row is shown")
+        try require(!app.buttons["SetupRequestPermission-camera"].exists, "a camera request is shown")
+        // Extras: collapsed until the disclosure opens them.
+        let extras = app.buttons["SetupPermissionExtras"]
+        try require(extras.value as? String == "collapsed", "extras: \(extras.value ?? "nil")")
+        let extraKinds = ["screenCapture", "systemAudio", "automation"]
+        for kind in extraKinds { try require(!row(kind).exists, "\(kind) is shown while collapsed") }
+        extras.click()
+        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "expanded"), object: extras)
+        let opened = await XCTWaiter().fulfillment(of: [expanded], timeout: 5)
+        try require(opened == .completed, "extras did not expand (\(opened.rawValue)): \(extras.value ?? "nil")")
+        for kind in extraKinds {
+            try require(row(kind).waitForExistence(timeout: 5), "no extra row \(kind)")
+            try require(app.buttons["SetupPermission-\(kind)"].exists, "\(kind): no action")
+            try require(app.buttons["SetupPermissionHelp-\(kind)"].exists, "\(kind): no ?")
+        }
+        try require(!app.descendants(matching: .any)["SetupPermission-camera"].exists, "a camera row is shown in extras")
         attach(app, name: "Setup optional permission statuses")
-        // Navigation and status inspection must not require allowing an OS prompt.
-        app.buttons["SetupStep-notifications"].click()
-        let check = app.buttons["SetupRefreshNotifications"]
-        XCTAssertTrue(check.waitForExistence(timeout: 5))
-        XCTAssertEqual(check.label, "Send test notification")
-        XCTAssertTrue(app.staticTexts["SetupNotificationPresentationHint"].exists)
-        check.click()
-        XCTAssertTrue(app.staticTexts["SetupMessage"].waitForExistence(timeout: 5))
-        let feedbackElement = app.staticTexts["SetupMessage"]
-        let feedback = (feedbackElement.label + " " + (feedbackElement.value as? String ?? "")).lowercased()
-        XCTAssertTrue(["test notification", "disabled", "enable notifications", "unavailable"].contains { feedback.contains($0) })
-        attach(app, name: "Setup notification test feedback")
+        // ? shows the row's help in the panel and hides it again; no prompt.
+        let help = app.staticTexts["SetupPermissionHelp"]
+        try require(!help.exists, "help is shown before ?")
+        let notificationsHelp = app.buttons["SetupPermissionHelp-notifications"]
+        notificationsHelp.click()
+        try require(help.waitForExistence(timeout: 5), "? did not show the help")
+        try require(!shown(help).isEmpty, "the help text is empty")
+        attach(app, name: "Setup permission help")
+        notificationsHelp.click()
+        try require(help.waitForNonExistence(timeout: 5), "? did not hide the help")
+        try require(!app.descendants(matching: .any)["SetupDiskDragApp"].exists, "a row action ran")
+        // The app must still be running around Finish Later; a failure names
+        // the runner and every uitest Tako process.
+        func running(_ phase: String) throws {
+            let apps = NSWorkspace.shared.runningApplications.filter {
+                ($0.bundleIdentifier ?? "").hasPrefix("com.tako-core.terminal.uitest")
+            }.map { "\($0.bundleIdentifier ?? "?") pid=\($0.processIdentifier) terminated=\($0.isTerminated)" }
+            try require(app.state == .runningForeground || app.state == .runningBackground,
+                        "the app is not running \(phase): app.state=\(app.state.rawValue) runner pid=\(ProcessInfo.processInfo.processIdentifier) apps=\(apps)")
+        }
+        try running("before SetupLater")
         app.buttons["SetupLater"].click()
+        try running("after SetupLater")
         try await assertKeyboardReturnsToTerminal(app)
     }
 
@@ -320,4 +345,10 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         let wroteFile = XCTNSPredicateExpectation(predicate: written, object: nil)
         await fulfillment(of: [wroteFile], timeout: 8)
     }
+}
+
+/// A failed precondition of an async UI test, thrown so the test stops where it failed.
+struct SetupPrecondition: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
 }

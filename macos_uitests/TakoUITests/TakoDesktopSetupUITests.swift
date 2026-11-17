@@ -43,6 +43,7 @@ final class TakoDesktopSetupUITests: TakoDesktopDesignCase {
         let before = try terminalBackground()
         func choose(_ name: String, light: Bool) throws {
             let card = app.buttons["SetupTheme-\(name)"]
+            try revealInWizard(card, wizard)
             XCTAssertTrue(card.isHittable)
             card.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).click()
             try requireSetup { card.value as? String == "Selected" }
@@ -85,6 +86,23 @@ final class TakoDesktopSetupUITests: TakoDesktopDesignCase {
         guard TakoScopedAppearanceHelpers.wait(predicate) else {
             throw TakoScopedAppearanceHelpers.ObservationError.unavailable("Setup did not reach the expected UI or rendered state")
         }
+    }
+
+    /// Scrolls the wizard's own ScrollView (bounded) until `element` lies
+    /// inside its visible frame, so a card below the fold (or under the Dock
+    /// on a short hosted screen) is clicked where the person would see it.
+    private func revealInWizard(_ element: XCUIElement, _ wizard: XCUIElement) throws {
+        let scroll = wizard.scrollViews.firstMatch
+        guard element.waitForExistence(timeout: 5), scroll.exists else {
+            throw TakoScopedAppearanceHelpers.ObservationError.unavailable("no \(element) in the wizard's ScrollView")
+        }
+        for _ in 0..<12 {
+            let visible = scroll.frame, frame = element.frame
+            if visible.contains(frame), element.isHittable { return }
+            scroll.scroll(byDeltaX: 0, deltaY: frame.maxY > visible.maxY ? -60 : 60)
+        }
+        throw TakoScopedAppearanceHelpers.ObservationError.unavailable(
+            "\(element) stayed outside the wizard's visible frame \(scroll.frame): \(element.frame)")
     }
 
     private func openSetupForAppearance(_ app: XCUIApplication) throws {

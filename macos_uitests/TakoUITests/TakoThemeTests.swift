@@ -283,10 +283,27 @@ final class TakoThemeTests: TakoCustomConfigCase {
         XCUIDevice.shared.appearance = .light
         let app = try takoApplication()
         app.launch()
-        // close default window
+        // Close the ordinary window the floating-canvas way: the first Cmd+W
+        // closes its last pane and leaves the empty canvas
+        // (EmptyFloatingCanvasView), the second closes that empty session.
+        // A failed precondition stops this async test here: with
+        // continueAfterFailure = false XCTest tears the app down at the next
+        // suspension while the body would go on against a terminated app.
+        let window = app.windows.firstMatch
+        guard window.waitForExistence(timeout: 5) else {
+            throw QuickTerminalPrecondition(message: "No ordinary window to close before inspecting Quick Terminal")
+        }
         app.typeKey("w", modifierFlags: [.command])
-        XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 1),
-                      "Close the ordinary window before inspecting Quick Terminal")
+        let emptyCanvas = window.descendants(matching: .any)["FloatingTerminalCanvas"].firstMatch
+            .staticTexts["No open terminals in this session"].firstMatch
+        guard emptyCanvas.waitForExistence(timeout: 5) else {
+            throw QuickTerminalPrecondition(message: "The first Cmd+W did not leave the empty canvas: \(app.debugDescription.prefix(4000))")
+        }
+        app.typeKey("w", modifierFlags: [.command])
+        guard app.windows.firstMatch.waitForNonExistence(timeout: 5) else {
+            let windows = app.windows.allElementsBoundByIndex.map { "id=\($0.identifier) title=\($0.title) frame=\($0.frame)" }
+            throw QuickTerminalPrecondition(message: "The second Cmd+W did not close the empty session's window: \(windows)")
+        }
         // open quick terminal
         app.menuBarItems["View"].firstMatch.click()
         app.menuItems["Quick Terminal"].firstMatch.click()
@@ -299,4 +316,10 @@ final class TakoThemeTests: TakoCustomConfigCase {
         try assertTitlebarAppearance(.dark, for: app)
         logTestProgress("quick dark assertion end")
     }
+}
+
+/// A precondition of an async UI test that must stop the test where it failed.
+struct QuickTerminalPrecondition: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
 }
