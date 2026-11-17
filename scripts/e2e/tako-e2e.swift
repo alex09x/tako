@@ -3409,11 +3409,12 @@ let scenarios: [Scenario] = [
         let workspaceCtl = quotedWorkspaceArgument(d.appURL.path + "/Contents/MacOS/takoctl")
             + " --bundle-id " + quotedWorkspaceArgument(d.bundleID)
         let controlBaseline = (try d.workspaceTransitions()).compactMap { ($0["sequence"] as? NSNumber)?.int64Value }.max() ?? 0
-        let request0 = ProcessInfo.processInfo.systemUptime
-        _ = try d.exec("\(workspaceCtl) workspace switch Default")
-        let request1 = ProcessInfo.processInfo.systemUptime
-        _ = try d.exec("\(workspaceCtl) workspace switch \(quotedWorkspaceArgument(ws2Name))")
-        guard (request1 - request0) * 1000 < 140 else {
+        // Prepare the two public-protocol connections first. CLI startup and
+        // child reaping between commands are not part of the intended race.
+        let requests = try d.controlPair(
+            ["cmd": "workspace", "args": ["action": "switch", "name": "Default"]],
+            ["cmd": "workspace", "args": ["action": "switch", "name": ws2Name]])
+        guard (requests.second - requests.first) * 1000 < 140 else {
             throw Failure("controlled workspace request dispatch exceeded the unchanged140ms race window")
         }
         let controlled = try d.workspaceTransitions().filter {
@@ -3575,11 +3576,10 @@ let scenarios: [Scenario] = [
         }
         let controlPane0 = try paneForTab(expectedTab0Id), controlPane1 = try paneForTab(expectedTab1Id)
         let controlTabBaseline = (try d.tabTransitions()).compactMap { ($0["sequence"] as? NSNumber)?.int64Value }.max() ?? 0
-        let focus0 = ProcessInfo.processInfo.systemUptime
-        _ = try d.exec("\(workspaceCtl) focus --target \(quotedWorkspaceArgument(controlPane0))")
-        let focus1 = ProcessInfo.processInfo.systemUptime
-        _ = try d.exec("\(workspaceCtl) focus --target \(quotedWorkspaceArgument(controlPane1))")
-        guard (focus1 - focus0) * 1000 < 140 else { throw Failure("controlled tab request spacing exceeded140ms") }
+        let focusRequests = try d.controlPair(
+            ["cmd": "focus", "args": ["target": controlPane0]],
+            ["cmd": "focus", "args": ["target": controlPane1]])
+        guard (focusRequests.second - focusRequests.first) * 1000 < 140 else { throw Failure("controlled tab request spacing exceeded140ms") }
         let controlTabs = try d.tabTransitions().filter {
             (($0["sequence"] as? NSNumber)?.int64Value ?? 0) > controlTabBaseline
         }
@@ -4020,6 +4020,7 @@ let scenarios: [Scenario] = [
     ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended; the driver's own app cleanup checks identity the same way and keeps unproven work", { d in
         try runOwnedProcessesSelfTest()
         try runDriverLifecycleSelfTest(app: d.appURL)
+        try runControlRequestSocketSelfTest(work: d.work)
     }),
     ("activity-sound-settings", "Settings › Status & Activity › Sounds by real clicks: Play sounds, a sound per event from its menu, None, ▶ and ↺, saved and applied", { d in
         try runActivitySoundSettingsScenario(d)
