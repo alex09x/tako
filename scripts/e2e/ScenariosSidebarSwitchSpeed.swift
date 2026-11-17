@@ -42,7 +42,8 @@ func runSidebarSwitchSpeedScenario(_ d: Driver) throws {
     let historyBefore = stamp()
     var processes = OwnedProcesses()
     var failure: Error?
-    do { try sidebarSwitchJourney(d, home: home, processes: &processes) } catch { failure = error }
+    var samples: [OwnedAppSample?] = []   // DIAGNOSTIC: this scenario's own handles
+    do { try sidebarSwitchJourney(d, home: home, processes: &processes, samples: &samples) } catch { failure = error }
     let problems = processes.cleanUp()
     print("owned processes: \(processes.owned.count) \(problems.isEmpty ? "all gone" : "PROBLEMS \(problems)")")
     let historyKept = stamp() == historyBefore
@@ -50,10 +51,12 @@ func runSidebarSwitchSpeedScenario(_ d: Driver) throws {
     if failure == nil, !historyKept { failure = Failure("the owner's shell history changed") }
     if let error = OwnedProcesses.outcome(failure: failure, problems: problems) { throw error }
     // DIAGNOSTIC: only after the scenario's own outcome, so its errors stay first.
-    try d.requireCompleteSamples()
+    // One per round of five clicks.
+    try requireCompleteSamples(samples, expected: 3)
 }
 
-private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout OwnedProcesses) throws {
+private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout OwnedProcesses,
+                                  samples: inout [OwnedAppSample?]) throws {
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n"
                  + "session-persistence = false\n", settleTerminal: false)
     // Keep all five row targets on the hosted VM's 1024x768 display as well
@@ -135,6 +138,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
         // clicks, started before the round's checks and finished after its
         // last settle; each click's down..shown interval must be covered.
         let roundSample = d.sampleOwnedApp(label: "sidebar-switch-round-\(round)", seconds: 6)
+        samples.append(roundSample)
         defer { roundSample?.finish() }
         for name in order {
             guard let r = row(name) else { throw Failure("no row \(name)") }

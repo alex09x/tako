@@ -3682,8 +3682,7 @@ let scenarios: [Scenario] = [
             throw Failure("controlled tab race did not preserve Tab1 keyboard routing")
         }
         // DIAGNOSTIC: after every original assertion, so a functional error stays first.
-        pairSample?.finish()
-        try d.requireCompleteSamples()
+        try requireCompleteSamples([pairSample])
     }),
     ("workspace-frame-sync", "workspace switch inherits departing window frame when enabled and preserves independent frames when disabled", { d in
         // Clean start with pill style config
