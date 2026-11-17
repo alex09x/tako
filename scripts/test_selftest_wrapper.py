@@ -117,6 +117,19 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(os.path.isdir(ran))
         self.assertIn(f"kept the disposable copy: {os.path.dirname(ran)}", err)
 
+    def test_a_tee_error_keeps_the_copy_although_the_runner_passed(self):
+        app = self.app("com.tako-core.terminal")
+        bin_dir = os.path.join(self.root, "fakebin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "tee"), "w") as f:
+            f.write("#!/bin/sh\ncat > /dev/null\nexit 1\n")
+        os.chmod(os.path.join(bin_dir, "tee"), 0o755)
+        rc, _, err = self.finish(self.start(app, "--scroll-only", env={"PATH": bin_dir + ":" + os.environ["PATH"]}))
+        self.assertEqual(rc, 1)
+        [(ran, _, _, _)] = self.calls()
+        self.assertTrue(os.path.isdir(ran), "an incomplete verdict keeps the copy")
+        self.assertIn(f"kept the disposable copy: {os.path.dirname(ran)}", err)
+
     def test_an_unusable_identifier_is_refused_before_anything_runs(self):
         for bad in ("", "no-dots", "com.tako core.x"):
             with self.subTest(identifier=bad):
