@@ -62,12 +62,21 @@ class BaseTerminalController: NSWindowController,
 
     /// Whether the Find in All Tabs panel is over this window. Closing it
     /// gives the keyboard back to the terminal, as the command palette does;
-    /// otherwise the next keys go nowhere.
+    /// otherwise the next keys go nowhere. Only while this tab is still the
+    /// one shown: a result opened in another tab closes the panel after that
+    /// tab was chosen, and moving focus here would choose this tab again
+    /// (a floating canvas selects its tab to focus a pane). A tab just
+    /// replaced can stay visible a moment before it is ordered out, so being
+    /// visible is not enough; it must still be its group's chosen tab. A
+    /// window in no tab group (looked up, never created here) is its own.
     @Published var findAllIsShowing: Bool = false {
         didSet {
             guard oldValue, !findAllIsShowing else { return }
             DispatchQueue.main.async { [weak self] in
-                Tako.moveFocus(to: self?.focusedSurface)
+                guard let self, let window = self.window, window.isVisible else { return }
+                if let group = Tako.CustomTabGroup.groupsByWindow[ObjectIdentifier(window)],
+                   group.selectedWindow !== window { return }
+                Tako.moveFocus(to: self.focusedSurface)
             }
         }
     }
