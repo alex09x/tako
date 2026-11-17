@@ -27,7 +27,9 @@ struct MotionOverlayTests {
         let between = frames.filter { abs($0.value - start) > span * 0.1 && abs($0.value - end) > span * 0.1 }
         let first = frames.prefix(8).map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
         #expect(!between.isEmpty, "\(what) happened at once: \(first)")
-        #expect(frames.filter { $0.t > 0.3 }.allSatisfy { abs($0.value - end) < span * 0.05 }, "\(what) still moving after 0.3 s")
+        let late = frames.filter { $0.t > 0.15 }.map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
+        #expect(frames.filter { $0.t > 0.3 }.allSatisfy { abs($0.value - end) < span * 0.05 },
+                "\(what) still moving after 0.3 s (start \(String(format: "%.0f", start)), end \(String(format: "%.0f", end))): \(late)")
     }
 
     @Test func theBroadcastBannerComesInOverAMomentAndGoes() throws {
