@@ -112,6 +112,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     }
     var timings: [Double] = []
     var lines: [String] = []
+    var windowLines: [String] = []
     struct Boundary {
         let name: String
         let down: Double
@@ -156,6 +157,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             CGEvent(mouseEventSource: d.source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             let upAt = ProcessInfo.processInfo.systemUptime
             var changed = false
+            var changedNumbers = before
             var polls = 0, maxPoll = 0.0
             var lastUnchangedStart = downAt, changedPollStart = downAt
             while Date().timeIntervalSince(started) < 3 {
@@ -164,7 +166,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
                 let pollEnd = ProcessInfo.processInfo.systemUptime
                 polls += 1
                 maxPoll = max(maxPoll, pollEnd - pollStart)
-                if numbers != before { changed = true; changedPollStart = pollStart; break }
+                if numbers != before { changed = true; changedNumbers = numbers; changedPollStart = pollStart; break }
                 lastUnchangedStart = pollStart
                 usleep(5_000)
             }
@@ -174,6 +176,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             // always ends here: at the end of the timed block, before any
             // bookkeeping, the 450 ms gap or the history read.
             if let activity { ProcessInfo.processInfo.endActivity(activity) }
+            windowLines.append("[timing windows] \(name) before=\(before.sorted()) after=\(changedNumbers.sorted())")
             boundaries.append(Boundary(name: (beside ? "beside " : "name ") + name,
                                        down: downAt, up: upAt, shown: shownAt, wallMS: shown * 1000,
                                        polls: polls, maxPoll: maxPoll,
@@ -185,6 +188,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
         }
     }
     let sorted = timings.sorted()
+    for line in windowLines { print(line) }
     print("[timing] sidebar switch: " + lines.joined(separator: "; "))
     print(String(format: "[timing] sidebar switch: %d switches, median %.0f ms, max %.0f ms",
                  timings.count, sorted[sorted.count / 2], sorted.last ?? 0))

@@ -1,28 +1,22 @@
-# tako — Temporary hosted motion observations; never a release gate
+# tako — Temporary sidebar controller A/B/A; never merge into the release
 # Copyright (c) 2026 Alexander Panasenko
 # Contact: alex@prod.codes
 # Author: https://prod.codes/about/
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
-name: RC stage and sidebar observations
+name: RC sidebar driver A-B-A
 on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: rc-stage-and-speed-observations
+  group: rc-sidebar-driver-aba
   cancel-in-progress: false
 jobs:
-  focused-motion:
+  sidebar-aba:
     runs-on: macos-26
-    timeout-minutes: 55
-    env:
-      CARGO_BUILD_JOBS: "2"
-      RUST_TEST_THREADS: "2"
-      PROD_CODE_LOCAL: "1"
-      TAKO_CODESIGN_IDENTITY: "-"
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      MITTS_NO_SOURCE_FALLBACK: "1"
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -30,206 +24,34 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-          fetch-depth: 16
-      - name: Record exact base and observation-only diff
+      - name: Reuse the pinned hosted app (no application build)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p target/motion-diagnosis
-          git rev-parse HEAD | tee target/motion-diagnosis/source.txt
-          git diff --exit-code 1a010c0be5d85877fd8bda5a137272acf5779e8c -- swift/Sources src Cargo.toml Cargo.lock Package.swift
-          git diff 1a010c0be5d85877fd8bda5a137272acf5779e8c -- swift/Tests/TakoTests/Motion/MotionOverlayTests.swift swift/Tests/TakoTests/Motion/MotionWiringTests.swift > target/motion-diagnosis/observation.diff
-          xcodebuild -version
-          swift --version
-          sw_vers
-      - name: Bootstrap Mitts
-        run: |
-          set -euo pipefail
-          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
-          sh -n "$RUNNER_TEMP/mitts-install.sh"
-          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mitts" --version
-      - name: Prepare Metal compiler
-        run: |
-          set -euo pipefail
-          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
-            xcodebuild -downloadComponent MetalToolchain
-          fi
-          xcrun --sdk macosx metal --version
-          xcrun --find metallib
-      - name: Run only the failed motion scopes with diagnostics
-        run: |
-          set -euo pipefail
-          export TAKO_MOTION_DIAGNOSTICS="$PWD/target/motion-diagnosis/captures"
-          python3 scripts/check_run.py 'swift:diagnosticOverlayOpenCostColdFreshAndReopen' 2>&1 | tee target/motion-diagnosis/cold.log
-          python3 scripts/check_run.py 'swift:ActivityAlertTests|ActivityForegroundProgramTests|theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts|aFileOverlayFadesInOverThePaneAndOut|theTabNumbersShowAfterCommandIsHeld150ms|theOverviewTakesThirtyFramesASecondAtRest' 2>&1 | tee target/motion-diagnosis/focused.log
-      - name: Validate observation completeness even when a test failed
-        if: always()
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_VALIDATE'
-          import json, re
-          from pathlib import Path
-          root = Path('target/motion-diagnosis/captures')
-          for name in ['overlay', 'clock-still', 'clock-rest', 'overlay-A-cold', 'overlay-B-fresh', 'overlay-C-reopen-A']:
-              report = json.loads((root / name / 'trace.json').read_text())
-              assert isinstance(report, dict) and report['name'] == name
-              assert isinstance(report['stages'], list) and report['stages']
-              assert isinstance(report['facts'], dict) and isinstance(report['frames'], list)
-              images = report['images']
-              assert isinstance(images, list) and len(images) == len(set(images))
-              for image in images:
-                  assert isinstance(image, str) and re.fullmatch(r'[A-Za-z0-9-]+', image)
-                  assert (root / name / (image + '.png')).read_bytes().startswith(bytes.fromhex('89504e470d0a1a0a'))
-              if name.startswith('overlay'):
-                  assert 'before' in images
-                  for phase, cap in [('coming', 96), ('going', 8)]:
-                      count = sum(frame['phase'] == phase for frame in report['frames'])
-                      expected = {f'{phase}-{i:03}' for i in range(min(count, cap))}
-                      assert {image for image in images if image.startswith(phase + '-')} == expected
-                  if name != 'overlay':
-                      assert report['facts']['openError'] == ''
-                      assert report['facts']['preparationWeb']['present'] is True
-                      assert report['facts']['preparationShown'] > report['facts']['before'] + 10
-                      assert report['facts']['afterCloseWeb']['present'] is False
-              else:
-                  assert ('counted' if name == 'clock-still' else 'count') in report['facts']
-          logs = list(Path('target/check-logs').rglob('*swift-test*.log'))
-          assert len(logs) == 2
-          text = '\n'.join(path.read_text() for path in logs)
-          for name in ['theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts',
-                       'aFileOverlayFadesInOverThePaneAndOut',
-                       'theTabNumbersShowAfterCommandIsHeld150ms',
-                       'theOverviewTakesThirtyFramesASecondAtRest', 'diagnosticOverlayOpenCostColdFreshAndReopen']:
-              assert re.search(r'Test ' + name + r'\([^\n]*\) (?:passed|failed)', text), name
-          print('Complete cold A/B/C and four selected motion methods retained')
-          PY_VALIDATE
-      - name: Retain diagnosis
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: rc-hosted-motion-diagnosis
-          path: |
-            target/motion-diagnosis/
-            target/check-logs/
-          if-no-files-found: error
-          retention-days: 14
-
-  native-speed:
-    runs-on: macos-26
-    timeout-minutes: 45
-    env:
-      CARGO_BUILD_JOBS: "2"
-      PROD_CODE_LOCAL: "1"
-      TAKO_CODESIGN_IDENTITY: "-"
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      MITTS_NO_SOURCE_FALLBACK: "1"
-      TAKO_BUNDLE_ID: com.tako-core.terminal.e2e-speed-${{ github.run_id }}
-      TAKO_APP_DIR: target/native-speed-app
-      TAKO_WITH_ZMX: "0"
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          persist-credentials: false
-          fetch-depth: 16
-      - name: Record source and toolchain
-        run: |
-          set -euo pipefail
-          mkdir -p target/native-speed
-          git rev-parse HEAD > target/native-speed/source.txt
-          git diff --exit-code 1a010c0be5d85877fd8bda5a137272acf5779e8c -- swift/Sources src Cargo.toml Cargo.lock Package.swift
-          { xcodebuild -version; swift --version; sw_vers; } > target/native-speed/toolchain.txt
-          echo 'Nonpersistent diagnostic app; zmx helper intentionally not bundled' > target/native-speed/build-mode.txt
-      - name: Bootstrap Mitts
-        run: |
-          set -euo pipefail
-          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
-          sh -n "$RUNNER_TEMP/mitts-install.sh"
-          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mitts" --version
-      - name: Prepare Metal compiler
-        run: |
-          set -euo pipefail
-          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
-            xcodebuild -downloadComponent MetalToolchain
-          fi
-          xcrun --sdk macosx metal --version
-      - name: Inspect hosted UI automation
+          gh run download 44058890767 --repo alex09x/tako --name rc-sidebar-speed-observation --dir target/sidebar-original
+      - name: Enable hosted UI automation
         run: |
           set -euo pipefail
           sudo /usr/sbin/DevToolsSecurity --enable
           /usr/bin/automationmodetool
-      - name: Build one private nonpersistent app
-        id: native-build
+      - name: Compare A1, B and A2 on one VM, runner and app source
         run: |
           set -euo pipefail
-          python3 scripts/ci_log.py --log target/native-speed/build.log --label native-speed-build -- python3 scripts/build-macapp.py
-          codesign --verify --strict --deep "$TAKO_APP_DIR/Tako.app"
-      - name: Run only the sidebar speed observation
-        run: |
-          set -euo pipefail
-          export APP="$PWD/$TAKO_APP_DIR/Tako.app"
-          python3 scripts/ci_log.py --log target/native-speed/runner.log --label sidebar-speed -- bash scripts/e2e-macapp.sh sidebar-switch-speed
-          python3 - <<'PY_RESULT'
-          import re
-          from pathlib import Path
-          text = Path('target/native-speed/runner.log').read_text()
-          assert re.findall(r'^\[result\] (\S+) (\S+)$', text, re.M) == [('sidebar-switch-speed', 'ok')]
-          PY_RESULT
-      - name: Retain only the failed fixture paths named by this runner
-        if: always()
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_KEEP'
-          import json, os, re, shutil, stat
-          from pathlib import Path
-          log = Path('target/native-speed/runner.log')
-          kept = Path('target/native-speed/kept-work')
-          kept.mkdir(parents=True, exist_ok=True)
-          copied, skipped, seen = [], [], set()
-          def special(directory, names):
-              excluded = []
-              for name in names:
-                  path = Path(directory) / name
-                  mode = path.lstat().st_mode
-                  if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode)):
-                      excluded.append(name)
-                      skipped.append(str(path))
-              return excluded
-          text = log.read_text() if log.exists() else ''
-          for work, sessions in re.findall(r'^work kept: ([^,\n]+)(?:, sessions ([^\n]+))?$', text, re.M):
-              for raw, prefix in [(work, 'tkw.'), (sessions, 'tkd.')]:
-                  if not raw:
-                      continue
-                  path = Path(raw)
-                  resolved = path.resolve()
-                  assert not path.is_symlink() and resolved.parent == Path('/private/tmp')
-                  assert resolved.name.startswith(prefix) and resolved.stat().st_uid == os.getuid()
-                  if resolved in seen:
-                      continue
-                  seen.add(resolved)
-                  shutil.copytree(resolved, kept / resolved.name, symlinks=True, ignore=special)
-                  copied.append(str(resolved))
-          (kept / 'inventory.json').write_text(json.dumps({'copied': copied, 'skipped_special': skipped}, indent=2))
-          print(f'Kept {len(copied)} named fixture directories; no source directory removed')
-          PY_KEEP
-      - name: Retain exact diagnostic binaries
-        if: always() && steps.native-build.outcome == 'success'
-        run: |
-          set -euo pipefail
-          shasum -a 256 "$TAKO_APP_DIR/Tako.app/Contents/MacOS/Tako" target/tako-e2e target/tako-e2e.inputs > target/native-speed/binaries.sha256
-          cp "$TAKO_APP_DIR/Tako.app/Contents/Info.plist" target/native-speed/Info.plist
-          tar -C "$TAKO_APP_DIR" -cf "$PWD/target/native-speed/app.tar" Tako.app
-          cp target/tako-e2e target/tako-e2e.inputs target/native-speed/
-      - name: Retain native observation
+          python3 scripts/ci_log.py --log target/sidebar-aba-console.log --label sidebar-aba -- python3 scripts/diag_sidebar_aba.py target/sidebar-original
+      - name: Retain all modes including failed original performance gates
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: rc-sidebar-speed-observation
-          path: target/native-speed/
+          name: rc-sidebar-driver-aba
+          path: |
+            target/sidebar-aba/*.json
+            target/sidebar-aba/*.txt
+            target/sidebar-aba/*.log
+            target/sidebar-aba/*/*.json
+            target/sidebar-aba/*/*.log
+            target/sidebar-aba/*/kept-work/
+            target/sidebar-aba-console.log
+            target/tako-e2e.inputs
           if-no-files-found: error
           retention-days: 14
