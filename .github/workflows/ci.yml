@@ -294,7 +294,9 @@ jobs:
           xcrun simctl list devices available
 
       - name: Inspect macOS UI automation
-        if: ${{ matrix.stage == 'macos-ui-tests' || startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests' }}
+        # macapp-tests runs the app self-tests through the e2e runner, which
+        # needs the same automation as the e2e stages (disposable hosted VM).
+        if: ${{ matrix.stage == 'macos-ui-tests' || matrix.stage == 'macapp-tests' || startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests' }}
         run: |
           set -euo pipefail
           sudo /usr/sbin/DevToolsSecurity --enable

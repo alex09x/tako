@@ -4090,8 +4090,17 @@ let scenarios: [Scenario] = [
     ("sidebar-switch-speed", "Sidebar clicks switch tabs fast: real clicks on a row's name and beside it, each switch on screen within 250 ms", { d in
         try runSidebarSwitchSpeedScenario(d)
     }),
+    ("app-selftest-keys", "Explicit app self-test: each generated key event produces the bytes it stands for, space bar variants included", { d in
+        try runAppSelftestKeysScenario(d)
+    }),
+    ("app-selftest-input", "Explicit app self-test: typed keys reach the real shell, come back on its last line, and the new window has the keyboard", { d in
+        try runAppSelftestInputScenario(d)
+    }),
     ("app-selftest-scroll", "Explicit app-generated scroll events with private fixture launch, cleanup and retained reports", { d in
         try runAppSelftestScrollScenario(d)
+    }),
+    ("app-selftest-frame", "Explicit app self-test: the rendered frame puts the grid inside its padding; its PNG is kept as target/selftest-frame.png", { d in
+        try runAppSelftestFrameScenario(d)
     }),
     ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended; the driver's own app cleanup checks identity the same way and keeps unproven work", { d in
         try runOwnedProcessesSelfTest()
@@ -4131,7 +4140,8 @@ struct TakoE2E {
     // from scripts/e2e-persist.sh: never as part of the default set.
         let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move", "persist-partial-group", "persist-empty-workspace-group", "persist-task-workspace-group", "persist-intentional-windows", "persist-assign-selected", "persist-inactive-recovery-group", "persist-cross-window-workspace-move", "persist-legacy-window-choice", "persist-legacy-workspace-choice"]
     let isolatedPersistence = persistenceOnly.union(["persist-sidebar-long-list", "persist-scoped-appearance"])
-    let explicitOnly = isolatedPersistence.union(["kitty-icat", "app-selftest-scroll"])
+    let explicitOnly = isolatedPersistence.union(["kitty-icat", "app-selftest-keys", "app-selftest-input",
+                                                  "app-selftest-scroll", "app-selftest-frame"])
     // Registry inspection is metadata only: never require UI permission or
     // launch an app just to account for the scenarios in a shard.
     if args.first == "--list" {
