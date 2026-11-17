@@ -26,6 +26,8 @@ struct PaneToastButton: NSViewRepresentable {
         button.setButtonType(.momentaryPushIn)
         button.isBordered = false
         button.isTransparent = true
+        button.setAccessibilityElement(true)
+        button.setAccessibilityRole(.button)
         return button
     }
 
