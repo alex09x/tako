@@ -11,6 +11,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import WebKit
 @testable import Tako
 
 /// A pane's overlays, watched as they move: the broadcast banner and the
@@ -74,7 +75,12 @@ struct MotionOverlayTests {
         let probe = SwiftUIMotionProbe(Tako.InspectableSurface(surfaceView: surface), size: CGSize(width: 240, height: 140))
         defer { probe.close() }
         probe.settle(0.8)
-        let before = SwiftUIMotionProbe.light(probe.snapshot())
+        let initial = probe.snapshot()
+        let before = SwiftUIMotionProbe.light(initial)
+        let diagnosticStart = ProcessInfo.processInfo.systemUptime
+        var captures: [(String, Double, NSBitmapImageRep)] = [("before", 0, initial)]
+        let diagnostic = ProcessInfo.processInfo.environment["TAKO_MOTION_DIAGNOSTICS"]
+        defer { if let diagnostic { recordOverlayDiagnostic(probe, captures: captures, directory: diagnostic) } }
         var opened: Error?
         let coming = probe.frames(after: {
             do {
@@ -82,14 +88,58 @@ struct MotionOverlayTests {
                                                         surfacePwd: file.deletingLastPathComponent().path)
             } catch { opened = error }
         }, for: 0.5,
-                                  measure: SwiftUIMotionProbe.light)
+                                  measure: { rep in
+                                      if diagnostic != nil { captures.append(("coming", ProcessInfo.processInfo.systemUptime - diagnosticStart, rep)) }
+                                      return SwiftUIMotionProbe.light(rep)
+                                  })
         #expect(opened == nil, "\(String(describing: opened))")
         #expect(OverlayStore.shared.overlay(for: surface.id) != nil)
         try expectAnimated(coming, from: before, "a file overlay coming in")
         let shown = try #require(coming.last).value
         let going = probe.frames(after: { _ = OverlayStore.shared.closeOverlay(paneId: surface.id) }, for: 0.5,
-                                 measure: SwiftUIMotionProbe.light)
+                                 measure: { rep in
+                                     if diagnostic != nil { captures.append(("going", ProcessInfo.processInfo.systemUptime - diagnosticStart, rep)) }
+                                     return SwiftUIMotionProbe.light(rep)
+                                 })
         try expectAnimated(going, from: shown, "a file overlay going")
+    }
+
+    /// Observation only: retain both passing and failing captures. No extra
+    /// layout, navigation delegate, rendering wait or animation policy changes.
+    private func recordOverlayDiagnostic(_ probe: SwiftUIMotionProbe,
+        captures: [(String, Double, NSBitmapImageRep)], directory: String) {
+        var views: [[String: String]] = []
+        func walk(_ view: NSView, depth: Int) {
+            guard depth <= 8, views.count < 48 else { return }
+            var row = ["type": String(describing: type(of: view)), "bounds": "\(view.bounds)",
+                       "hidden": "\(view.isHidden)", "alpha": "\(view.alphaValue)"]
+            if let web = view as? WKWebView { row["loading"] = "\(web.isLoading)" }
+            views.append(row)
+            for sub in view.subviews { walk(sub, depth: depth + 1) }
+        }
+        walk(probe.host, depth: 0)
+        let root = URL(fileURLWithPath: directory)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let rows: [[String: Any]] = captures.map { phase, t, rep in
+                ["phase": phase, "t": t, "light": SwiftUIMotionProbe.light(rep),
+                 "width": rep.pixelsWide, "height": rep.pixelsHigh]
+            }
+            for phase in ["before", "coming", "going"] {
+                let matching = captures.filter { $0.0 == phase }
+                for (label, capture) in [("first", matching.first), ("last", matching.last)] {
+                    if let capture, let png = capture.2.representation(using: .png, properties: [:]) {
+                        try png.write(to: root.appendingPathComponent("overlay-\(phase)-\(label).png"))
+                    }
+                }
+            }
+            let report: [String: Any] = ["captures": rows, "views": views,
+                "window": "\(probe.window.frame)", "visible": probe.window.isVisible,
+                "appearance": "\(NSApp.effectiveAppearance.name)", "lightShell": Tako.LivingTokens.isLight]
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                .write(to: root.appendingPathComponent("overlay.json"))
+            print("[motion observation] overlay: \(captures.count) captures, \(views.count) views; \(directory)/overlay.json")
+        } catch { Issue.record("Could not retain overlay observation: \(error)") }
     }
 
     /// The Overview scrolls to the card chosen from the keyboard over

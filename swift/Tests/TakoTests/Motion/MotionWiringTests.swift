@@ -146,10 +146,22 @@ struct MotionWiringTests {
         a.contentView?.addSubview(bar)
         try #require(bar.windows.count > 1, "the bar sees \(bar.windows.count) tab(s)")
         #expect(Tako.TabBarView.commandBadgeDelay == 0.15)
+        let began = ProcessInfo.processInfo.systemUptime
         bar.commandKeyChanged(held: true)
         try await Task.sleep(nanoseconds: 100_000_000)
-        #expect(!bar.showingBadges, "the numbers showed before 150 ms")
+        let firstAge = ProcessInfo.processInfo.systemUptime - began
+        let firstShown = bar.showingBadges
+        #expect(!firstShown, "the numbers showed at observation \(firstAge)s after press (sleep requested100ms)")
         try await Task.sleep(nanoseconds: 120_000_000)
+        if let directory = ProcessInfo.processInfo.environment["TAKO_MOTION_DIAGNOSTICS"] {
+            let report: [String: Any] = ["firstAge": firstAge, "firstShown": firstShown,
+                "secondAge": ProcessInfo.processInfo.systemUptime - began, "secondShown": bar.showingBadges]
+            let root = URL(fileURLWithPath: directory)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                .write(to: root.appendingPathComponent("badges.json"))
+            print("[motion observation] command badges: \(report)")
+        }
         #expect(bar.showingBadges, "the numbers did not show after 150 ms")
         bar.commandKeyChanged(held: false)
         #expect(!bar.showingBadges, "the numbers stayed after ⌘ was let go")
