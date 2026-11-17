@@ -61,6 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           export TAKO_MOTION_DIAGNOSTICS="$PWD/target/motion-diagnosis/captures"
+          python3 scripts/check_run.py 'swift:diagnosticOverlayOpenCostColdFreshAndReopen' 2>&1 | tee target/motion-diagnosis/cold.log
           python3 scripts/check_run.py 'swift:ActivityAlertTests|ActivityForegroundProgramTests|theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts|aFileOverlayFadesInOverThePaneAndOut|theTabNumbersShowAfterCommandIsHeld150ms|theOverviewTakesThirtyFramesASecondAtRest' 2>&1 | tee target/motion-diagnosis/focused.log
       - name: Validate observation completeness even when a test failed
         if: always()
@@ -70,7 +71,7 @@ jobs:
           import json, re
           from pathlib import Path
           root = Path('target/motion-diagnosis/captures')
-          for name in ['overlay', 'clock-still', 'clock-rest']:
+          for name in ['overlay', 'clock-still', 'clock-rest', 'overlay-A-cold', 'overlay-B-fresh', 'overlay-C-reopen-A']:
               report = json.loads((root / name / 'trace.json').read_text())
               assert isinstance(report, dict) and report['name'] == name
               assert isinstance(report['stages'], list) and report['stages']
@@ -80,23 +81,28 @@ jobs:
               for image in images:
                   assert isinstance(image, str) and re.fullmatch(r'[A-Za-z0-9-]+', image)
                   assert (root / name / (image + '.png')).read_bytes().startswith(bytes.fromhex('89504e470d0a1a0a'))
-              if name == 'overlay':
+              if name.startswith('overlay'):
                   assert 'before' in images
                   for phase, cap in [('coming', 96), ('going', 8)]:
                       count = sum(frame['phase'] == phase for frame in report['frames'])
                       expected = {f'{phase}-{i:03}' for i in range(min(count, cap))}
                       assert {image for image in images if image.startswith(phase + '-')} == expected
+                  if name != 'overlay':
+                      assert report['facts']['openError'] == ''
+                      assert report['facts']['preparationWeb']['present'] is True
+                      assert report['facts']['preparationShown'] > report['facts']['before'] + 10
+                      assert report['facts']['afterCloseWeb']['present'] is False
               else:
                   assert ('counted' if name == 'clock-still' else 'count') in report['facts']
           logs = list(Path('target/check-logs').rglob('*swift-test*.log'))
-          assert len(logs) == 1
-          text = logs[0].read_text()
+          assert len(logs) == 2
+          text = '\n'.join(path.read_text() for path in logs)
           for name in ['theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts',
                        'aFileOverlayFadesInOverThePaneAndOut',
                        'theTabNumbersShowAfterCommandIsHeld150ms',
-                       'theOverviewTakesThirtyFramesASecondAtRest']:
+                       'theOverviewTakesThirtyFramesASecondAtRest', 'diagnosticOverlayOpenCostColdFreshAndReopen']:
               assert re.search(r'Test ' + name + r'\([^\n]*\) (?:passed|failed)', text), name
-          print('Complete stage observations retained for all four selected methods')
+          print('Complete cold A/B/C and four selected motion methods retained')
           PY_VALIDATE
       - name: Retain diagnosis
         if: always()
