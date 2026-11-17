@@ -24,10 +24,12 @@ import tarfile
 FILE_CAP = 8 * 1024 * 1024
 PAYLOAD_CAP = 200 * 1024 * 1024
 ENTRY_CAP = 20000
+MAX_DEPTH = 32  # also the bound on directory descriptors open at once
 
-# Never read: credential homes and key files, every shell or REPL history,
-# and raw environment or process dumps. Names are matched per component.
-EXCLUDED_DIRS = {".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", "Keychains", "gh", ".password-store"}
+# Never read: credential and provider homes, key files, every shell or REPL
+# history, and raw environment or process dumps. Matched per path component.
+EXCLUDED_DIRS = {".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", "Keychains", "gh", ".password-store",
+                 ".codex", ".claude", ".gemini", ".anthropic", ".openai", ".cursor", ".copilot"}
 EXCLUDED_FILE = re.compile(
     r"(?i)(history|histfile|\.lesshst$|^\.netrc$|^\.git-credentials$|^\.npmrc$|^\.pypirc$|^credentials"
     r"|^auth|token|secret|\.pem$|\.key$|\.p12$|\.pfx$|^id_(rsa|dsa|ecdsa|ed25519)|^environ|^env(\.|$)"
@@ -94,32 +96,61 @@ def tar_info(name, status, kind_name, size=0, link=""):
     return info
 
 
-def archive_root(root_fd, root_name, archive, budget, entries, errors):
+def archive_root(root_fd, root_name, archive, budget, entries, errors, private_homes=()):
     """Archive the directory open at ROOT_FD (validated by the caller) into
     ARCHIVE, appending one index record per entry to ENTRIES and every
-    traversal fault to ERRORS. Returns nothing; faults never stop siblings."""
+    traversal fault to ERRORS. PRIVATE_HOMES are top-level names excluded as
+    a whole (the driver's provider home). Depth first: only the directories
+    on the current path are open, at most MAX_DEPTH of them. When the entry
+    budget runs out the walk stops with one marker and an error."""
     root_status = os.fstat(root_fd)
     archive.addfile(tar_info(root_name, root_status, "dir"))
-    stack = [(root_fd, root_name, "")]
+    stack = []
+
+    def enter(fd, archive_dir, relative_dir):
+        try:
+            names = sorted(os.listdir(fd))
+        except OSError as error:
+            errors.append({"path": relative_dir or ".", "error": f"list: {error.strerror}"})
+            names = []
+        stack.append((fd, archive_dir, relative_dir, iter(names)))
+
     try:
+        enter(root_fd, root_name, "")
         while stack:
-            fd, archive_dir, relative_dir = stack.pop()
-            try:
-                try:
-                    names = sorted(os.listdir(fd))
-                except OSError as error:
-                    errors.append({"path": relative_dir or ".", "error": f"list: {error.strerror}"})
-                    continue
-                for name in names:
-                    relative = f"{relative_dir}/{name}" if relative_dir else name
-                    child = _entry(fd, name, relative, f"{archive_dir}/{name}", archive, budget, entries, errors)
-                    if child is not None:
-                        stack.append(child)
-            finally:
+            fd, archive_dir, relative_dir, names = stack[-1]
+            name = next(names, None)
+            if name is None:
+                stack.pop()
                 if fd != root_fd:
                     os.close(fd)
+                continue
+            relative = f"{relative_dir}/{name}" if relative_dir else name
+            if budget.used_entries >= budget.entries:
+                entries.append({"path": relative, "decision": "truncated", "reason": "entry-cap"})
+                errors.append({"path": relative, "error": f"entry cap {budget.entries} reached; traversal stopped"})
+                return
+            if not relative_dir and name in private_homes:
+                budget.used_entries += 1
+                record = {"path": relative, "decision": "excluded", "reason": "privacy:provider-home"}
+                try:  # metadata only: never opened or traversed
+                    status = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    record.update(type=kind(status.st_mode), mode=oct(stat.S_IMODE(status.st_mode)))
+                except OSError as error:
+                    record.update(reason=f"privacy:provider-home (lstat: {error.strerror})")
+                entries.append(record)
+                continue
+            child = _entry(fd, name, relative, f"{archive_dir}/{name}", archive, budget, entries, errors)
+            if child is None:
+                continue
+            if len(stack) >= MAX_DEPTH:
+                os.close(child[0])
+                entries[-1].update(decision="excluded", reason="depth-cap")
+                errors.append({"path": relative, "error": f"depth cap {MAX_DEPTH} reached"})
+                continue
+            enter(*child)
     finally:
-        for fd, _, _ in stack:
+        for fd, _, _, _ in stack:
             if fd != root_fd:
                 os.close(fd)
 
@@ -127,9 +158,6 @@ def archive_root(root_fd, root_name, archive, budget, entries, errors):
 def _entry(parent, name, relative, archive_name, archive, budget, entries, errors):
     record = {"path": relative}
     entries.append(record)
-    if budget.used_entries >= budget.entries:
-        record.update(decision="refused", reason="entry-cap")
-        return None
     budget.used_entries += 1
     try:
         status = os.stat(name, dir_fd=parent, follow_symlinks=False)

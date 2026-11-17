@@ -39,6 +39,7 @@ WORK_LINE = re.compile(r"^work kept: (.*)$")
 NAMES = {"work": re.compile(r"^tkw\.[A-Za-z0-9]{6}$"), "sessions": re.compile(r"^tkd\.[A-Za-z0-9]{6}$"),
          "persist-sessions": re.compile(r"^tkp\.[A-Za-z0-9]{6}$"),
          "support": re.compile(r"^com\.tako-core\.terminal\.e2e-persist-[0-9]+-[0-9]+$")}
+PROVIDER_HOMES = ("k",)  # DriverCore: hooks = work/k, CODEX_HOME = work/k/.codex
 
 
 class Refused(Exception):
@@ -120,8 +121,11 @@ def collect_root(path, status, out, budget, record):
         name = os.path.basename(path)
         tar_path = Path(out) / f"kept-{name}.tar"
         entries, errors = [], []
+        # The driver's agent-hook and provider home (TAKO_AGENT_HOOKS_HOME,
+        # CODEX_HOME) is work/k: never opened, whatever it holds.
+        homes = PROVIDER_HOMES if record.get("kind") == "work" else ()
         with tarfile.open(tar_path, "w", format=tarfile.PAX_FORMAT) as archive:
-            walk.archive_root(fd, name, archive, budget, entries, errors)
+            walk.archive_root(fd, name, archive, budget, entries, errors, private_homes=homes)
         record.update(decision="collected", tar=tar_path.name,
                       tar_sha256=hashlib.sha256(tar_path.read_bytes()).hexdigest(),
                       entries=entries, errors=errors)
