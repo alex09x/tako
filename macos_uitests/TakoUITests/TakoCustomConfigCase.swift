@@ -122,6 +122,34 @@ class TakoCustomConfigCase: XCTestCase {
         try (defaults + newConfig).write(to: configFile, atomically: true, encoding: .utf8)
     }
 
+    /// Closes the only ordinary window the floating-canvas way: the first Cmd+W closes its
+    /// last pane and leaves the empty canvas, the second closes that empty session's window.
+    func closeOnlyWindowThroughEmptyCanvas(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 5), "No ordinary window to close", file: file, line: line)
+        app.typeKey("w", modifierFlags: .command)
+        let empty = window.descendants(matching: .any)["FloatingTerminalCanvas"].firstMatch
+            .staticTexts["No open terminals in this session"].firstMatch
+        XCTAssertTrue(empty.waitForExistence(timeout: 5), "The first Cmd+W must leave the empty canvas",
+                      file: file, line: line)
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 5),
+                      "The second Cmd+W must close the empty session's window", file: file, line: line)
+    }
+
+    /// Opens a session from the sidebar header's +, which opens its menu on the press;
+    /// New Session is its first item.
+    func newSessionFromSidebarPlus(in window: XCUIElement, app: XCUIApplication,
+                                   file: StaticString = #filePath, line: UInt = #line) {
+        let plus = window.buttons["SessionSidebarHeaderNewSession"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 5), "The sidebar header + must exist", file: file, line: line)
+        XCTAssertTrue(plus.isHittable, "The sidebar header + must be mouse-accessible", file: file, line: line)
+        plus.click()
+        let item = app.menuItems["New Session"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "The + menu must offer New Session", file: file, line: line)
+        item.click()
+    }
+
     func takoApplication(defaultsSuite: String = TakoCustomConfigCase.defaultsSuiteName) throws -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES", "--no-update", "--no-launch-notices"])

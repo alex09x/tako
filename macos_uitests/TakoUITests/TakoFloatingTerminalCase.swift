@@ -194,12 +194,18 @@ class TakoFloatingTerminalCase: TakoCustomConfigCase {
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
         if focus { terminal.click() }
         let marker = "FLOAT-PID-\(phase)-"
-        let command = #"/bin/sh -c 'printf "FLOAT""-PID-\#(phase)-%s\n" "$PPID"'"#
+        // The number is closed by its own terminator: printf does not erase the rest of
+        // its row, and a row left over from a reflowed, wrapped prompt can continue with
+        // digits ("...-25931" over "...bba3-d1d6..." read as 259313 on a narrow screen).
+        let command = #"/bin/sh -c 'printf "FLOAT""-PID-\#(phase)-%s-END\n" "$PPID"'"#
         app.typeText(command + "\n")
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", marker), object: terminal)
+        let regex = try NSRegularExpression(pattern: NSRegularExpression.escapedPattern(for: marker) + "([0-9]+)-END")
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let text = terminal.value as? String else { return false }
+            return regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)) != nil
+        }, object: terminal)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 7), .completed, "Input must reach the intended terminal")
         let text = try XCTUnwrap(terminal.value as? String)
-        let regex = try NSRegularExpression(pattern: NSRegularExpression.escapedPattern(for: marker) + "([0-9]+)")
         let match = try XCTUnwrap(regex.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)).last)
         let range = try XCTUnwrap(Range(match.range(at: 1), in: text))
         return try XCTUnwrap(Int(text[range]))

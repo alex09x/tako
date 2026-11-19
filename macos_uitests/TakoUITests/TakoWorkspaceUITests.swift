@@ -27,9 +27,8 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         try updateConfig("confirm-close-surface = false\n")
         let app = try takoApplication()
         app.launch()
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
-        app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 5), "Close the ordinary window before inspecting Quick Terminal")
+        // Close the ordinary window before inspecting Quick Terminal.
+        closeOnlyWindowThroughEmptyCanvas(app)
         app.menuBarItems["View"].firstMatch.click()
         app.menuItems["Quick Terminal"].firstMatch.click()
         let quick = app.windows.firstMatch
@@ -68,9 +67,7 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         app.launch()
 
         let initialWindow = try activeTerminalWindow(app)
-        let newSessionBtn = initialWindow.buttons["SessionSidebarNewSession"]
-        XCTAssertTrue(newSessionBtn.waitForExistence(timeout: 5), "SessionSidebarNewSession button must exist")
-        newSessionBtn.click()
+        newSessionFromSidebarPlus(in: initialWindow, app: app)
 
         let rows = try waitForSessionRows(count: 2, in: app)
         let row0Id = try XCTUnwrap(rows.first?.identifier, "Expected first session row")

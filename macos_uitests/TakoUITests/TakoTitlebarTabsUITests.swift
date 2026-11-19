@@ -44,7 +44,7 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
     func testTabsGeometryInNormalWindow() throws {
         let app = try takoApplication()
         app.launch()
-        try activeWindow(app).buttons["SessionSidebarNewSession"].click()
+        newSessionFromSidebarPlus(in: try activeWindow(app), app: app)
         try assertTabCount(2, in: app)
         try checkTabsGeometry(app, expectDragRegion: true)
 
@@ -215,7 +215,12 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         let count = rowIDs.count
         XCTAssertGreaterThan(count, 1, "Geometry requires multiple sessions")
         for index in 0..<count {
-            let rowID = rowIDs[index]
+            // A session row is named after its representative pane (`session-tab-<surfaceId>`,
+            // SessionSidebarWorkspaceMove.rowIdentifier), so the split below renames the row of
+            // the session it splits. Positions are the identity ⌘N addresses: read them afresh.
+            let liveIDs = sidebarRows(try activeWindow(app))
+            XCTAssertEqual(liveIDs.count, count, "Splits must not add or remove sessions")
+            let rowID = liveIDs[index]
             let row = try sidebarRowElement(rowID, in: try activeWindow(app))
             XCTAssertTrue(row.isHittable)
             row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
@@ -223,7 +228,7 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
 
             let otherIndex = (index + 1) % count
             app.typeKey("\(otherIndex + 1)", modifierFlags: .command)
-            try assertSelection(rowIDs[otherIndex], count: count, in: app)
+            try assertSelection(liveIDs[otherIndex], count: count, in: app)
             app.typeKey("\(index + 1)", modifierFlags: .command)
             try assertSelection(rowID, count: count, in: app)
 
@@ -290,48 +295,70 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         XCTAssertEqual(window.radioButtons.count, 0, "Top pill radioButtons must not exist")
 
         let sidebar = window.descendants(matching: .any)["SessionSidebar"].firstMatch
-        let newSession = window.buttons["SessionSidebarNewSession"]
+        // The retired footer button is gone; the header's + is the mouse path to a new session.
+        let newSession = window.buttons["SessionSidebarHeaderNewSession"]
         let resizeHandle = window.descendants(matching: .any)["SessionSidebarResizeHandle"].firstMatch
         let dragRegion = window.descendants(matching: .any)["SidebarWindowDragRegion"].firstMatch
         XCTAssertTrue(sidebar.exists, "Permanent SessionSidebar container must exist")
-        XCTAssertTrue(newSession.exists, "Mouse-accessible SessionSidebarNewSession button must exist")
+        XCTAssertTrue(newSession.exists, "Mouse-accessible SessionSidebarHeaderNewSession button must exist")
         XCTAssertTrue(resizeHandle.exists, "SessionSidebarResizeHandle must exist")
         XCTAssertEqual(dragRegion.exists, expectDragRegion, "SidebarWindowDragRegion visibility must match fullscreen state")
 
         let sidebarFrame = sidebar.frame
-        XCTAssertGreaterThanOrEqual(sidebarFrame.width, 260 - 1, "Sidebar width must respect non-zero minimum")
+        // SessionSidebarWidth.standard: the A01 reference default a fresh suite opens with.
+        XCTAssertGreaterThanOrEqual(sidebarFrame.width, 248 - 1, "Sidebar width must respect its non-zero reference default")
         XCTAssertEqual(sidebarFrame.minX, window.frame.minX, accuracy: 2)
         XCTAssertEqual(sidebarFrame.minY, window.frame.minY, accuracy: 2)
         XCTAssertEqual(sidebarFrame.maxY, window.frame.maxY, accuracy: 2)
         XCTAssertEqual(sidebarRows(window).count, count)
+
+        // The inset-card contract (PermanentSidebarLayoutTests.desktopWindowHasNoTopTabBarAnd
+        // ItsSoleTerminalIsTheInsetCard): the canvas runs the window's full height, and every
+        // card, the maximized one too, sits DesktopCanvasMetrics.paneGap in from it, with its
+        // 28 pt header on top and the terminal inside FloatingPaneGeometry.bodyInsets.
+        let gap = TakoFloatingTerminalCase.canvasPaneGap // 8
+        let headerHeight = TakoFloatingTerminalCase.expectedPaneHeaderHeight // 28
+        let bodyTop: CGFloat = 2, bodySide: CGFloat = 6
+        let bodyBottom = TakoFloatingTerminalCase.paneBodyBottomInset // 6
 
         let canvas = window.descendants(matching: .any)["FloatingTerminalCanvas"].firstMatch
         XCTAssertTrue(canvas.exists, "FloatingTerminalCanvas must host the right-hand session panes")
         let headers = paneHeaders(in: window)
         XCTAssertFalse(headers.isEmpty, "At least one FloatingPaneHeader must exist")
         for header in headers {
-            XCTAssertGreaterThanOrEqual(header.frame.minX, sidebarFrame.maxX - 2, "Pane header must sit to the right of SessionSidebar")
-            XCTAssertGreaterThanOrEqual(header.frame.minY, window.frame.minY - 2, "Pane header must stay within window top edge")
-            XCTAssertLessThanOrEqual(header.frame.maxY, window.frame.maxY + 2, "Pane header must stay within window bottom edge")
+            XCTAssertGreaterThanOrEqual(header.frame.minX, sidebarFrame.maxX + gap - 2,
+                                        "Pane header must sit a canvas gap right of SessionSidebar")
+            XCTAssertGreaterThanOrEqual(header.frame.minY, window.frame.minY + gap - 2,
+                                        "Pane header must sit a canvas gap below the window top edge")
+            XCTAssertLessThanOrEqual(header.frame.maxY, window.frame.maxY - gap + 2,
+                                     "Pane header must stay a canvas gap inside the window bottom edge")
         }
 
         let allTerminals = window.textViews.allElementsBoundByIndex
         let hittableTerminals = allTerminals.filter(\.isHittable)
         XCTAssertFalse(hittableTerminals.isEmpty, "At least one hittable terminal view must exist")
         for terminal in allTerminals {
-            XCTAssertGreaterThanOrEqual(terminal.frame.minX, sidebarFrame.maxX - 2, "Terminal must sit to the right of SessionSidebar")
-            XCTAssertGreaterThanOrEqual(terminal.frame.minY, window.frame.minY + 24, "Terminal body must sit below its 26pt floating pane header")
-            XCTAssertLessThanOrEqual(terminal.frame.maxY, window.frame.maxY + 2, "Terminal must stay within window bottom edge")
+            XCTAssertGreaterThanOrEqual(terminal.frame.minX, sidebarFrame.maxX + gap + bodySide - 2,
+                                        "Terminal must sit right of SessionSidebar by the gap and body margin")
+            XCTAssertGreaterThanOrEqual(terminal.frame.minY, window.frame.minY + gap + headerHeight + bodyTop - 2,
+                                        "Terminal body must sit below the gap, its 28pt pane header and the body margin")
+            XCTAssertLessThanOrEqual(terminal.frame.maxY, window.frame.maxY - gap - bodyBottom + 2,
+                                     "Terminal must keep the gap and the body's bottom margin")
         }
 
         let hasMaximizedPane = maximizeButtons(in: window).contains { ($0.value as? String) == "maximized" }
         if hasMaximizedPane {
-            XCTAssertEqual(try XCTUnwrap(headers.map(\.frame.minY).min()), window.frame.minY, accuracy: 2,
-                           "Maximized floating pane header must reach the top edge of the window")
-            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.minY).min()), window.frame.minY + 26, accuracy: 3,
-                           "Maximized terminal body must start immediately below the 26pt pane header")
-            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.maxY).max()), window.frame.maxY, accuracy: 2,
-                           "Maximized floating pane terminal must extend to the bottom edge of the window")
+            XCTAssertEqual(try XCTUnwrap(headers.map(\.frame.minY).min()), window.frame.minY + gap, accuracy: 2,
+                           "Maximized pane header must sit exactly one canvas gap below the window top")
+            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.minY).min()),
+                           window.frame.minY + gap + headerHeight + bodyTop, accuracy: 3,
+                           "Maximized terminal body must start immediately below the 28pt pane header and body margin")
+            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.maxY).max()),
+                           window.frame.maxY - gap - bodyBottom, accuracy: 2,
+                           "Maximized terminal must reach the canvas gap and body margin above the window bottom")
+            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.maxX).max()),
+                           window.frame.maxX - gap - bodySide, accuracy: 2,
+                           "Maximized terminal must reach the canvas gap and body margin inside the window right edge")
         }
         return sidebarFrame
     }

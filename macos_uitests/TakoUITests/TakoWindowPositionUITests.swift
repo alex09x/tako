@@ -81,149 +81,9 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         XCTAssertEqual(windowFrame4.minY, windowFrame3.minY + 30, accuracy: 5, "New window should be on the bottom right")
     }
 
-    @MainActor func testRejectedSplitDropInsideItsWindowKeepsBothPanes() throws {
-        let app = try takoApplication()
-        app.launch()
-        app.typeKey("d", modifierFlags: .command)
-        let window = app.windows.firstMatch
-        let handles = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pane-drag-handle-'"))
-        XCTAssertEqual(handles.count, 2)
-        let original = Set(handles.allElementsBoundByIndex.map(\.identifier))
-        handles.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.2, thenDragTo: window.textViews.element(boundBy: 1)
-                .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
-        XCTAssertEqual(app.windows.count, 1, "A rejected drop inside the source window must not detach")
-        XCTAssertEqual(window.textViews.count, 2)
-        XCTAssertEqual(Set(handles.allElementsBoundByIndex.map(\.identifier)), original)
-        for terminal in window.textViews.allElementsBoundByIndex {
-            XCTAssertTrue(terminal.isHittable)
-        }
-    }
-
-    @MainActor func testDragSplitWindowPosition() async throws {
-        try updateConfig(
-            """
-            window-width = 40
-            window-height = 20
-            title = "TakoWindowPositionUITests"
-            macos-titlebar-style = hidden
-            """
-        )
-
-        let app = try takoApplication()
-        // Suppress Restoration
-        app.launchArguments += ["-NSQuitAlwaysKeepsWindows", "NO"]
-        // Clean run
-        app.launchEnvironment["TAKO_CLEAR_USER_DEFAULTS"] = "YES"
-
-        app.launch() // window in the center
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5), "New window should appear")
-
-        // remove fixed size
-        try updateConfig(
-            """
-            title = "TakoWindowPositionUITests"
-            macos-titlebar-style = hidden
-            """
-        )
-        app.typeKey(",", modifierFlags: [.command, .shift])
-
-        app.typeKey("d", modifierFlags: [.command])
-
-        let rightSplit = app.groups["Right pane"]
-        let rightFrame = rightSplit.frame
-        let terminalFrame = rightSplit.textViews.firstMatch.frame
-
-        let handle = rightSplit.buttons["Move pane"]
-        XCTAssertTrue(handle.waitForExistence(timeout: 5), "The split must expose its drag handle")
-        let beforeDrag = XCTAttachment(screenshot: window.screenshot())
-        beforeDrag.name = "PaneDrag-Before"
-        beforeDrag.lifetime = .keepAlways
-        add(beforeDrag)
-        let hierarchy = XCTAttachment(string: window.debugDescription)
-        hierarchy.name = "PaneDrag-Hierarchy"
-        hierarchy.lifetime = .keepAlways
-        add(hierarchy)
-        print("[pane-drag] handle=\(handle.frame) pane=\(rightFrame) window=\(window.frame)")
-        XCTAssertTrue(handle.isHittable, "The pane drag handle must be physically reachable")
-        let sourcePos = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-
-        let targetPos = rightSplit.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: rightFrame.size.width + 100, dy: 0))
-
-        sourcePos.click(forDuration: 0.2, thenDragTo: targetPos)
-
-        let detached = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: app.windows)
-        XCTAssertEqual(XCTWaiter.wait(for: [detached], timeout: 5), .completed,
-                       "Dragging a pane out must create a second window")
-
-        let window2 = app.windows.firstMatch
-        XCTAssertTrue(window2.waitForExistence(timeout: 5), "New window should appear")
-        let windowFrame2 = window2.frame
-
-        XCTAssertEqual(windowFrame2.minX, rightFrame.maxX + 100, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.minY, rightFrame.minY, accuracy: 5, "New window should be target position")
-        let detachedTerminalFrame = window2.textViews.firstMatch.frame
-        XCTAssertEqual(detachedTerminalFrame.width, terminalFrame.width, accuracy: 5, "Detach must preserve terminal content width")
-        XCTAssertEqual(detachedTerminalFrame.height, terminalFrame.height, accuracy: 5, "Detach must preserve terminal content height")
-    }
-
-    @MainActor func testDragSplitWindowPositionWithFixedSize() async throws {
-        try updateConfig(
-            """
-            window-width = 40
-            window-height = 20
-            title = "TakoWindowPositionUITests"
-            macos-titlebar-style = hidden
-            """
-        )
-
-        let app = try takoApplication()
-        // Suppress Restoration
-        app.launchArguments += ["-NSQuitAlwaysKeepsWindows", "NO"]
-        // Clean run
-        app.launchEnvironment["TAKO_CLEAR_USER_DEFAULTS"] = "YES"
-
-        app.launch() // window in the center
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5), "New window should appear")
-        let windowFrame = window.frame
-
-        app.typeKey("d", modifierFlags: [.command])
-
-        let rightSplit = app.groups["Right pane"]
-        let rightFrame = rightSplit.frame
-
-        let handle = rightSplit.buttons["Move pane"]
-        XCTAssertTrue(handle.waitForExistence(timeout: 5), "The split must expose its drag handle")
-        XCTAssertTrue(handle.isHittable, "The pane drag handle must be physically reachable")
-        let beforeDrag = XCTAttachment(screenshot: window.screenshot())
-        beforeDrag.name = "PaneDrag-FixedSize-Before"
-        beforeDrag.lifetime = .keepAlways
-        add(beforeDrag)
-        let sourcePos = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-
-        let targetPos = rightSplit.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: rightFrame.size.width + 100, dy: 0))
-
-        sourcePos.click(forDuration: 0.2, thenDragTo: targetPos)
-
-        let detached = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: app.windows)
-        XCTAssertEqual(XCTWaiter.wait(for: [detached], timeout: 5), .completed,
-                       "Dragging a pane out must create a second window")
-
-        let window2 = app.windows.firstMatch
-        XCTAssertTrue(window2.waitForExistence(timeout: 5), "New window should appear")
-        let windowFrame2 = window2.frame
-
-        XCTAssertEqual(windowFrame2.minX, rightFrame.maxX + 100, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.minY, rightFrame.minY, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.width, windowFrame.width, accuracy: 5, "New window should use size from config")
-        XCTAssertEqual(windowFrame2.height, windowFrame.height, accuracy: 5, "New window should use size from config")
-    }
+    // The split-tree drag-handle cases (rejected drop, drag out, drag out with a fixed
+    // size) moved to TakoFloatingTerminalUITests: terminal windows use the floating
+    // canvas, where they are a header drop and Move Pane to New Window.
 
     // MARK: - Restore round-trip per titlebar style
 
@@ -311,7 +171,7 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         )
         app.typeKey(",", modifierFlags: [.command, .shift])
         try await Task.sleep(for: .seconds(0.5))
-        app.typeKey("w", modifierFlags: [.command])
+        closeOnlyWindowThroughEmptyCanvas(app)
         app.typeKey("n", modifierFlags: [.command])
 
         let newWindow = app.windows.firstMatch
@@ -358,7 +218,7 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         XCTAssertEqual(firstFrame.midX, screenFrame.midX, accuracy: 5.0, "First window should be centered horizontally")
 
         // Close the window and open a new one — it should restore the same frame.
-        app.typeKey("w", modifierFlags: [.command])
+        closeOnlyWindowThroughEmptyCanvas(app)
         app.typeKey("n", modifierFlags: [.command])
 
         let window2 = app.windows.firstMatch

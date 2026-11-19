@@ -205,4 +205,96 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         app.typeKey("w", modifierFlags: .command)
         XCTAssertTrue(window.waitForNonExistence(timeout: 5), "Cmd-W on an empty canvas explicitly closes its session")
     }
+
+    // MARK: - Ported from the retired split-tree drag handle (TakoWindowPositionUITests)
+
+    /// Was testRejectedSplitDropInsideItsWindowKeepsBothPanes: a pane dragged by its
+    /// header onto its sibling inside the same window is not detached.
+    @MainActor
+    func testHeaderDropOnSiblingInsideItsWindowKeepsBothPanes() throws {
+        let app = try launchFloatingApp()
+        let (first, second) = try splitInTwo(app)
+        let processes = [try shellPID(first, phase: "DROP_A_BEFORE", in: app),
+                         try shellPID(second, phase: "DROP_B_BEFORE", in: app)]
+        let from = header(second, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
+        from.press(forDuration: 0.2, thenDragTo: pane(first, in: app).textViews.firstMatch
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+        XCTAssertEqual(app.windows.count, 1, "A rejected drop inside the source window must not detach")
+        XCTAssertEqual(Set(paneIDs(in: app)), [first, second])
+        XCTAssertEqual(paneIDs(in: app).count, 2)
+        for id in [first, second] {
+            XCTAssertTrue(pane(id, in: app).textViews.firstMatch.isHittable)
+        }
+        XCTAssertEqual([try shellPID(first, phase: "DROP_A_AFTER", in: app),
+                        try shellPID(second, phase: "DROP_B_AFTER", in: app)], processes)
+    }
+
+    /// Was testDragSplitWindowPosition. Superseded: its drop-at-cursor placement
+    /// (`minX == rightFrame.maxX + 100`, `minY == rightFrame.minY`). A header drag now
+    /// stays clamped in the canvas (TakoTitlebarTabsUITests.testTabsGeometryAfterMovingTabs)
+    /// and detaching is the header's Move Pane to New Window command, which has no cursor.
+    /// Kept: a second window appears, holds the same pane and process, and keeps its
+    /// terminal content size.
+    @MainActor
+    func testMovePaneToNewWindowKeepsItsTerminalSizeAndProcess() throws {
+        let app = try launchFloatingApp()
+        // Without a fixed window size, as the original after its reload.
+        try updateConfig("""
+        macos-titlebar-style = tabs
+        confirm-close-surface = false
+        auto-update = off
+        """)
+        app.typeKey(",", modifierFlags: [.command, .shift])
+        let (first, second) = try splitInTwo(app)
+        let process = try shellPID(second, phase: "MOVE_BEFORE", in: app)
+        let terminalFrame = pane(second, in: app).textViews.firstMatch.frame
+        let detached = try moveToNewWindow(second, keeping: first, in: app)
+        let detachedTerminal = detached.descendants(matching: .any)["FloatingPane-\(second)"].firstMatch
+            .textViews.firstMatch.frame
+        XCTAssertEqual(detachedTerminal.width, terminalFrame.width, accuracy: 5, "Detach must preserve terminal content width")
+        XCTAssertEqual(detachedTerminal.height, terminalFrame.height, accuracy: 5, "Detach must preserve terminal content height")
+        XCTAssertEqual(try shellPID(second, phase: "MOVE_AFTER", in: app), process)
+    }
+
+    /// Was testDragSplitWindowPositionWithFixedSize. Superseded: the same drop-at-cursor
+    /// placement as above. Kept: with a fixed window size in the config, the new window
+    /// uses that size.
+    @MainActor
+    func testMovePaneToNewWindowUsesTheConfiguredWindowSize() throws {
+        let app = try launchFloatingApp() // window-width = 110, window-height = 32
+        let sourceFrame = activeWindow(in: app).frame
+        let (first, second) = try splitInTwo(app)
+        let detached = try moveToNewWindow(second, keeping: first, in: app)
+        XCTAssertEqual(detached.frame.width, sourceFrame.width, accuracy: 5, "New window should use size from config")
+        XCTAssertEqual(detached.frame.height, sourceFrame.height, accuracy: 5, "New window should use size from config")
+    }
+
+    @MainActor
+    private func splitInTwo(_ app: XCUIApplication) throws -> (String, String) {
+        let first = try XCTUnwrap(paneIDs(in: app).first)
+        app.typeKey("d", modifierFlags: .command)
+        waitForPaneCount(2, in: app)
+        return (first, try XCTUnwrap(paneIDs(in: app).first { $0 != first }))
+    }
+
+    /// Moves `id` out through its header menu and returns the new window, after checking
+    /// that it holds only that pane and the source window keeps only `kept`.
+    @MainActor
+    private func moveToNewWindow(_ id: String, keeping kept: String, in app: XCUIApplication) throws -> XCUIElement {
+        header(id, in: app).rightClick()
+        let item = app.menuItems["Move Pane to New Window"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 3) && item.isEnabled,
+                      "A split pane's header must offer an enabled Move Pane to New Window")
+        item.click()
+        XCTAssertTrue(app.wait(for: \.windows.count, toEqual: 2, timeout: 5), "Moving a pane out must open a second window")
+        func holder(of pane: String) -> XCUIElement? {
+            app.windows.allElementsBoundByIndex.first { $0.descendants(matching: .any)["FloatingPane-\(pane)"].exists }
+        }
+        let detached = try XCTUnwrap(holder(of: id), "The moved pane must be in a window")
+        let source = try XCTUnwrap(holder(of: kept), "The kept pane must stay in a window")
+        // Each pane is in exactly one of the two windows.
+        XCTAssertFalse(source.descendants(matching: .any)["FloatingPane-\(id)"].exists)
+        XCTAssertFalse(detached.descendants(matching: .any)["FloatingPane-\(kept)"].exists)
+        return detached
+    }
 }
