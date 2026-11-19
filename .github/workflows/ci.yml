@@ -1,70 +1,95 @@
-# tako — Hosted scroll fixture comparison
+# tako — Hosted build of the unsigned 0.2.0-rc.1 macOS candidate
 # Copyright (c) 2026 Alexander Panasenko
 # Contact: alex@prod.codes
 # Author: https://prod.codes/about/
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
-name: RC scroll child comparison
+
+name: Tako 0.2.0-rc.1 unsigned candidate
 on:
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: rc-hosted-scroll-child
+  group: tako-rc1-unsigned-1497
   cancel-in-progress: false
 jobs:
-  compare-scroll:
+  build:
+    if: github.event.repository.private == false
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 60
+    env:
+      SOURCE_SHA: 1497b6c767e50f7c2de4987f9e59ad5b1482eb28
+      TAKO_VERSION: 0.2.0
+      TAKO_BUILD_NUMBER: '623'
+      TAKO_CODESIGN_IDENTITY: '-'
+      TAKO_WITH_ZMX: '1'
+      RELEASE: '1'
+      PROD_CODE_LOCAL: '1'
+      CARGO_BUILD_JOBS: '2'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      MITTS_NO_SOURCE_FALLBACK: '1'
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
-      - name: Prepare the test app from run 44075043801
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify source and prepare the compiler
         run: |
           set -euo pipefail
-          gh run download 44075043801 --repo alex09x/tako --name native-test-build-acae243de904a01e6d9670f2c1fb563df869ba32-1 --dir target/timing-download
-          python3 scripts/diag_timing_app.py target/timing-download/native-prebuilt.tar target/timing-app
-      - name: Prepare the hosted desktop and Bash fixture
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(uname -m)" = arm64
+          test -z "$(git status --porcelain)"
+          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
+          sh -n "$RUNNER_TEMP/mitts-install.sh"
+          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Build and verify the unsigned candidate
         run: |
           set -euo pipefail
-          sudo /usr/sbin/DevToolsSecurity --enable
-          /usr/bin/automationmodetool
-          HOMEBREW_NO_AUTO_UPDATE=1 brew install bash
-          bash_path="$(brew --prefix bash)/bin/bash"
-          "$bash_path" -c '(( BASH_VERSINFO[0] >= 4 ))'
-          sudo dscl . -create "/Users/$(id -un)" UserShell "$bash_path"
-          test "$(python3 -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_shell)')" = "$bash_path"
-          printf 'TAKO_TEST_BASH=%s\n' "$bash_path" >> "$GITHUB_ENV"
-      - name: Compare the baseline shell and a quiet child
-        run: |
-          set -euo pipefail
-          export APP="$PWD/target/timing-app/Tako.app"
-          export TAKO_BUNDLE_ID=com.tako-core.terminal.e2e-timing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
-          baseline=0
-          quiet=0
-          TAKO_DIAG_QUIET_SCROLL_CHILD=0 python3 scripts/ci_log.py --log target/ci-logs/scroll-baseline.log --label scroll-baseline -- bash scripts/e2e-macapp.sh app-selftest-scroll || baseline=$?
-          TAKO_DIAG_QUIET_SCROLL_CHILD=1 python3 scripts/ci_log.py --log target/ci-logs/scroll-quiet.log --label scroll-quiet -- bash scripts/e2e-macapp.sh app-selftest-scroll || quiet=$?
-          printf 'baseline=%s quiet=%s\n' "$baseline" "$quiet" | tee target/ci-logs/scroll-status.txt
-          [ "$baseline" -eq 0 ] && [ "$quiet" -eq 0 ]
-      - name: Collect failed fixture state
-        if: failure()
-        run: python3 scripts/ci_kept_state.py --logs target/ci-logs --out target/ci-kept-state
-      - name: Retain comparison evidence
+          mkdir -p target/rc-candidate
+          {
+            sw_vers
+            xcodebuild -version
+            swiftc --version
+            rustc --version
+            mitts --version
+            git rev-parse 'HEAD^{tree}'
+          } > target/rc-candidate/toolchain.txt
+          python3 scripts/ci_log.py --log target/rc-candidate/build.log --label rc-build -- python3 scripts/build-macapp.py
+          codesign --verify --strict --deep target/macapp/Tako.app
+          ditto -c -k --keepParent target/macapp/Tako.app target/rc-candidate/Tako-0.2.0-unsigned.zip
+          python3 - <<'PY'
+          import hashlib, json, os, plistlib
+          from pathlib import Path
+          out = Path("target/rc-candidate")
+          app = Path("target/macapp/Tako.app")
+          info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+          source, version, build = (os.environ[k] for k in ("SOURCE_SHA", "TAKO_VERSION", "TAKO_BUILD_NUMBER"))
+          if (info["TakoSourceCommit"], info["CFBundleShortVersionString"], info["CFBundleVersion"]) != (source, version, build):
+              raise SystemExit("candidate identity differs from the requested source, version or build")
+          if info["CFBundleIdentifier"] != "com.tako-core.terminal":
+              raise SystemExit("candidate has a fixture identifier")
+          archive = out / "Tako-0.2.0-unsigned.zip"
+          with archive.open("rb") as f:
+              sha = hashlib.file_digest(f, "sha256").hexdigest()
+          data = {"source_sha": source, "version": version, "build": build, "archive": archive.name,
+                  "sha256": sha, "distribution_signed": False,
+                  "run_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"}
+          (out / "candidate.json").write_text(json.dumps(data, indent=2) + "\n")
+          (out / "SHA256SUMS").write_text(f"{sha}  {archive.name}\n")
+          PY
+      - name: Retain candidate and build evidence
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rc-scroll-child-comparison
-          path: |
-            target/timing-app/identity.json
-            target/tako-e2e.inputs
-            target/ci-logs/
-            target/ci-kept-state/
-          if-no-files-found: error
-          retention-days: 14
+          name: tako-0.2.0-rc.1-unsigned-1497
+          path: target/rc-candidate/
+          if-no-files-found: warn
+          retention-days: 7
