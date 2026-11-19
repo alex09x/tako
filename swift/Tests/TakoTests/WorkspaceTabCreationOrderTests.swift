@@ -72,8 +72,7 @@ struct WorkspaceTabCreationOrderTests {
         let fixture = Fixture(windowCount: windowCount)
         defer {
             for controller in fixture.controllers {
-                controller.cancelPendingInitialPresentation()
-                if let window = controller.window { Tako.CustomTabGroup.leave(window) }
+                if let window = controller.window { TerminalTestSupport.tearDown(controller, window) }
             }
             Tako.CustomTabGroup.resetForTesting()
             WorkspaceStore.shared.resetForTesting()

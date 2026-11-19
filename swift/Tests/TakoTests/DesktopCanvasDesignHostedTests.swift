@@ -39,8 +39,9 @@ extension DesktopCanvasDesignTests {
             window.windowController = controller
             controller.windowDidLoad()
             controller.floatingCanvas.reduceMotionProvider = { true }
-            window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebar, height: height), display: true)
             controller.showWindow(nil)
+            // showWindow restores the previous terminal's frame before ordering in.
+            window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebar, height: height), display: true)
             DesktopCanvasFixture.expectUnclamped(window, width: windowWidth)
             return (controller, window)
         }

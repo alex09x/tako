@@ -109,13 +109,18 @@ extension Tako.SurfaceView {
 
     private func refresh() {
         guard let surface else { return }
+        let document = store.document
+        let hadOverrides = lastOverrides?.contains { $0 != nil } ?? false
+        // With no scoped styles, resolving a pane's scope cannot affect what
+        // it draws. In particular, a detached pane would scan every window.
+        guard hadOverrides || !document.workspaces.isEmpty ||
+                !document.sessions.isEmpty || !document.panes.isEmpty else { return }
         let workspaceID = workspace(), sessionID = session()
         let keys = ScopedAppearanceContext.keys.sorted()
         let values = keys.map { key in workspaceID.flatMap { store.value(for: key, scope: .workspace($0)) } }
             + keys.map { key in sessionID.flatMap { store.value(for: key, scope: .session($0)) } }
             + keys.map { store.value(for: $0, scope: .pane(surface.id)) }
         guard values != lastOverrides else { return }
-        let hadOverrides = lastOverrides?.contains { $0 != nil } ?? false
         lastOverrides = values
         // Unstyled terminals retain transient zoom when unrelated tabs move.
         guard hadOverrides || values.contains(where: { $0 != nil }) else { return }

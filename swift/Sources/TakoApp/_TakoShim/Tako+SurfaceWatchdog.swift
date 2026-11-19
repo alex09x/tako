@@ -29,7 +29,9 @@ extension Tako.SurfaceView {
         /// Arms the one-shot watchdog. If the frame is still open when it
         /// fires, repaint from the mid-frame state rather than leave the
         /// display frozen for the rest of the frame.
-        func armSyncOutputWatchdog() {
+        func armSyncOutputWatchdog(schedule: (Double, DispatchWorkItem) -> Void = { delay, item in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+        }) {
             let item = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.syncOutputTimeoutItem = nil
@@ -44,10 +46,7 @@ extension Tako.SurfaceView {
                 TakoLog.render.debug("syncOutput watchdog: forced render")
             }
             syncOutputTimeoutItem = item
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + Tako.MetalTerminalHost.syncOutputTimeout,
-                execute: item
-            )
+            schedule(Tako.MetalTerminalHost.syncOutputTimeout, item)
         }
 
         /// Thread-safe, one-outstanding redraw request shared by the parser

@@ -83,15 +83,21 @@ struct MotionOverlayTests {
         let blank = SwiftUIMotionProbe.light(probe.snapshot())
         _ = try OverlayStore.shared.openOverlay(paneId: surface.id, path: file.path,
                                                 surfacePwd: file.deletingLastPathComponent().path)
-        probe.settle(0.8)
-        let shown = SwiftUIMotionProbe.light(probe.snapshot())
+        // Readiness is a precondition, outside the measured fade. Cold
+        // WebKit startup can be slower when this suite shares a CI process.
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        var shown = blank
+        repeat {
+            probe.settle(0.1)
+            shown = SwiftUIMotionProbe.light(probe.snapshot())
+        } while shown <= blank + 10 && ProcessInfo.processInfo.systemUptime < deadline
         let ready = ProcessInfo.processInfo.systemUptime
         try #require(shown > blank + 10, "the warm-up overlay never showed: \(blank) -> \(shown)")
         _ = OverlayStore.shared.closeOverlay(paneId: surface.id)
         probe.settle(0.8)
         try #require(OverlayStore.shared.overlay(for: surface.id) == nil, "the warm-up overlay is still open")
         try #require(!containsWebView(probe.host), "the warm-up overlay left its web view in the pane")
-        print(String(format: "[overlay warm-up] cold probe %.0f ms, cold open to shown snapshot %.0f ms (incl. settle 0.8 s); first-use startup, not this animation's gate",
+        print(String(format: "[overlay warm-up] cold probe %.0f ms, cold open to shown snapshot %.0f ms; first-use startup, not this animation's gate",
                      (mounted - started) * 1000, (ready - mounted) * 1000))
     }
 

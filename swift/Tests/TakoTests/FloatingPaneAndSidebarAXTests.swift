@@ -86,8 +86,8 @@ struct FloatingPaneAndSidebarAXTests {
         controller.window = window
         window.windowController = controller
         controller.windowDidLoad()
-        window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebarWidth, height: height), display: true)
         controller.showWindow(nil)
+        window.setFrame(NSRect(x: 0, y: 80, width: canvasWidth + sidebarWidth, height: height), display: true)
         return (controller, window)
     }
 

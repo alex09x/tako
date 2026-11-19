@@ -21,17 +21,23 @@ import Testing
 struct MotionDelayTests {
     private func wait(_ seconds: TimeInterval) async { try? await Task.sleep(nanoseconds: UInt64(seconds * 1e9)) }
 
-    @Test func aSynchronizedFrameLeftOpenIsDrawnAfter200ms() async {
+    @Test func aSynchronizedFrameLeftOpenIsDrawnAfter200ms() throws {
         _ = NSApplication.shared
         let surface = Tako.SurfaceView(frame: .zero)
         _ = surface.core.feedWithOutcome(bytes: Data("\u{1b}[?2026h".utf8))
         surface.syncOverride = false
-        surface.armSyncOutputWatchdog()
-        await wait(0.1)
+        var deadline: Double?
+        var pending: DispatchWorkItem?
+        surface.armSyncOutputWatchdog { delay, item in
+            deadline = delay
+            pending = item
+        }
+        // Prove the actual delay requested. A sleep in the test can resume
+        // after both deadlines when a hosted runner is busy.
+        #expect(deadline == 0.2)
         #expect(!surface.syncOverride, "forced before its 200 ms")
-        await wait(0.25)
+        try #require(pending).perform()
         #expect(surface.syncOverride, "a frame left open stayed frozen")
-        #expect(Tako.MetalTerminalHost.syncOutputTimeout == 0.2)
     }
 
     @Test func aSynchronizedFrameClosedInTimeIsNotForced() async {
