@@ -241,12 +241,21 @@ let scenarios: [Scenario] = [
             throw Failure("the commands did not run: [\(d.screenText().suffix(300))]")
         }
 
+        func focusedQuery() -> String? {
+            guard let field: AXUIElement = d.attribute(d.axApp, kAXFocusedUIElementAttribute),
+                  let role: String = d.attribute(field, kAXRoleAttribute), role == kAXTextFieldRole as String,
+                  let placeholder: String = d.attribute(field, kAXPlaceholderValueAttribute),
+                  placeholder.hasPrefix("Find in all tabs") else { return nil }
+            return (d.attribute(field, kAXValueAttribute) as String?) ?? ""
+        }
         d.key(Key.f, [.maskCommand, .maskShift])
-        usleep(600_000)
+        guard d.wait(for: { focusedQuery() != nil }, timeout: 5) else {
+            throw Failure("cmd+shift+f did not focus the find field: \(d.debugFocusState())")
+        }
         d.key(Key.a, .maskCommand)
         try d.type(marker)
-        guard d.wait(for: { d.staticTexts().filter { $0.contains(marker) }.count == 3 }, timeout: 5) else {
-            throw Failure("expected three matches: \(d.staticTexts())")
+        guard d.wait(for: { focusedQuery() == marker && d.staticTexts().filter { $0.contains(marker) }.count == 3 }, timeout: 5) else {
+            throw Failure("expected the focused query and three matches: \(d.debugFocusState()); \(d.staticTexts())")
         }
         let texts = d.staticTexts()
         let failing = "$ printf 'grp-%s one\\ngrp-%s two\\n' \(id) \(id); false"
@@ -271,7 +280,7 @@ let scenarios: [Scenario] = [
 
         d.key(Key.returnKey)
         guard d.wait(for: { d.selectedText() == marker }, timeout: 5) else {
-            throw Failure("selection after Return is [\(d.selectedText())]")
+            throw Failure("selection after Return is [\(d.selectedText())]; \(d.debugFocusState()); \(d.staticTexts())")
         }
         try d.run("exit")
     }),
