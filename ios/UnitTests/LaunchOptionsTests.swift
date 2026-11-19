@@ -57,13 +57,11 @@ final class LaunchOptionsTests: XCTestCase {
 
     // MARK: - -takoHostKeyArmingHold
 
-    func testHostKeyArmingHoldIsAFixedFiveSecondsOnlyWhenAsked() {
+    func testHostKeyArmingHoldRequiresExplicitOptIn() {
         set([])
-        XCTAssertNil(LaunchOptions.hostKeyArmingHold, "the 1 s policy is untouched by default")
+        XCTAssertFalse(LaunchOptions.hostKeyArmingHold)
         set(["-takoHostKeyArmingHold"])
-        XCTAssertEqual(LaunchOptions.hostKeyArmingHold, .seconds(5))
-        set(["-takoHostKeyArmingHold", "30"])
-        XCTAssertEqual(LaunchOptions.hostKeyArmingHold, .seconds(5), "the hold is fixed, not a caller-chosen duration")
+        XCTAssertTrue(LaunchOptions.hostKeyArmingHold)
     }
 
     // MARK: - -takoHost / -takoKeyPath / -takoPassphrasePath / -takoPasswordPath

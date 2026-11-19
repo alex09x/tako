@@ -23,15 +23,14 @@ struct HostKeyPrompt: View {
     let onTrust: () -> Void
     let onCancel: () -> Void
     let sleepBeforeArming: @MainActor @Sendable (Duration) async throws -> Void
-    /// How long Trust and Cancel stay dead labels: 1 s. Only a Debug UI test
-    /// passes a longer hold (LaunchOptions.hostKeyArmingHold).
-    let armingDelay: Duration
+    /// Nil holds the labels inert in the dedicated DEBUG tap fixture.
+    let armingDelay: Duration?
     @State private var actionsArmed = false
 
     init(
         host: String,
         presented: KnownHosts.Presented,
-        armingDelay: Duration = .seconds(1),
+        armingDelay: Duration? = .seconds(1),
         sleepBeforeArming: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
         },
@@ -143,6 +142,7 @@ struct HostKeyPrompt: View {
             if presented.changed { Haptic.warn() }
         }
         .task {
+            guard let armingDelay else { return }
             // Both variants need a way out. A changed key deliberately has
             // no Trust action, but trapping the user in its sheet is not a
             // security feature. The delay still makes Cancel a second,

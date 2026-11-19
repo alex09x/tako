@@ -82,8 +82,7 @@ struct SessionListScreen: View {
                     HostKeyPrompt(
                         host: host,
                         presented: presented,
-                        // 1 s, unless a Debug UI test holds it (LaunchOptions).
-                        armingDelay: LaunchOptions.hostKeyArmingHold ?? .seconds(1),
+                        armingDelay: LaunchOptions.hostKeyArmingHold ? nil : .seconds(1),
                         onTrust: {
                             KnownHosts.trust(
                                 host: draft.host,

@@ -116,16 +116,13 @@ enum LaunchOptions {
 #endif
     }
 
-    /// `-takoHostKeyArmingHold`: the host-key prompt's Trust and Cancel stay
-    /// dead labels for a fixed 5 s instead of 1 s. Only the UI test that taps
-    /// a dead label uses it, so its tap can land before arming on a slow
-    /// simulator; the 1 s policy itself is held by the default-launch test
-    /// and the controlled-clock unit test. Debug only; Release returns nil.
-    static var hostKeyArmingHold: Duration? {
+    /// Keeps the host-key labels inert for the duration of the dedicated
+    /// DEBUG tap test. XCTest can spend a minute waiting for app idleness.
+    static var hostKeyArmingHold: Bool {
 #if DEBUG
-        return arguments.contains("-takoHostKeyArmingHold") ? .seconds(5) : nil
+        return arguments.contains("-takoHostKeyArmingHold")
 #else
-        return nil
+        return false
 #endif
     }
 
