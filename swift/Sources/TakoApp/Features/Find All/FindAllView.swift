@@ -208,7 +208,7 @@ struct FindAllView: View {
     /// The panel stays until the match is selected, so a result that turned
     /// out stale leaves the notice and the refreshed list in view.
     private func open(_ result: CrossSearchResult?) {
-        guard let result else { return }
+        guard let result, search.results.contains(result) else { return }
         search.reveal(result) { selected in
             if selected { close() }
         }

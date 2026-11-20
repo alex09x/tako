@@ -90,6 +90,32 @@ struct CrossSessionSearchTests {
         #expect(search.results.map(\.hit.matched) == ["beta"])
     }
 
+    @Test func changingTheQueryClearsMatchesForItsPrefix() async throws {
+        let terminal = core("grp-build two")
+        let tab = target(terminal, "tab")
+        let search = CrossSessionSearch()
+        search.targets = { [tab] }
+        search.debounce = .zero
+        defer { search.cancel() }
+        search.query = "grp"
+        try #require(await eventually { search.status == .done(more: false) })
+        let prefix = try #require(search.results.first?.hit)
+        #expect(prefix.matched == "grp")
+
+        // Both queries show the same excerpt, but the old match has a shorter range.
+        search.debounce = .seconds(60)
+        search.query = "grp-build"
+        #expect(terminal.searchHitIsCurrent(needle: "grp", hit: prefix))
+        #expect(!terminal.searchHitIsCurrent(needle: search.query, hit: prefix))
+        #expect(search.status == .searching)
+        #expect(search.results.isEmpty)
+
+        search.debounce = .zero
+        search.refresh()
+        try #require(await eventually { search.status == .done(more: false) })
+        #expect(search.results.map(\.hit.matched) == ["grp-build"])
+    }
+
     @Test func anEmptyQueryClearsTheList() async {
         let search = CrossSessionSearch()
         search.targets = { [target(core("alpha"), "tab")] }

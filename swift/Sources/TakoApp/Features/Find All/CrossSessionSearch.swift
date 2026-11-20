@@ -111,9 +111,10 @@ final class CrossSessionSearch: ObservableObject {
     private func schedule(keepNotice: Bool = false) {
         cancel()
         if !keepNotice { notice = nil }
+        // A match's range belongs to the query that produced it.
+        if !results.isEmpty { results = [] }
         let needle = query
         guard !needle.isEmpty else {
-            results = []
             status = .idle
             return
         }
