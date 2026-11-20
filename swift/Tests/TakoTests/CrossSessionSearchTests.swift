@@ -116,6 +116,30 @@ struct CrossSessionSearchTests {
         #expect(search.results.map(\.hit.matched) == ["grp-build"])
     }
 
+    @Test func closingOnePanelDoesNotCancelAnotherPanelsRefresh() async throws {
+        let terminal = core("match")
+        let tab = target(terminal, "tab")
+        let search = CrossSessionSearch()
+        let first = UUID()
+        let second = UUID()
+        search.targets = { [tab] }
+        search.debounce = .zero
+        search.panelOpened(first)
+        defer {
+            search.panelClosed(first)
+            search.panelClosed(second)
+        }
+        search.query = "match"
+        try #require(await eventually { search.results.count == 1 })
+
+        terminal.feed(bytes: Data("\r\nmatch again".utf8))
+        search.panelOpened(second)
+        #expect(search.results.count == 1, "the unchanged query retains its results during refresh")
+        search.panelClosed(first)
+
+        #expect(await eventually { search.status == .done(more: false) && search.results.count == 2 })
+    }
+
     @Test func anEmptyQueryClearsTheList() async {
         let search = CrossSessionSearch()
         search.targets = { [target(core("alpha"), "tab")] }

@@ -48,7 +48,12 @@ final class CrossSessionSearch: ObservableObject {
     static let rowsPerStep: UInt32 = 2_000
 
     @Published var query = "" {
-        didSet { if query != oldValue { schedule() } }
+        didSet {
+            guard query != oldValue else { return }
+            // A match's range belongs to the query that produced it.
+            if !results.isEmpty { results = [] }
+            schedule()
+        }
     }
     @Published private(set) var results: [CrossSearchResult] = []
     @Published private(set) var status: Status = .idle
@@ -61,6 +66,7 @@ final class CrossSessionSearch: ObservableObject {
     var debounce: Duration = .milliseconds(150)
 
     private var task: Task<Void, Never>?
+    private var visiblePanels: Set<UUID> = []
 
     /// How long a revealed pane gets to take focus before the match is
     /// checked and selected. TAKO_FIND_ALL_SETTLE (seconds) lengthens it so
@@ -101,6 +107,15 @@ final class CrossSessionSearch: ObservableObject {
         task = nil
     }
 
+    func panelOpened(_ id: UUID) {
+        visiblePanels.insert(id)
+        refresh()
+    }
+
+    func panelClosed(_ id: UUID) {
+        if visiblePanels.remove(id) != nil, visiblePanels.isEmpty { cancel() }
+    }
+
     /// Searches again for the current query, against the terminals as they
     /// are now -- when the panel opens, so a list from last time is not shown
     /// as if it were current.
@@ -111,8 +126,6 @@ final class CrossSessionSearch: ObservableObject {
     private func schedule(keepNotice: Bool = false) {
         cancel()
         if !keepNotice { notice = nil }
-        // A match's range belongs to the query that produced it.
-        if !results.isEmpty { results = [] }
         let needle = query
         guard !needle.isEmpty else {
             status = .idle

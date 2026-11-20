@@ -11,6 +11,7 @@ struct FindAllView: View {
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
 
     @State private var selected: Int?
+    @State private var panelID = UUID()
     @FocusState private var fieldFocused: Bool
 
     /// Results in display order, with where each terminal's group starts.
@@ -60,9 +61,9 @@ struct FindAllView: View {
                     .onAppear {
                         DispatchQueue.main.async { fieldFocused = true }
                         // Whatever was found last time may no longer be so.
-                        search.refresh()
+                        search.panelOpened(panelID)
                     }
-                    .onDisappear { search.cancel() }
+                    .onDisappear { search.panelClosed(panelID) }
             }
 
             if let line = statusLine {
