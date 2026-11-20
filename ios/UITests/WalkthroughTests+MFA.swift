@@ -123,8 +123,13 @@ extension WalkthroughTests {
     /// and never reaches the app. Answer that late prompt, then require the
     /// control to be hittable, as a finger would.
     func waitForUncoveredMFAControl(_ control: XCUIElement) -> Bool {
-        if !waitForHittable(control, timeout: 3) { _ = dismissSystemPrompt(timeout: 10) }
-        return waitForHittable(control, timeout: 10)
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            if control.exists && control.isHittable { return true }
+            let remaining = deadline.timeIntervalSinceNow
+            if remaining > 0 { _ = dismissSystemPrompt(timeout: min(0.2, remaining)) }
+        }
+        return control.exists && control.isHittable
     }
 
     /// Opens a session by filling the form in, then types in the terminal.
