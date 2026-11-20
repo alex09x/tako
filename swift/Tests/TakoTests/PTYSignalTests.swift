@@ -18,6 +18,16 @@ import Testing
 /// terminal left its shell running -- and closing the pty then blocked the
 /// main thread waiting for that shell to let go.
 struct PTYSignalTests {
+    @Test func thePtyMasterClosesOnExec() throws {
+        let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory(),
+                                   program: ["/bin/sleep", "30"]))
+        defer { pty.terminate() }
+        try #require(pty.startError == nil)
+        let flags = fcntl(pty.master, F_GETFD)
+        try #require(flags >= 0)
+        #expect(flags & FD_CLOEXEC != 0, "an unrelated child must not keep this terminal's master open")
+    }
+
     @Test func aHangupEndsTheShellEvenWhenTheAppIgnoresHangups() throws {
         let previous = signal(SIGHUP, SIG_IGN)
         defer { signal(SIGHUP, previous) }

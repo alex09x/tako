@@ -167,6 +167,8 @@ final class PTY {
             if haveErrorPipe { _ = Darwin.write(errorPipe[1], &failure, MemoryLayout<Int32>.size) }
             _exit(127)
         }
+        // A new shell must not keep other terminals' masters alive after exec.
+        _ = fcntl(masterFD, F_SETFD, FD_CLOEXEC)
         var startFailure: Int32?
         if haveErrorPipe {
             close(errorPipe[1])
