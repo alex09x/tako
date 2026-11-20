@@ -102,7 +102,13 @@ extension WalkthroughTests {
         XCTAssertTrue(app.secureTextFields["auth.challenge.prompt.0"]
             .waitForExistence(timeout: 20))
         shot("03 mfa cancel · challenge visible")
-        app.buttons["auth.challenge.cancel"].tap()
+        // A late "Save Password?" sheet can still cover the challenge; a tap
+        // then lands at {-1, -1} and Cancel never reaches the app.
+        let cancel = app.buttons["auth.challenge.cancel"]
+        if !waitForHittable(cancel, timeout: 3) { _ = dismissSystemPrompt(timeout: 10) }
+        XCTAssertTrue(waitForHittable(cancel, timeout: 10),
+                      "the MFA Cancel button stayed covered")
+        cancel.tap()
 
         let disconnected = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "disconnected")
