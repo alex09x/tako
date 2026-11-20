@@ -142,7 +142,7 @@ enum ControlRequestSocket {
 extension Driver {
     /// Sequential admitted commands, as before, with both local sockets
     /// prepared before the clock starts. Existing app-side history checks
-    /// still prove exact transitions and their unchanged140ms interval.
+    /// still prove exact transitions and report their measured interval.
     func controlPair(_ first: [String: Any], _ second: [String: Any]) throws -> (first: TimeInterval, second: TimeInterval) {
         guard let owned = ownedApps.last(where: { $0.pid == pid }),
               case .running(let current) = identify(pid), current == owned.birth else {

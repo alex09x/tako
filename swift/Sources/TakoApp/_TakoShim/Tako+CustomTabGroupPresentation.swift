@@ -103,7 +103,7 @@ extension Tako.CustomTabGroup {
                 Tako.TabBarController.clearTitlebarBackground(in: window)
                 NSApp.activate(ignoringOtherApps: true)
                 CATransaction.flush()
-                DispatchQueue.main.async { [weak self, weak previous, weak window] in
+                deferPresentationWork { [weak self, weak previous, weak window] in
                     guard let self, self.focusGeneration == gen else { return }
                     self.pendingOrderOutWindow = nil
                     if let window {
@@ -121,7 +121,7 @@ extension Tako.CustomTabGroup {
             WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: wsId)
 
             reflowSurfaces()
-            DispatchQueue.main.async {
+            deferPresentationWork {
                 reflowSurfaces()
             }
             Tako.TabBarController.refreshAll()
@@ -210,7 +210,7 @@ extension Tako.CustomTabGroup {
                     sibling.orderOut(nil)
                 }
                 reflowTarget()
-                DispatchQueue.main.async {
+                deferPresentationWork {
                     reflowTarget()
                 }
             } else {
