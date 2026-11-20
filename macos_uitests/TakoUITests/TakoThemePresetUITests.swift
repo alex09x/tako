@@ -149,9 +149,19 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         // A failed write keeps the saved file; the draft stays open and previewed with
         // the error shown, and only Undo gives the pane its saved look back.
         let before = try XCTUnwrap(env.rendererColor(of: id))
+        let baseline = probe(env, id)
         editSaved(root, in: app)
         setConfig(background: "#884422", root: root)
-        XCTAssertTrue(H.wait { guard let color = env.rendererColor(of: id) else { return false }; return H.colorDifference(before, color) > 0.04 })
+        // Same predicate and timeout as `rendererColor`, with each sample's error kept.
+        var last = RendererProbe(), samples = 0
+        let previewed = H.wait {
+            last = self.probe(env, id); samples += 1
+            guard let color = last.witness else { return false }; return H.colorDifference(before, color) > 0.04
+        }
+        if !previewed { report(before: before, baseline: baseline, last: last, samples: samples, app: app) } else {
+            print("RENDERER-PROBE ok before=\(Self.hex(before)) last witness=\(Self.hex(last.witness)) interior=\(Self.hex(last.interior)) samples=\(samples)")
+        }
+        XCTAssertTrue(previewed)
         let themes = url.deletingLastPathComponent()
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: themes.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: themes.path) }
@@ -162,5 +172,48 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         root.buttons["DesktopThemeCancel"].firstMatch.click()
         XCTAssertTrue(H.wait { guard let color = env.rendererColor(of: id) else { return false }; return H.colorDifference(before, color) < 0.03 })
         H.closeSettings(root)
+    }
+
+    // MARK: - Renderer diagnostics (hosted line-154 replay)
+
+    /// One `takoctl screenshot` of the pane: the bottom-right witness `rendererColor`
+    /// samples, an interior point, the image itself, or the command's error.
+    private struct RendererProbe {
+        var witness: NSColor?, interior: NSColor?, image: CGImage?, error: String?
+    }
+
+    private func probe(_ env: H, _ id: String) -> RendererProbe {
+        do {
+            let image = try env.rendererImage(of: id)
+            return RendererProbe(witness: H.samplePixelColor(from: image), interior: Self.pixel(image, x: 0.5, y: 0.5), image: image)
+        } catch { return RendererProbe(error: String(describing: error)) }
+    }
+
+    private static func pixel(_ cg: CGImage, x: Double, y: Double) -> NSColor? {
+        guard let context = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        let offset = (Int(Double(cg.height) * y) * cg.width + Int(Double(cg.width) * x)) * 4
+        return NSColor(srgbRed: CGFloat(data[offset]) / 255, green: CGFloat(data[offset + 1]) / 255, blue: CGFloat(data[offset + 2]) / 255, alpha: 1)
+    }
+
+    private static func hex(_ color: NSColor?) -> String {
+        guard let c = color?.usingColorSpace(.sRGB) else { return "nil" }
+        return String(format: "#%02x%02x%02x", Int(round(c.redComponent * 255)), Int(round(c.greenComponent * 255)), Int(round(c.blueComponent * 255)))
+    }
+
+    @MainActor private func report(before: NSColor, baseline: RendererProbe, last: RendererProbe, samples: Int, app: XCUIApplication) {
+        let size = last.image.map { "\($0.width)x\($0.height)" } ?? "nil"
+        let text = "before witness=\(Self.hex(before)) baseline witness=\(Self.hex(baseline.witness)) interior=\(Self.hex(baseline.interior)) error=\(baseline.error ?? "-")\n"
+            + "last witness=\(Self.hex(last.witness)) interior=\(Self.hex(last.interior)) image=\(size) error=\(last.error ?? "-") samples=\(samples)"
+        let note = XCTAttachment(string: text); note.name = "renderer-probe"; note.lifetime = .keepAlways; add(note)
+        for (name, image) in [("renderer-baseline", baseline.image), ("renderer-last", last.image)] {
+            guard let image else { continue }
+            let png = XCTAttachment(image: NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height)))
+            png.name = name; png.lifetime = .keepAlways; add(png)
+        }
+        H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "window-at-renderer-failure", to: self)
+        print("RENDERER-PROBE " + text.replacingOccurrences(of: "\n", with: " | "))
     }
 }
