@@ -134,6 +134,11 @@ final class CrossSessionSearch: ObservableObject {
         }
         status = .searching
         let targets = targets()
+        if !results.isEmpty {
+            let eligible = Set(targets.map(\.surfaceID))
+            let retained = results.filter { eligible.contains($0.surfaceID) }
+            if retained.count != results.count { results = retained }
+        }
         let debounce = debounce
         task = Task { [weak self] in
             try? await Task.sleep(for: debounce)

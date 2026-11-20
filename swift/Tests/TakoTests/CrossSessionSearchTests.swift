@@ -119,10 +119,11 @@ struct CrossSessionSearchTests {
     @Test func closingOnePanelDoesNotCancelAnotherPanelsRefresh() async throws {
         let terminal = core("match")
         let tab = target(terminal, "tab")
+        let unavailable = target(core("another match"), "other tab")
         let search = CrossSessionSearch()
         let first = UUID()
         let second = UUID()
-        search.targets = { [tab] }
+        search.targets = { [tab, unavailable] }
         search.debounce = .zero
         search.panelOpened(first)
         defer {
@@ -130,11 +131,12 @@ struct CrossSessionSearchTests {
             search.panelClosed(second)
         }
         search.query = "match"
-        try #require(await eventually { search.results.count == 1 })
+        try #require(await eventually { search.results.count == 2 })
 
         terminal.feed(bytes: Data("\r\nmatch again".utf8))
+        search.targets = { [tab] }
         search.panelOpened(second)
-        #expect(search.results.count == 1, "the unchanged query retains its results during refresh")
+        #expect(search.results.map(\.surfaceID) == [tab.surfaceID], "refresh retains only eligible excerpts")
         search.panelClosed(first)
 
         #expect(await eventually { search.status == .done(more: false) && search.results.count == 2 })
