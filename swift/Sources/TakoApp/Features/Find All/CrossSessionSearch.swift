@@ -108,6 +108,7 @@ final class CrossSessionSearch: ObservableObject {
     }
 
     func panelOpened(_ id: UUID) {
+        if visiblePanels.isEmpty, !results.isEmpty { results = [] }
         visiblePanels.insert(id)
         refresh()
     }
@@ -262,6 +263,7 @@ final class CrossSessionSearch: ObservableObject {
     }
 
     private func fail(_ message: String, _ done: @MainActor (Bool) -> Void) {
+        results = []
         schedule()
         notice = message
         done(false)

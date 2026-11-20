@@ -155,16 +155,40 @@ struct CrossSessionSearchTests {
 
     @Test func aResultInAClosedTerminalIsReportedNotShown() async throws {
         let search = CrossSessionSearch()
-        search.targets = { [] }
+        let closedTarget = target(core("x"), "tab")
+        search.targets = { [closedTarget] }
         search.debounce = .zero
-        let found = try #require(await CrossSessionSearch.search("x", in: [target(core("x"), "tab")]))
-        let gone = try #require(found.results.first)
+        defer { search.cancel() }
+        search.query = "x"
+        try #require(await eventually { search.results.count == 1 })
+        let gone = try #require(search.results.first)
+        search.targets = { [] }
 
         var selected: Bool?
         search.reveal(gone) { selected = $0 }
 
         #expect(selected == false)
         #expect(search.notice == "That terminal has been closed.")
+        #expect(search.results.isEmpty)
+    }
+
+    @Test func reopeningAfterTheLastPanelClosesDiscardsOldExcerpts() async throws {
+        let search = CrossSessionSearch()
+        let tab = target(core("previous output"), "tab")
+        let first = UUID()
+        let second = UUID()
+        search.targets = { [tab] }
+        search.debounce = .zero
+        search.panelOpened(first)
+        defer { search.panelClosed(second) }
+        search.query = "previous"
+        try #require(await eventually { search.results.count == 1 })
+        search.panelClosed(first)
+
+        search.targets = { [] }
+        search.panelOpened(second)
+        #expect(search.results.isEmpty, "the previous panel's excerpts must not remain actionable")
+        #expect(await eventually { search.status == .done(more: false) })
     }
 
     @Test func cancellingStopsAWorkerThatHasStartedScanning() async {
