@@ -19,7 +19,7 @@ extension WalkthroughTests {
         let code = app.secureTextFields["auth.challenge.prompt.0"]
         XCTAssertTrue(code.waitForExistence(timeout: 20),
                       "the server's hidden verification-code prompt never appeared")
-        XCTAssertTrue(waitForHittable(code, timeout: 10),
+        XCTAssertTrue(waitForUncoveredMFAControl(code),
                       "the verification-code prompt stayed covered")
         code.tap()
         XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 5),
@@ -74,7 +74,7 @@ extension WalkthroughTests {
 
         let code = app.secureTextFields["auth.challenge.prompt.0"]
         XCTAssertTrue(code.waitForExistence(timeout: 20))
-        XCTAssertTrue(waitForHittable(code, timeout: 10),
+        XCTAssertTrue(waitForUncoveredMFAControl(code),
                       "the rejected-code prompt stayed covered")
         code.tap()
         XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 5),
@@ -102,11 +102,8 @@ extension WalkthroughTests {
         XCTAssertTrue(app.secureTextFields["auth.challenge.prompt.0"]
             .waitForExistence(timeout: 20))
         shot("03 mfa cancel · challenge visible")
-        // A late "Save Password?" sheet can still cover the challenge; a tap
-        // then lands at {-1, -1} and Cancel never reaches the app.
         let cancel = app.buttons["auth.challenge.cancel"]
-        if !waitForHittable(cancel, timeout: 3) { _ = dismissSystemPrompt(timeout: 10) }
-        XCTAssertTrue(waitForHittable(cancel, timeout: 10),
+        XCTAssertTrue(waitForUncoveredMFAControl(cancel),
                       "the MFA Cancel button stayed covered")
         cancel.tap()
 
@@ -118,6 +115,16 @@ extension WalkthroughTests {
         XCTAssertFalse(terminalText().contains("TYPE SOMETHING"),
                        "canceling MFA nevertheless opened a shell")
         shot("04 mfa cancel · transport closed")
+    }
+
+    /// The first MFA action follows the password typed before Trust, so iOS's
+    /// "Save Password?" sheet can arrive after `beginMFAChallenge` stopped
+    /// looking for it and cover the challenge; a tap then lands at {-1, -1}
+    /// and never reaches the app. Answer that late prompt, then require the
+    /// control to be hittable, as a finger would.
+    func waitForUncoveredMFAControl(_ control: XCUIElement) -> Bool {
+        if !waitForHittable(control, timeout: 3) { _ = dismissSystemPrompt(timeout: 10) }
+        return waitForHittable(control, timeout: 10)
     }
 
     /// Opens a session by filling the form in, then types in the terminal.
