@@ -56,23 +56,9 @@ struct PTYSignalTests {
     /// thread, the number could by then belong to another file.
     @Test func terminatingTwiceClosesTheMasterOnce() throws {
         let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory()))
-        let master = pty.master
-        pty.terminate()
-        // Wait for the close, then take the number back for another file.
-        var closed = false
-        for _ in 0..<100 where !closed {
-            closed = fcntl(master, F_GETFD) == -1
-            if !closed { usleep(20_000) }
-        }
-        #expect(closed)
-        var pipeFDs: [Int32] = [0, 0]
-        #expect(pipe(&pipeFDs) == 0)
-        defer { close(pipeFDs[0]); close(pipeFDs[1]) }
-
-        pty.terminate()
-        usleep(200_000)
-
-        #expect(fcntl(pipeFDs[0], F_GETFD) != -1, "the second terminate closed someone else's file")
-        #expect(fcntl(pipeFDs[1], F_GETFD) != -1)
+        let closeMaster = try #require(pty.terminate())
+        // The kernel may recycle the descriptor before our next observation.
+        #expect(closeMaster.wait(timeout: .now() + 2) == .success, "the scheduled master close did not complete")
+        #expect(pty.terminate() == nil, "the second terminate scheduled another close")
     }
 }

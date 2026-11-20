@@ -269,9 +269,10 @@ final class PTY {
     /// number again: by then it may belong to another file.
     private var masterClosed = false
 
-    func terminate() {
+    @discardableResult
+    func terminate() -> DispatchWorkItem? {
         markEnded()
-        guard !masterClosed else { return }
+        guard !masterClosed else { return nil }
         masterClosed = true
         let target = child
         var foregroundPgrp: pid_t = 0
@@ -293,7 +294,7 @@ final class PTY {
         // Escalating to SIGKILL after a grace period prevents background
         // processes like top, htop, or loopers from remaining orphaned.
         let fd = master
-        DispatchQueue.global(qos: .utility).async {
+        let closeMaster = DispatchWorkItem {
             usleep(150_000)
             if foregroundPgrp > 1 && foregroundPgrp != target {
                 kill(-foregroundPgrp, SIGKILL)
@@ -307,6 +308,8 @@ final class PTY {
             }
             close(fd)
         }
+        DispatchQueue.global(qos: .utility).async(execute: closeMaster)
+        return closeMaster
     }
 
     deinit {
