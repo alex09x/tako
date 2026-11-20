@@ -30,7 +30,7 @@ struct WorkspaceSwitchVisualTests {
     private let expected: [String: [Row]] = [
         "Default": [Row(title: "Claude · petition", status: .working, isChild: false),
                     Row(title: "tail -f app.log", status: .idle, isChild: false)],
-        "Legal": [Row(title: "Codex · review", status: .needsApproval, isChild: false),
+        "Legal": [Row(title: "legal", status: .needsApproval, isChild: false),
                   Row(title: "Codex · review", status: .working, isChild: true),
                   Row(title: "Antigravity · brief", status: .needsApproval, isChild: true),
                   Row(title: "Claude · exhibits", status: .done, isChild: false)],
