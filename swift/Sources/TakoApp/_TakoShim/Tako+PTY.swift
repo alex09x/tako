@@ -308,7 +308,11 @@ final class PTY {
             }
             close(fd)
         }
-        DispatchQueue.global(qos: .utility).async(execute: closeMaster)
+        // A blocking close needs its own thread, like the blocking reader.
+        let closer = Thread { closeMaster.perform() }
+        closer.name = "tako.pty.close.\(fd)"
+        closer.qualityOfService = .utility
+        closer.start()
         return closeMaster
     }
 
