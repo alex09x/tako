@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tako-rc1-unsigned-e97f
+  group: tako-rc1-unsigned-1348
   cancel-in-progress: false
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
-      SOURCE_SHA: e97f1787cc2909d53f8544952696add7dfde8faf
+      SOURCE_SHA: 1348f5452bfe3042c4688d5b5c4c01108fe7ffd5
       TAKO_VERSION: 0.2.0
       TAKO_BUILD_NUMBER: '623'
       TAKO_CODESIGN_IDENTITY: '-'
@@ -89,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tako-0.2.0-rc.1-unsigned-e97f
+          name: tako-0.2.0-rc.1-unsigned-1348
           path: target/rc-candidate/
           if-no-files-found: warn
           retention-days: 7
