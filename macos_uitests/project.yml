@@ -150,6 +150,7 @@ schemes:
         TakoUITests: all
     test:
       config: Debug
+      preferredScreenCaptureFormat: screenshots
       environmentVariables:
         IDE_DISABLED_OS_ACTIVITY_DT_MODE: "1"
       targets:
