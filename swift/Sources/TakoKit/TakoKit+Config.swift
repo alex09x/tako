@@ -148,7 +148,7 @@ public func tako_config_get(
 /// loaded config is reported as a diagnostic error, approximating (not
 /// replicating) Zig's real schema validation -- see the doc comment above
 /// `TakoConfigStorage`.
-let knownTakoConfigKeys: Set<String> = [
+public let knownTakoConfigKeys: Set<String> = [
     "initial-window", "quit-after-last-window-closed", "window-step-resize",
     "focus-follows-mouse", "window-decoration", "macos-window-shadow",
     "maximize", "title", "window-title-font-family", "macos-titlebar-style",
@@ -184,6 +184,10 @@ let knownTakoConfigKeys: Set<String> = [
     "workspace-sync-window-frame", "workspace-inherit-window-frame",
     "tab-status-color-working", "tab-status-color-waiting", "tab-status-color-done",
     "tab-status-color-error", "tab-status-color-idle",
+    "app-appearance", "status-show", "status-animate",
+    "sidebar-count-waiting", "sidebar-count-error", "sidebar-count-done",
+    "sidebar-style", "sidebar-group", "sidebar-text-size", "sidebar-secondary-text",
+    "activity-alert", "activity-sound-needs-you", "activity-sound-done", "activity-sound-failed",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.

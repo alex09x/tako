@@ -83,6 +83,18 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     /// The most recently focused surface, equal to `focusedSurface` when it is non-nil.
     @State private var lastFocusedSurface: Weak<Tako.SurfaceView>?
 
+    /// Canvas focus belongs to its controller; it deliberately does not
+    /// update the legacy SwiftUI focused-value state below.
+    private var commandPaletteSurface: Tako.SurfaceView? {
+        let canvasFocus = (viewModel as? BaseTerminalController)
+            .flatMap { $0.usesFloatingCanvas ? $0.focusedSurface : nil }
+        return [canvasFocus, lastFocusedSurface?.value].compactMap { $0 }
+            .first(where: { viewModel.surfaceTree.contains($0) })
+    }
+
+    @State private var fullscreenRevision: Int = 0
+    @StateObject private var windowPresentation = TerminalWindowPresentation()
+
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
 
@@ -107,21 +119,43 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         case .error:
             ErrorView()
         case .ready:
+            let _ = fullscreenRevision
+            let ignoresTopSafeArea = (viewModel is BaseTerminalController || tako.config.macosTitlebarStyle == .hidden)
+                && SessionSidebarChrome.ignoresTopSafeArea(for: viewModel.containingWindow)
             ZStack {
                 HStack(spacing: 0) {
-                    if viewModel.sessionSidebarIsShowing,
-                       let sidebarSurface = focusedSurface ?? lastFocusedSurface?.value ?? viewModel.surfaceTree.first(where: { _ in true }) {
-                        TerminalSidebar(surface: sidebarSurface,
-                            isPresented: $viewModel.sessionSidebarIsShowing,
-                            window: viewModel.containingWindow,
-                            shortcut: tako.config.keyboardShortcut(for: "new_tab"))
-                            .frame(width: SessionSidebarWidth.clamped(CGFloat(sessionSidebarWidth)))
-                            .overlay(alignment: .trailing) {
-                                SessionSidebarResizeHandle(width: $sessionSidebarWidth)
-                                    .frame(width: SessionSidebarResizeHandle.hitWidth)
-                                    .offset(x: SessionSidebarResizeHandle.overhang)
+                    if viewModel.sessionSidebarIsShowing {
+                        let controllerFocused = (viewModel as? BaseTerminalController).flatMap { $0.usesFloatingCanvas ? $0.focusedSurface : nil }
+                        let activeSidebarSurface = [controllerFocused, focusedSurface, lastFocusedSurface?.value]
+                            .compactMap { $0 }
+                            .first(where: { viewModel.surfaceTree.contains($0) })
+                            ?? viewModel.surfaceTree.first(where: { _ in true })
+                        Group {
+                            if let sidebarSurface = activeSidebarSurface {
+                                TerminalSidebar(
+                                    surface: sidebarSurface,
+                                    isPresented: $viewModel.sessionSidebarIsShowing,
+                                    window: viewModel.containingWindow,
+                                    shortcut: tako.config.keyboardShortcut(for: "new_tab"),
+                                    windowIsPresented: windowPresentation.isVisible
+                                )
+                            } else {
+                                SessionSidebarView(
+                                    isPresented: $viewModel.sessionSidebarIsShowing,
+                                    containingWindow: viewModel.containingWindow,
+                                    backgroundColor: Color(nsColor: Tako.LivingTokens.body).opacity(tako.config.backgroundOpacity),
+                                    newSessionShortcut: tako.config.keyboardShortcut(for: "new_tab"),
+                                    windowIsPresented: windowPresentation.isVisible
+                                )
                             }
-                            .zIndex(1)
+                        }
+                        .frame(width: SessionSidebarWidth.clamped(CGFloat(sessionSidebarWidth)))
+                        .overlay(alignment: .trailing) {
+                            SessionSidebarResizeHandle(width: $sessionSidebarWidth)
+                                .frame(width: SessionSidebarResizeHandle.hitWidth)
+                                .offset(x: SessionSidebarResizeHandle.overhang)
+                        }
+                        .zIndex(1)
                     }
 
                     VStack(spacing: 0) {
@@ -131,21 +165,31 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             DebugBuildWarningView()
                         }
 
-                        TerminalSplitTreeView(
-                            tree: viewModel.surfaceTree,
-                            action: { handleSplitAction($0) })
-                            .environmentObject(tako)
-                            .takoLastFocusedSurface(lastFocusedSurface)
-                            .focused($focused)
-                            .onAppear { self.focused = true }
-                            .onChange(of: focusedSurface) { handleFocusedSurfaceChange($0) }
-                            .onChange(of: pwdURL) { handlePwdChange($0) }
-                            .onChange(of: cellSize) { handleCellSizeChange($0) }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Group {
+                            if let baseController = viewModel as? BaseTerminalController, baseController.usesFloatingCanvas {
+                                FloatingTerminalCanvasView(
+                                    controller: baseController,
+                                    store: baseController.floatingCanvas
+                                )
+                            } else {
+                                TerminalSplitTreeView(
+                                    tree: viewModel.surfaceTree,
+                                    action: { handleSplitAction($0) }
+                                )
+                            }
+                        }
+                        // What finishes or waits out of sight (reference `.toasts`, top right).
+                        .overlay(alignment: .topTrailing) { PaneToastStack().shellScheme() }
+                        .environmentObject(tako)
+                        .takoLastFocusedSurface(lastFocusedSurface)
+                        .focused($focused)
+                        .onAppear { self.focused = true }
+                        .onChange(of: focusedSurface) { handleFocusedSurfaceChange($0) }
+                        .onChange(of: pwdURL) { handlePwdChange($0) }
+                        .onChange(of: cellSize) { handleCellSizeChange($0) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
-                .ignoresSafeArea(.container, edges: tako.config.macosTitlebarStyle == .hidden ? .top : [])
 
                 if viewModel.findAllIsShowing {
                     FindAllView(
@@ -154,7 +198,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         backgroundColor: tako.config.backgroundColor)
                 }
 
-                if let surfaceView = lastFocusedSurface?.value {
+                if let surfaceView = commandPaletteSurface {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,
                         isPresented: $viewModel.commandPaletteIsShowing,
@@ -166,16 +210,31 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if viewModel.notificationCenterIsShowing {
                     NotificationCenterView(
                         isPresented: $viewModel.notificationCenterIsShowing,
-                        backgroundColor: tako.config.backgroundColor)
+                        backgroundColor: Color(nsColor: Tako.LivingTokens.body))
+                    .shellScheme()
                 }
 
+                // Chrome over the terminals takes the shell's scheme and colours.
                 if viewModel.paneOverviewIsShowing && !viewModel.paneOverviewRenderSuppressed {
                     PaneOverviewView(
                         isPresented: $viewModel.paneOverviewIsShowing,
-                        backgroundColor: tako.config.backgroundColor)
+                        backgroundColor: Color(nsColor: Tako.LivingTokens.body))
+                    .shellScheme()
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)
+            .ignoresSafeArea(.container, edges: ignoresTopSafeArea ? .top : [])
+            .onAppear { windowPresentation.bind(to: viewModel.containingWindow) }
+            .onChange(of: viewModel.containingWindow) { _, window in windowPresentation.bind(to: window) }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+                fullscreenRevision &+= 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+                fullscreenRevision &+= 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fullscreenDidExit)) { _ in
+                fullscreenRevision &+= 1
+            }
         }
     }
 
@@ -184,6 +243,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     /// closures during a live view update cycle, which a plain `view.body`
     /// construction in a test host never triggers.
     func handleFocusedSurfaceChange(_ newValue: Tako.SurfaceView?) {
+        if let base = viewModel as? BaseTerminalController, base.usesFloatingCanvas {
+            return
+        }
         // We want to keep track of our last focused surface so even if
         // we lose focus we keep this set to the last non-nil value.
         guard newValue != nil else { return }

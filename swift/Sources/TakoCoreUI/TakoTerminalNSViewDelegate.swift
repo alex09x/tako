@@ -82,6 +82,12 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
     /// A program cleared explicit pane status via escape sequence (B1).
     func terminalViewDidClearStatus(_ view: TakoTerminalNSView)
 
+    /// Structured `OSC 7501` program status changed, coalesced, or restored from a checkpoint.
+    func terminalView(_ view: TakoTerminalNSView, didUpdateProgramStatus event: TerminalProgramStatusEvent)
+
+    /// The bounded reply queue dropped one or more excess replies while delivering the surviving FIFO prefix.
+    func terminalView(_ view: TakoTerminalNSView, didDropOverflowedReplies count: UInt32)
+
     /// A validated source file path was clicked under Command (E6).
     func terminalView(_ view: TakoTerminalNSView, didClickSemanticPath payload: SemanticPathPayload)
 }
@@ -102,6 +108,8 @@ public extension TakoTerminalNSViewDelegate {
     func terminalViewPromptMark(_ view: TakoTerminalNSView) {}
     func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?) {}
     func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {}
+    func terminalView(_ view: TakoTerminalNSView, didUpdateProgramStatus event: TerminalProgramStatusEvent) {}
+    func terminalView(_ view: TakoTerminalNSView, didDropOverflowedReplies count: UInt32) {}
     func terminalView(_ view: TakoTerminalNSView, didClickSemanticPath payload: SemanticPathPayload) {}
 }
 #endif

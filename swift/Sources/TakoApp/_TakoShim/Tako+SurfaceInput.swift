@@ -73,8 +73,8 @@ extension Tako.SurfaceView {
             // event happened to trigger a redraw. A tab's label would sit
             // stale after e.g. `cd`ing to a new directory until something
             // else -- switching tabs, resizing -- forced a repaint.
-            onTitleChange = { (_: Tako.SurfaceView) in
-                Tako.TabBarController.refreshAll()
+            onTitleChange = { (view: Tako.SurfaceView) in
+                view.requestTitlePublication()
             }
 
             if let program {
@@ -117,6 +117,14 @@ extension Tako.SurfaceView {
             // display link and suppressed inside a Synchronized Output frame.
         }
 
+        /// Programs may repeat OSC titles on every repaint. Keep protocol
+        /// events intact, but publish UI state only when its value changes.
+        func applyTerminalTitle(_ value: String) {
+            guard title != value else { return }
+            title = value
+            onTitleChange?(self)
+        }
+
         /// Starts the terminal's process and the loop that reads it: the
         /// login shell, or `program` (the session runtime's client when the
         /// shell lives in a persistent session). May run again for the same
@@ -127,8 +135,7 @@ extension Tako.SurfaceView {
                 SecureInput.shared.setScoped(self, isSecure: true, focused: focused)
             }
             if focused {
-                crab.focused()
-                NotificationStore.shared.markRead(surfaceId: self.id)
+                acknowledgeSeen()
                 reflowToCurrentBounds(forcePtyResize: true)
             } else {
                 crab.unfocused()

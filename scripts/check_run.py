@@ -11,8 +11,8 @@
 Run through scripts/check.sh, which sends it to the test Mac. Each argument
 names one check:
 
-    rust:<name>      cargo test --test <name> for a test file or directory target,
-                     else cargo test <name> as a filter
+    rust:<name>      mitts test --test <name> for a test file or directory target,
+                     else mitts test <name> as a filter
     swift:<filter>   the Swift package's tests matching <filter>, no coverage
     e2e:<a,b,...>    those scenarios of scripts/e2e-macapp.sh on a fresh build
     selftest         the app's self-test on a fresh build
@@ -29,10 +29,13 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+import ci_log  # noqa: E402
 
 SWIFT_FLAGS = ["--no-parallel", "-Xlinker", "-L../target/macos", "-Xlinker", "-ltako_core",
                "-Xcc", "-I../target/bindings"]
@@ -41,17 +44,35 @@ report = []
 failed = False
 
 
+CHECK_LOGS = os.path.join("target", "check-logs")
+_runs = 0
+_run_dir = None
+
+
+def run_dir():
+    """This invocation's own log directory, created exclusively: a reused
+    PID or a repeated command never reaches an earlier run's files."""
+    global _run_dir
+    if _run_dir is None:
+        os.makedirs(CHECK_LOGS, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        _run_dir = tempfile.mkdtemp(prefix=f"{stamp}-{os.getpid()}-", dir=CHECK_LOGS)
+    return _run_dir
+
+
 def run(cmd, cwd=None, env=None):
-    """Runs `cmd`, echoing its output; returns (seconds, exit code, output)."""
-    started = time.monotonic()
-    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True, errors="replace")
-    out = []
-    for line in proc.stdout:
-        sys.stdout.write(line)
-        out.append(line)
-    proc.wait()
-    return time.monotonic() - started, proc.returncode, "".join(out)
+    """Runs `cmd`; returns (seconds, exit code, complete output).
+
+    Every byte goes to its own file in this invocation's directory under
+    target/check-logs (never replacing one); the console gets start/end, a
+    heartbeat, summaries and failures (scripts/ci_log.py), or everything with
+    TAKO_CI_VERBOSE=1. The pass/count parsers read the complete output
+    returned here, never the console."""
+    global _runs
+    _runs += 1
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", " ".join(os.path.basename(str(c)) for c in cmd[:3])).strip("-")
+    path = os.path.join(run_dir(), f"{_runs:02d}-{name[:60]}.log")
+    return ci_log.run_logged(cmd, path, label=name[:40], cwd=cwd, env=env, exclusive=True)
 
 
 def note(check, ok, detail, build=None, lock=None, run_s=None):
@@ -64,10 +85,12 @@ def check_rust(name):
     integration = os.path.isfile(f"tests/{name}.rs") or os.path.isfile(f"tests/{name}/main.rs")
     target = ["--test", name] if integration else [name]
     only = target if target[0] == "--test" else []
-    build, code, _ = run(["cargo", "test", "--features", "pty,ssh", "--no-run"] + only)
+    build, code, _ = run(["mitts", "test", "--features", "pty,ssh", "--no-run"] + only)
     if code != 0:
         return note(f"rust:{name}", False, "build failed", build)
-    secs, code, out = run(["cargo", "test", "--features", "pty,ssh"] + target)
+    # Keep a positional test filter before the variadic feature list.
+    # Otherwise Mitts can consume it as another feature and run every test.
+    secs, code, out = run(["mitts", "test"] + target + ["--features", "pty,ssh"])
     passed = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. (\d+) passed", out))
     failed_tests = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. \d+ passed; (\d+) failed", out))
     ok = code == 0 and passed > 0
@@ -79,7 +102,7 @@ def host_framework():
     """The macOS slice the Swift package links, rebuilt only when the engine changed."""
     def stale(artifact):
         # By content, not timestamps: see scripts/engine_fingerprint.py.
-        # The build scripts themselves make cargo see changed content.
+        # The build scripts themselves make Mitts see changed content.
         return subprocess.run(["python3", "scripts/engine_fingerprint.py", "check", artifact]).returncode != 0
 
     secs = 0.0
@@ -143,8 +166,11 @@ def swift_test_count(out):
 
 # Where the e2e app is built and where scripts/e2e-macapp.sh runs it from:
 # one place. Built into target/macapp while the runner took a target/macapp-e2e
-# left from an older build, every e2e check drove a stale app.
-E2E_APP_DIR = "target/macapp-e2e"
+# left from an older build, every e2e check drove a stale app. Off any
+# external volume (scripts/app_locations.py), where macOS asks on every build.
+E2E_APP_DIR = subprocess.run(
+    [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_locations.py"), "dir", "macapp-e2e"],
+    check=True, capture_output=True, text=True).stdout.strip()
 
 
 def e2e_env():

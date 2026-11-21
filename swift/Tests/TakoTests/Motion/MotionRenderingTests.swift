@@ -50,11 +50,18 @@ struct MotionRenderingTests {
         return atan2(y, x) * 180 / .pi
     }
 
-    /// The bounding box of the pixels over `threshold`.
-    private func box(_ points: [(p: CGPoint, w: CGFloat)]) -> CGRect? {
+    /// The bounding box of the pixels over `threshold`, from the outer edge of the first
+    /// pixel to the outer edge of the last, at the snapshot's `scale` (pixels per point).
+    /// The pixels' centres alone span one pixel less than they cover: half a point at 2x,
+    /// a whole point at 1x. The centre of the box is the same either way.
+    private func box(_ points: [(p: CGPoint, w: CGFloat)], scale: CGFloat) -> CGRect? {
+        let pixel = 1 / scale
+        func covered(_ p: CGPoint) -> CGRect {
+            CGRect(x: p.x - pixel / 2, y: p.y - pixel / 2, width: pixel, height: pixel)
+        }
         guard let first = points.first?.p else { return nil }
-        var r = CGRect(origin: first, size: .zero)
-        for (p, _) in points { r = r.union(CGRect(origin: p, size: .zero)) }
+        var r = covered(first)
+        for (p, _) in points { r = r.union(covered(p)) }
         return r
     }
 
@@ -79,7 +86,7 @@ struct MotionRenderingTests {
         let size = CGSize(width: 40, height: 40)
         for elapsed in [0.05, 0.192, 0.3, 0.448, 0.6, 2.0] {
             let snap = S(StatusRingView(state: .done, size: .large, elapsedInState: elapsed).frame(width: 40, height: 40).background(Color.black), size: size)
-            let disc = try #require(box(snap.points(over: 0.1, S.greenExcess)))
+            let disc = try #require(box(snap.points(over: 0.1, S.greenExcess), scale: snap.scale))
             let expected = 18 * L.donePopScale(elapsed: elapsed)
             #expect(abs(disc.width - expected) < 1.2, "pop at \(elapsed): \(disc.width) pt wide, the design has \(expected)")
         }
@@ -90,7 +97,7 @@ struct MotionRenderingTests {
         for elapsed in [0.0, 0.064, 0.128, 0.192, 0.32, 0.6] {
             let snap = S(StatusRingView(state: .failed, size: .large, elapsedInState: elapsed, shakeRingOnly: true)
                 .frame(width: 40, height: 40).background(Color.black), size: size)
-            let disc = try #require(box(snap.points(over: 0.1, S.redExcess)))
+            let disc = try #require(box(snap.points(over: 0.1, S.redExcess), scale: snap.scale))
             let expected = L.failedShakeOffset(elapsed: elapsed)
             #expect(abs(disc.midX - 20 - expected) < 0.4, "shake at \(elapsed): \(disc.midX - 20) pt, the design has \(expected)")
         }
@@ -177,10 +184,11 @@ struct MotionRenderingTests {
 
     @Test func aFailedRowShakesAsAWhole() throws {
         func ringCentre(_ elapsed: TimeInterval) throws -> CGFloat {
-            let red = row(.error, at: elapsed).points(over: 0.15, S.redExcess).filter { $0.p.x < 60 }
+            let snap = row(.error, at: elapsed)
+            let red = snap.points(over: 0.15, S.redExcess).filter { $0.p.x < 60 }
             // The ring: 14 pt down from its top, clear of the failed line along the row's foot.
             let top = try #require(red.map(\.p.y).min())
-            return try #require(box(red.filter { $0.p.y < top + 15 })).midX
+            return try #require(box(red.filter { $0.p.y < top + 15 }, scale: snap.scale)).midX
         }
         let rest = try ringCentre(1.0)
         for elapsed in [0.064, 0.128, 0.192, 0.32] {

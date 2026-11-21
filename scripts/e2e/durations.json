@@ -1,0 +1,281 @@
+{
+ "scenarios": {
+  "ask-prompt": {
+   "seconds": 52.3,
+   "status": "ok"
+  },
+  "broadcast": {
+   "seconds": 89.0,
+   "status": "ok"
+  },
+  "close-busy": {
+   "seconds": 50.8,
+   "status": "ok"
+  },
+  "config": {
+   "seconds": 146.1,
+   "status": "ok"
+  },
+  "control-keys": {
+   "seconds": 134.9,
+   "status": "ok"
+  },
+  "copy": {
+   "seconds": 71.0,
+   "status": "ok"
+  },
+  "crash-again": {
+   "seconds": 182.5,
+   "status": "ok"
+  },
+  "crash-corrupt": {
+   "seconds": 149.8,
+   "status": "ok"
+  },
+  "crash-layout": {
+   "seconds": 133.6,
+   "status": "ok"
+  },
+  "ctl-activity": {
+   "seconds": 90.0,
+   "status": "ok"
+  },
+  "ctl-close-wait": {
+   "seconds": 102.0,
+   "status": "ok"
+  },
+  "ctl-layout": {
+   "seconds": 133.5,
+   "status": "ok"
+  },
+  "ctl-quick": {
+   "seconds": 126.5,
+   "status": "ok"
+  },
+  "ctl-resume": {
+   "seconds": 88.8,
+   "status": "ok"
+  },
+  "ctl-status-progress": {
+   "seconds": 90.0,
+   "status": "ok"
+  },
+  "ctl-tasks": {
+   "seconds": 95.2,
+   "status": "FAIL"
+  },
+  "ctl-tree": {
+   "seconds": 362.1,
+   "status": "ok"
+  },
+  "ctl-triggers": {
+   "seconds": 87.1,
+   "status": "ok"
+  },
+  "diff-review": {
+   "seconds": 60.9,
+   "status": "FAIL"
+  },
+  "editing": {
+   "seconds": 80.4,
+   "status": "ok"
+  },
+  "find-all": {
+   "seconds": 97.5,
+   "status": "FAIL"
+  },
+  "find-commands": {
+   "seconds": 101.9,
+   "status": "FAIL"
+  },
+  "find-stale": {
+   "seconds": 207.8,
+   "status": "FAIL"
+  },
+  "input-ownership": {
+   "seconds": 73.8,
+   "status": "ok"
+  },
+  "modal-containment": {
+   "seconds": 31.0,
+   "status": "FAIL"
+  },
+  "new-tab": {
+   "seconds": 93.8,
+   "status": "FAIL"
+  },
+  "new-window": {
+   "seconds": 66.2,
+   "status": "ok"
+  },
+  "notification-center": {
+   "seconds": 117.5,
+   "status": "ok"
+  },
+  "option-space": {
+   "seconds": 48.4,
+   "status": "ok"
+  },
+  "overlay": {
+   "seconds": 87.0,
+   "status": "ok"
+  },
+  "overlay-form": {
+   "seconds": 66.2,
+   "status": "FAIL"
+  },
+  "overview": {
+   "seconds": 51.8,
+   "status": "ok"
+  },
+  "padding": {
+   "seconds": 127.4,
+   "status": "ok"
+  },
+  "paste": {
+   "seconds": 49.3,
+   "status": "ok"
+  },
+  "paste-utf8": {
+   "seconds": 48.5,
+   "status": "ok"
+  },
+  "project-action": {
+   "seconds": 95.2,
+   "status": "ok"
+  },
+  "project-action-ui": {
+   "seconds": 78.1,
+   "status": "FAIL"
+  },
+  "quit-busy": {
+   "seconds": 50.9,
+   "status": "ok"
+  },
+  "quit-idle": {
+   "seconds": 31.4,
+   "status": "ok"
+  },
+  "quit-layout": {
+   "seconds": 150.6,
+   "status": "ok"
+  },
+  "resize": {
+   "seconds": 67.7,
+   "status": "ok"
+  },
+  "restore": {
+   "seconds": 141.9,
+   "status": "ok"
+  },
+  "safe-paste-guard": {
+   "seconds": 94.5,
+   "status": "ok"
+  },
+  "settings": {
+   "seconds": 37.5,
+   "status": "FAIL"
+  },
+  "settings-appearance": {
+   "seconds": 66.6,
+   "status": "FAIL"
+  },
+  "settings-conflict": {
+   "seconds": 36.4,
+   "status": "FAIL"
+  },
+  "settings-record": {
+   "seconds": 36.6,
+   "status": "FAIL"
+  },
+  "settings-terminal-effects": {
+   "seconds": 31.3,
+   "status": "FAIL"
+  },
+  "settings-theme-presets": {
+   "seconds": 79.0,
+   "status": "FAIL"
+  },
+  "sidebar": {
+   "seconds": 36.4,
+   "status": "FAIL"
+  },
+  "sidebar-interaction": {
+   "seconds": 176.1,
+   "status": "ok"
+  },
+  "split": {
+   "seconds": 65.8,
+   "status": "ok"
+  },
+  "split-focus": {
+   "seconds": 83.1,
+   "status": "ok"
+  },
+  "subagent-close": {
+   "seconds": 121.1,
+   "status": "FAIL"
+  },
+  "tab-drag-reorder": {
+   "seconds": 140.2,
+   "status": "ok"
+  },
+  "tab-status-click": {
+   "seconds": 140.5,
+   "status": "ok"
+  },
+  "terminal-dialogs": {
+   "seconds": 95.4,
+   "status": "FAIL"
+  },
+  "theme-control": {
+   "seconds": 65.8,
+   "status": "ok"
+  },
+  "theme-typography": {
+   "seconds": 69.0,
+   "status": "FAIL"
+  },
+  "typing": {
+   "seconds": 48.9,
+   "status": "ok"
+  },
+  "upgrade-crash": {
+   "seconds": 203.3,
+   "status": "ok"
+  },
+  "workspace-close-delete": {
+   "seconds": 74.5,
+   "status": "FAIL"
+  },
+  "workspace-frame-sync": {
+   "seconds": 68.1,
+   "status": "FAIL"
+  },
+  "workspace-journey": {
+   "seconds": 66.6,
+   "status": "FAIL"
+  },
+  "workspace-move-keeps-sessions": {
+   "seconds": 36.7,
+   "status": "ok"
+  },
+  "workspace-switch": {
+   "seconds": 33.1,
+   "status": "ok"
+  },
+  "workspace-switch-speed": {
+   "seconds": 42.1,
+   "status": "FAIL"
+  },
+  "workspace-tabs-stay-visible": {
+   "seconds": 46.5,
+   "status": "FAIL"
+  },
+  "zoom": {
+   "seconds": 84.6,
+   "status": "ok"
+  }
+ },
+ "source": "hosted CI run 43781688685 (184c5cdf), native-e2e job log: seconds from the previous result line (the first from the GUI lock)"
+}

@@ -321,15 +321,21 @@ struct PillTabBarUITests {
         let rep = snapshot(bar)
         guard bar.tabs.count >= 1 else { return }
         let pill = bar.pillRect(for: bar.tabs[0])
-        let midX = Int(pill.midX)
+        // The pill is in points; the bitmap is in pixels, at whatever scale the display
+        // backs it with (2 on a Retina Mac, 1 on a hosted runner).
+        let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))
+        let midX = Int(pill.midX * CGFloat(scale))
 
-        // Active pill in Spec 1b (§4) uses surfaceActive #241C16 (R=0.141) with hairline #2A211B (R=0.165)
-        // on bar #14100E (R=0.078). No Ember bar under it: the pill alone says which tab is open.
+        // Active pill uses surfaceActive #231F1D (R=0.137) with hairline #24211E (R=0.141) on bar
+        // #100D0B (R=0.063): the frozen reference's dark shell. No Ember bar under it: the pill alone
+        // says which tab is open. The column through the pill's middle crosses its title, whose
+        // near-white glyphs are bright in every channel; Ember (#F4581C) is bright in red alone.
         var pillYRows: [Int] = []
         var hasEmberBottomBar = false
         for y in 0..<rep.pixelsHigh {
             if let color = rep.colorAt(x: midX, y: y) {
-                if color.redComponent > 0.80 {
+                let redExcess = color.redComponent - max(color.greenComponent, color.blueComponent)
+                if color.redComponent > 0.80 && redExcess > 0.3 {
                     hasEmberBottomBar = true
                 } else if color.redComponent > 0.12 && color.redComponent < 0.50 {
                     pillYRows.append(y)
@@ -340,7 +346,6 @@ struct PillTabBarUITests {
         #expect(!hasEmberBottomBar)
         // The bar's 1 pt bottom border (#2A211B, Terminal UI `.tbar`) is in
         // the same colour range five points below the pill, and is not it.
-        let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))
         let run = pillYRows.filter { $0 < rep.pixelsHigh - scale }
         if let minY = run.min(), let maxY = run.max() {
             let renderedHeight = maxY - minY + 1

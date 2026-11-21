@@ -51,9 +51,14 @@ impl Terminal {
         &self.title
     }
 
-    /// Drains and returns any queued device-reply bytes.
+    /// Drains and returns any queued device-reply bytes (keeping sticky overflow count intact).
     pub fn take_output(&mut self) -> Vec<u8> {
         self.response.take()
+    }
+
+    /// Consumes and resets sticky reply-queue overflow count for legacy `take_output` callers.
+    pub fn take_reply_overflow_count(&mut self) -> u32 {
+        self.response.take_overflow_dropped_count()
     }
 
     /// Host configuration: ENQ answerback string.
@@ -192,6 +197,7 @@ impl Terminal {
 
     /// Drains queued host-visible events.
     pub fn take_events(&mut self) -> Vec<TerminalEvent> {
+        self.program_status.events_emitted_since_take = 0;
         std::mem::take(&mut self.events)
     }
 

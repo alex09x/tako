@@ -25,18 +25,28 @@ import SwiftUI
     private let snapshots: [Snapshot]
     private let styles: AppearanceDocument
     private var applied = false
-    private weak var owner: TerminalSettingsDialog?
+    /// The editor this preview belongs to; once it is gone nothing is applied.
+    private weak var owner: AnyObject?
+    /// The level being edited, fixed when the preview opens (nil = global).
+    private let scope: AppearanceScope?
     private var closeObserver: NSObjectProtocol?
 
-    init(owner: TerminalSettingsDialog, targets: [Tako.SurfaceView]? = nil) {
+    convenience init(owner: TerminalSettingsDialog, targets: [Tako.SurfaceView]? = nil) {
+        self.init(owner: owner, scope: owner.scopedAppearance?.scope, window: owner.window, targets: targets)
+    }
+
+    /// Targets are chosen once, here: the live panes of `window`'s app that
+    /// the scope reaches. Closing `window` restores them.
+    init(owner: AnyObject, scope: AppearanceScope?, window: NSWindow?, targets: [Tako.SurfaceView]? = nil) {
         self.owner = owner
+        self.scope = scope
         self.styles = ScopedAppearanceStore.shared.document
-        let scope = owner.scopedAppearance?.scope
-        let app = (owner.window?.windowController as? TerminalController)?.tako
+        let app = (window?.windowController as? TerminalController)?.tako
         let surfaces = targets ?? TerminalController.all.filter { app == nil || $0.tako === app }
             .flatMap { Array($0.surfaceTree) }.filter { surface in
                 switch scope {
                 case .workspace(let id): return surface.appearanceWorkspaceID == id
+                case .session(let id): return surface.appearanceSessionID.map(AppearanceScope.sessionKey) == AppearanceScope.sessionKey(id)
                 case .pane(let id): return surface.id == id
                 case nil: return true
                 }
@@ -46,18 +56,20 @@ import SwiftUI
                      background: $0.backgroundColor, appConfig: $0.app?.config)
         }
         Self.active.add(self)
+        // Without a window, object: nil would match every window's close.
+        guard let window else { return }
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-            object: owner.window, queue: .main) { [weak self] _ in
+            object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.restore() }
             }
     }
 
     @discardableResult func apply(_ draft: TerminalTheme) -> Int {
-        guard let owner else { return 0 }
+        guard owner != nil else { return 0 }
         var count = 0
         for snapshot in snapshots {
             guard let surface = snapshot.surface else { continue }
-            let theme = resolved(draft, for: surface, owner: owner)
+            let theme = resolved(draft, for: surface)
             surface.applyTheme(theme)
             surface.backgroundColor = nil
             surface.derivedConfig.backgroundColor = Color(nsColor: NSColor(cgColor: theme.background) ?? .black)
@@ -104,19 +116,26 @@ import SwiftUI
         }
     }
 
-    private func resolved(_ draft: TerminalTheme, for surface: Tako.SurfaceView, owner: TerminalSettingsDialog) -> TerminalTheme {
+    /// Number of live panes this preview would change.
+    var targetCount: Int { snapshots.filter { $0.surface != nil }.count }
+
+    private func resolved(_ draft: TerminalTheme, for surface: Tako.SurfaceView) -> TerminalTheme {
         let store = ScopedAppearanceStore.shared
         let workspace = surface.appearanceWorkspaceID
         var workspaceFields = workspace.flatMap { store.document.overrides(for: .workspace($0)) }
+        var sessionFields = surface.appearanceSessionID.flatMap { store.document.overrides(for: .session($0)) }
         var paneFields = store.document.overrides(for: .pane(surface.id))
         var global = surface.app?.config.theme ?? surface.configuredTheme ?? surface.theme
         var appearance = draft
         appearance.graphemeWidthMethod = global.graphemeWidthMethod
         let previewName = "__tako_unsaved_preview__"
         var replacements: [String: TerminalTheme] = [:]
-        switch owner.scopedAppearance?.scope {
+        switch scope {
         case .workspace:
             workspaceFields = ["theme": previewName]
+            replacements[previewName] = appearance
+        case .session:
+            sessionFields = ["theme": previewName]
             replacements[previewName] = appearance
         case .pane:
             paneFields = ["theme": previewName]
@@ -125,7 +144,7 @@ import SwiftUI
             global = appearance
         }
         return ScopedAppearanceResolver.resolve(global: global, workspaceOverrides: workspaceFields,
-            paneOverrides: paneFields, themeOverrides: replacements)
+            sessionOverrides: sessionFields, paneOverrides: paneFields, themeOverrides: replacements)
     }
 
     deinit { if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) } }

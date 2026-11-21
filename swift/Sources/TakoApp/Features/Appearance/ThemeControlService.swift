@@ -19,6 +19,9 @@ import Foundation
     let workspaces: WorkspaceStore
     let reload: () -> Void
     let globalTheme: (() -> TerminalTheme)?
+    /// The stable session identity owning a pane, nil for a pane no
+    /// controller holds. Injectable; defaults to the live controllers.
+    var paneSession: @MainActor (UUID) -> String? = { ThemeControlService.liveSessionIdentity(ofPane: $0) }
 
     init(configURL: URL, appearances: ScopedAppearanceStore = .shared,
          workspaces: WorkspaceStore = .shared, themePaths: [String]? = nil,

@@ -89,12 +89,13 @@ func runMissingLayoutSafetyScenario(_ d: Driver) throws {
     guard d.wait(for: { d.hasText(containing: "Session Recovery") }, timeout: 15) else {
         throw Failure("no session recovery dialog for the unplaced session")
     }
+    try revisitDeferredRecoveryThroughMenu(d, config: config, shell: shell)
     try d.clickButton(titled: "Restore")
     if d.wait(for: { d.hasText(containing: "Choose Window") }, timeout: 3) {
         try d.clickButton(titled: "Use This")
     }
     guard d.wait(for: { (try? d.focusedPaneId())?.lowercased() == originalPane.lowercased() }, timeout: 15) else {
-        throw Failure("recovery did not return the original pane")
+        throw Failure("recovery did not return the original pane; focused=\(String(describing: try? d.focusedPaneId())); UI=\(d.staticTexts())")
     }
     guard d.wait(for: { d.screenText().contains("orphan-ready-\(originalPane)") }, timeout: 15) else {
         throw Failure("the original session did not finish reconnecting")
@@ -131,6 +132,9 @@ func runDamagedSessionRecordScenario(_ d: Driver, retainLayout: Bool = false) th
         throw Failure("no confirmation to adopt the unverified session")
     }
     try d.clickButton(titled: "Adopt")
+    if !retainLayout, d.wait(for: { d.hasText(containing: "Choose Window") }, timeout: 5) {
+        try d.clickButton(titled: "Use This")
+    }
     guard d.wait(for: { (try? d.focusedPaneId())?.lowercased() == pane.lowercased() }, timeout: 15) else {
         throw Failure("adoption did not return the original pane")
     }
@@ -173,6 +177,12 @@ func runMissingLayoutAcrossWorkspacesScenario(_ d: Driver) throws {
         throw Failure("no recovery dialog after losing both workspaces' layout")
     }
     try d.clickButton(titled: "Restore")
+    // With the layout missing, recovery must ask before joining a startup
+    // window. Finish the choices before switching workspaces underneath it.
+    for _ in 0..<2 {
+        guard d.wait(for: { d.hasText(containing: "Choose Window") }, timeout: 5) else { break }
+        try d.clickButton(titled: "Use This")
+    }
     _ = try d.exec("\(ctl) workspace switch Default")
     guard d.wait(for: { (try? d.focusedPaneId())?.lowercased() == firstPane.lowercased() }, timeout: 15) else {
         throw Failure("first workspace did not regain its pane")
@@ -359,6 +369,24 @@ func runLegacyUpgradeScenario(_ d: Driver) throws {
     try d.launch(config: config, settleTerminal: false)
     guard d.wait(for: { d.screenText().contains(marker) }, timeout: 20) else {
         throw Failure("the old daemon did not reconnect through the new client")
+    }
+    // The archived screen can show its marker before the live attach handshake
+    // completes. Fence on the record the confirmed client publishes, not pixels.
+    let liveRecordURL = records.appendingPathComponent("\(id.uuidString).session")
+    guard d.wait(for: {
+        guard let data = try? Data(contentsOf: liveRecordURL),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let state = value["state"] as? [String: Any] else { return false }
+        return state["attached"] != nil
+    }, timeout: 20) else { throw Failure("the legacy client never confirmed its live attachment") }
+    // Replacing this pane's record deliberately leaves the newer shell
+    // unrecorded. Its recovery prompt is independent of the legacy attach.
+    guard d.wait(for: { d.hasText(containing: "Session Recovery") }, timeout: 15) else {
+        throw Failure("the unrelated unrecorded shell was not offered for recovery")
+    }
+    try d.clickButton(titled: "Later")
+    guard d.wait(for: { !d.hasText(containing: "Session Recovery") }, timeout: 5) else {
+        throw Failure("the recovery prompt still owns keyboard input")
     }
     try d.run("sh -c 'echo $PPID' > \(d.path("legacy-shell-after"))")
     guard try d.file("legacy-shell-after").trimmingCharacters(in: .whitespacesAndNewlines) == oldPID else {

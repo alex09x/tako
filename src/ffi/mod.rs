@@ -21,6 +21,7 @@ pub mod event_types;
 pub mod input;
 pub mod input_types;
 pub mod pack;
+pub mod program_status_types;
 pub mod query_types;
 pub mod render;
 pub mod render_types;
@@ -36,6 +37,12 @@ pub use core::TakoCore;
 pub use event_types::{FfiContextFrame, FfiEvent};
 pub use input_types::{
     FfiFeedOutcome, FfiKey, FfiKeyEvent, FfiMouseAction, FfiMouseButton, FfiMouseEvent,
+};
+pub use program_status_types::{
+    FfiClassifiedReply, FfiClassifiedReplyDrain, FfiProgramStatusBlockedKind,
+    FfiProgramStatusDrainBatch, FfiProgramStatusMutation, FfiProgramStatusRecord,
+    FfiProgramStatusRemovalReason, FfiProgramStatusSnapshot, FfiProgramStatusState,
+    FfiProgramStatusUpdate, FfiTerminalReplyClass,
 };
 pub use query_types::{
     FfiCheckpointInfo, FfiCommandInfo, FfiCommandMark, FfiCommandOutput, FfiRetainedLines,

@@ -190,8 +190,11 @@ class AppDelegate: NSObject,
     /// ends the process.
     var replyToTermination: @MainActor (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
 
+    /// Nil also for a build that is not Tako itself (NotificationIdentity):
+    /// it would leave a row of its own in System Settings › Notifications.
     static var notificationCenterProvider: () -> UNUserNotificationCenter? = {
-        guard Bundle.main.bundleIdentifier != nil else { return nil }
+        guard NotificationIdentity.registers(bundleID: Bundle.main.bundleIdentifier,
+                                             environment: ProcessInfo.processInfo.environment) else { return nil }
         return UNUserNotificationCenter.current()
     }
 

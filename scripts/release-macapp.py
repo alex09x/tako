@@ -42,10 +42,11 @@ What this needs before it will run:
 Then: python3 scripts/release-macapp.py
 """
 import os, subprocess, sys, plistlib, shutil
+from macapp_signing import candidate_source, verify_source_checkout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-BUILD = "target/macapp"
+BUILD = os.environ.get("TAKO_APP_DIR", "target/macapp")
 APP = os.path.join(BUILD, "Tako.app")
 PROFILE = os.environ.get("TAKO_NOTARY_PROFILE", "tako")
 # Where the profile lives when it is not in the default (data-protection)
@@ -80,6 +81,13 @@ def step(msg):
 def preflight():
     if not os.path.isdir(APP):
         sys.exit(f"no {APP} -- run scripts/build-macapp.py first")
+    with open(os.path.join(APP, "Contents", "Info.plist"), "rb") as stream:
+        info = plistlib.load(stream)
+    source = candidate_source(info)
+    if source:
+        verify_source_checkout(source, ROOT)
+        os.environ["GITHUB_SHA"] = source
+    os.environ["TAKO_VERSION"] = info["CFBundleShortVersionString"]
 
     r = subprocess.run(["codesign", "-dv", "--verbose=4", APP],
                        capture_output=True, text=True)
@@ -89,7 +97,8 @@ def preflight():
             f"{APP} is not signed with a Developer ID certificate.\n"
             "Apple will not notarize an ad-hoc or development signature.\n"
             "Create the certificate (see this file's docstring), then\n"
-            "rebuild: python3 scripts/build-macapp.py")
+            "sign the extracted candidate with scripts/sign-macapp.py,\n"
+            "or rebuild: python3 scripts/build-macapp.py")
     if "flags=0x10000(runtime)" not in info:
         sys.exit(f"{APP} is signed without the hardened runtime; rebuild it")
 

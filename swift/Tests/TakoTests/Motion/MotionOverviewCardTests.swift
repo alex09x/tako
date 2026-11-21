@@ -50,7 +50,8 @@ final class CardScene {
             Color.black
             card.frame(width: Self.width, height: cardHeight)
         }
-        return WindowSnapshot(view, size: size)
+        // The card's fill and ghost border are shell colours; the assertions hold the dark design.
+        return withDarkShell { WindowSnapshot(view, size: size) }
     }
 
     func onBorder(_ p: CGPoint, band: CGFloat = 1.8) -> Bool {

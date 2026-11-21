@@ -48,7 +48,7 @@ final class StripScene {
         for window in windows {
             // Installed as the app installs it: drags reach only the strips the controller knows.
             window.setContentSize(NSSize(width: 900, height: 200))
-            Tako.TabBarController.install(in: window)
+            Tako.TabBarController.installTabBarForTesting(in: window)
             window.contentView?.layoutSubtreeIfNeeded()
             let bar = Tako.TabBarController.bar(for: window)!
             bar.styleOverride = style

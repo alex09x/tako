@@ -12,6 +12,10 @@ import Cocoa
 import SwiftUI
 import TakoKit
 
+extension Notification.Name {
+    static let takoTabTitleDidChange = Notification.Name("TakoTabTitleDidChange")
+}
+
 extension BaseTerminalController {
     var containingWindow: NSWindow? { self.window }
 

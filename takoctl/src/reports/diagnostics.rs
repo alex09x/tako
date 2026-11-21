@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::cli::Options;
 use crate::reports::expand_path;
@@ -27,19 +27,18 @@ pub fn collect_system_info() -> Value {
     if let Ok(output) = std::process::Command::new("sw_vers")
         .arg("-productVersion")
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            sys.insert("os_version".into(), Value::String(ver));
-        }
+        let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        sys.insert("os_version".into(), Value::String(ver));
     }
 
     // Try reading uname
-    if let Ok(output) = std::process::Command::new("uname").arg("-r").output() {
-        if output.status.success() {
-            let kernel = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            sys.insert("kernel".into(), Value::String(kernel));
-        }
+    if let Ok(output) = std::process::Command::new("uname").arg("-r").output()
+        && output.status.success()
+    {
+        let kernel = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        sys.insert("kernel".into(), Value::String(kernel));
     }
 
     Value::Object(sys)

@@ -79,7 +79,7 @@ struct TerminalControllerLifecycleTests {
 
 @MainActor
 struct TerminalControllerSurfaceTreeOverrideTests {
-    @Test func surfaceTreeBecomingEmptyClosesTheWindow() {
+    @Test func surfaceTreeBecomingEmptyRetainsWindowForEmptySessionCanvas() {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { TerminalTestSupport.tearDown(controller, window) }
         controller.showWindow(nil)
@@ -87,7 +87,8 @@ struct TerminalControllerSurfaceTreeOverrideTests {
 
         controller.surfaceTree = .init()
 
-        #expect(!window.isVisible)
+        #expect(controller.surfaceTree.isEmpty)
+        #expect(window.isVisible)
     }
 
     @Test func surfaceTreeChangeUpdatesZoomState() throws {
@@ -102,13 +103,17 @@ struct TerminalControllerSurfaceTreeOverrideTests {
         #expect(window.surfaceIsZoomed)
     }
 
-    @Test func replaceSurfaceTreeWithEmptyTreeClosesTheTabImmediately() {
+    @Test func replaceSurfaceTreeWithEmptyTreeRetainsSessionUntilClosed() {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { TerminalTestSupport.tearDown(controller, window) }
         controller.showWindow(nil)
 
         controller.replaceSurfaceTree(.init())
 
+        #expect(controller.surfaceTree.isEmpty)
+        #expect(window.isVisible)
+
+        controller.close(window)
         #expect(!window.isVisible)
     }
 }

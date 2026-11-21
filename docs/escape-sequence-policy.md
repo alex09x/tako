@@ -112,6 +112,14 @@ This document specifies Tako's single, authoritative escape sequence policy, enf
 - **Supported Protocols**:
   - Kitty Graphics Protocol (`DCS _ G <payload> ST`)
   - iTerm2 File Transfer Protocol (`OSC 1337 ; File=inline=1;... : <base64> ST/BEL`)
+- **iTerm2 image size**: the image is stored at its encoded size. `width`/`height` become the
+  placement's cell box (Kitty's columns/rows), and the whole image is drawn into it with its
+  aspect ratio kept. One side scales the other, and two sides fit the image, centred. Sizes in
+  cells are exact. `Npx` is rounded to the nearest whole cell, minimum 1, so 305px on 10 px
+  cells draws 310 px wide. `auto`, `N%` and other units leave the image's own size.
+  `preserveAspectRatio=0` (stretch) is not supported: the image is still drawn fitted.
+  A box is at most 1024 cells each way. An image that would be drawn taller than that is
+  fitted into 1024 rows, and the cursor moves below it.
 - **Memory Caps & LRU Eviction**:
   - Enforced per-pane memory cap (`max_memory_bytes`, default 64 MiB).
   - Generation-based LRU eviction purges oldest off-screen images when the cap is reached.

@@ -1,0 +1,453 @@
+{
+ "project": "853d837e-5098-426a-8080-cbf72cfe3772",
+ "page": "Desktop Prototype.html",
+ "frozen_at": "2026-11-08",
+ "changelog_head": "2026-11-08 (8)",
+ "files": [
+  {
+   "path": "README.md",
+   "size": 5656,
+   "sha256": "5c377cb9580abcc9ebacc562cd688bae505672a797728a81b2e8ceba08cb5721"
+  },
+  {
+   "path": "tokens-dark.json",
+   "size": 3474,
+   "sha256": "87ec4f6afda0642f20e38c22c32967609df90eaf814fb642b67d2d0c5f71a5ad"
+  },
+  {
+   "path": "tokens-light.json",
+   "size": 3474,
+   "sha256": "c8d9f0b21221db58ea0b1fe5648b1cd85d72410e1a104c1d19fa0c39df7607e8"
+  },
+  {
+   "path": "project/CHANGELOG.md",
+   "size": 33189,
+   "sha256": "87e8583eafdfaaa7ce3490c48ef11c8743737fb8644fdc5f25ce66e55a0148b8",
+   "server_etag": "1794182155830177"
+  },
+  {
+   "path": "project/Design Review.dc.html",
+   "size": 41815,
+   "sha256": "09aa75f43b0c20e290acac6bccc428ff68999a08165ce1e579ad7bcc9e7e67a6",
+   "server_etag": "1785969052049903"
+  },
+  {
+   "path": "project/Desktop Prototype.html",
+   "size": 26686,
+   "sha256": "150c7847a2c5ab9981844e0c5c1a68860e468bcbe13b9aef7f7f6c05caa63ba1",
+   "server_etag": "1794176801575836"
+  },
+  {
+   "path": "project/Mobile UI.dc.html",
+   "size": 56140,
+   "sha256": "367700c0de104f4dac246805ad62f5ce396d45aa4c5efb54c16084121f8d2b18",
+   "server_etag": "1786754564737660"
+  },
+  {
+   "path": "project/Sessions UI.dc.html",
+   "size": 49250,
+   "sha256": "dc84da4cf578a2b0ba183e0920e56ecc63c237847dfdeb15e7a2dd598ab0cbcc",
+   "server_etag": "1792302353869083"
+  },
+  {
+   "path": "project/TUI Dialogs.dc.html",
+   "size": 28399,
+   "sha256": "b81a1a3a74c9abc145ccc00ce851ac89dce8874564c6248f0046484c9b83f453",
+   "server_etag": "1790966961965523"
+  },
+  {
+   "path": "project/TakoCore Brand.dc.html",
+   "size": 26313,
+   "sha256": "89b1417b2b3858ad2d75b643f7e11b96bdaa3804132488b197db41d293fa30e4",
+   "server_etag": "1785910082448374"
+  },
+  {
+   "path": "project/Terminal UI.dc.html",
+   "size": 157573,
+   "sha256": "9f7eb7bfb56b82a4d332f4514ccfd7da41d75e7113452c4e2299839962f7300b",
+   "server_etag": "1786754564737660"
+  },
+  {
+   "path": "project/prototype/app.js",
+   "size": 31897,
+   "sha256": "d1c693638faa97367a4879e4de1f017c355a8bc90e6959a39d8ccde3c69f8327",
+   "server_etag": "1794173369373633"
+  },
+  {
+   "path": "project/prototype/chrome.css",
+   "size": 3992,
+   "sha256": "e9e4574cca8cab245f26e9cb0d28864ed42d8d905edc3b09381d5c14d4c61cb7",
+   "server_etag": "1794130739341834"
+  },
+  {
+   "path": "project/prototype/chrome.js",
+   "size": 13411,
+   "sha256": "463145fc2443dbdfd3e875a80d152e60f5bc37a45cf50fb2107f96a32c5aa7b6",
+   "server_etag": "1794167370441342"
+  },
+  {
+   "path": "project/prototype/concepts.css",
+   "size": 15012,
+   "sha256": "5bcd31535f6eae66e03c9441a4117425049853ea6a7706f3c9e29b6abf54eda3",
+   "server_etag": "1794174726209694"
+  },
+  {
+   "path": "project/prototype/concepts.js",
+   "size": 31324,
+   "sha256": "92480fcf7c6a65a025960458f723e0f2aac89a738b01fd94b5226076d02b6a57",
+   "server_etag": "1794174834125019"
+  },
+  {
+   "path": "project/prototype/core.js",
+   "size": 10886,
+   "sha256": "383d84c4a59fa66d766beb589778efebb89b473bf7303c5eadc402d73a29e0d4",
+   "server_etag": "1794173114998507"
+  },
+  {
+   "path": "project/prototype/header.css",
+   "size": 1221,
+   "sha256": "28c2053a342affbb0c6843705cec282a71fa090980695d1453384b7e5d6d5bcf",
+   "server_etag": "1794119551487341"
+  },
+  {
+   "path": "project/prototype/header.js",
+   "size": 3821,
+   "sha256": "f21d091ea9497f065391ce68004b3e038fbb66b7763588374bf35b0bcd69b691",
+   "server_etag": "1794167211169589"
+  },
+  {
+   "path": "project/prototype/icons.js",
+   "size": 2183,
+   "sha256": "7e5cd80bf385d61cb9471813a56fa2395e706310089a33632ea6a890203a6d98",
+   "server_etag": "1794176469622897"
+  },
+  {
+   "path": "project/prototype/onboard.css",
+   "size": 13602,
+   "sha256": "da203f2620c12f2562e2ce5d56e0ae03e43ebf4d6a46a45b687adc35a4969e3a",
+   "server_etag": "1794176528335218"
+  },
+  {
+   "path": "project/prototype/onboard.js",
+   "size": 30759,
+   "sha256": "a58268164dafbb58de0bbecc37a41dffba4f73d3f80b66fb7b9e9189fd811273",
+   "server_etag": "1794176424303853"
+  },
+  {
+   "path": "project/prototype/prefs-detail.css",
+   "size": 4468,
+   "sha256": "1d0cd57cfeed8d685523b9aabdb4e92f530e97b0a3f93d93d583a86e8b29f19e",
+   "server_etag": "1794181531827263"
+  },
+  {
+   "path": "project/prototype/prefs-detail.js",
+   "size": 25209,
+   "sha256": "34aa121bddcfdc0930678329638ebe52035818486c6eebc13eed47802cda92f9",
+   "server_etag": "1794181721125666"
+  },
+  {
+   "path": "project/prototype/prefs-keys.js",
+   "size": 16440,
+   "sha256": "c93ebefbd9d705b4bb2e771ce6d5bc1fff82c9668a188db46f4ec3b016e0d0ca",
+   "server_etag": "1794179646367256"
+  },
+  {
+   "path": "project/prototype/prefs-model.js",
+   "size": 16859,
+   "sha256": "5609ce59811c41f8c47bbfaed03e4e425834e21ffebd7a408384a0a168c33843",
+   "server_etag": "1794179646367256"
+  },
+  {
+   "path": "project/prototype/prefs-spec.js",
+   "size": 10091,
+   "sha256": "7bd3215d8128e8d01d551ff7d24222017cc033d49de8559dc26385dfe3a2f4f5",
+   "server_etag": "1794180164750584"
+  },
+  {
+   "path": "project/prototype/prefs-themes.js",
+   "size": 25547,
+   "sha256": "02a74e2992049268f60a359c05a1c58de7d9cf0a704ee9ccecc1dbc7be54a5d5",
+   "server_etag": "1794179800029809"
+  },
+  {
+   "path": "project/prototype/prefs-window.js",
+   "size": 17222,
+   "sha256": "895ef39380abb9df1e81159ab36c035cb158b6fc96a74a73fe04fbc41326fc3f",
+   "server_etag": "1794179903217342"
+  },
+  {
+   "path": "project/prototype/prefs-wire.js",
+   "size": 15867,
+   "sha256": "9ab95d04c644c65bf73730ab0ba268a0779042dc6fe16939c809993c504cd2f1",
+   "server_etag": "1794179976737675"
+  },
+  {
+   "path": "project/prototype/prefs.css",
+   "size": 16597,
+   "sha256": "404917004b7e0943edcb3ec0ffaa6ed031499fbe93eb8edd112217a792b192dd",
+   "server_etag": "1794180164750584"
+  },
+  {
+   "path": "project/prototype/reality.css",
+   "size": 1063,
+   "sha256": "cf7610f7ea4f63f71d0dcf53151f74789c26b01125133e5ca45a0233a1e72ec0",
+   "server_etag": "1794177576558594"
+  },
+  {
+   "path": "project/prototype/reality.js",
+   "size": 13315,
+   "sha256": "53c4e79158db91de64403bf27f2b77a009528fc7c0e769e601ad35d794044ac5",
+   "server_etag": "1794177538437996"
+  },
+  {
+   "path": "project/prototype/settings.css",
+   "size": 5221,
+   "sha256": "8aa8ec8ccf8953d70b14d47046782d0d47b1eed969b8209394d187a0aafa6886",
+   "server_etag": "1794134828553194"
+  },
+  {
+   "path": "project/prototype/settings.js",
+   "size": 19543,
+   "sha256": "34902a73772492ec2e21088636fb5874dc8b1ed4d85eacd3d8a52ad02d579350",
+   "server_etag": "1794173256553707"
+  },
+  {
+   "path": "project/prototype/sidebar.js",
+   "size": 20389,
+   "sha256": "a9c3011c48d8635cec6af51c5edfeedef03399fc7d059e6d82d081ce48a1c149",
+   "server_etag": "1794167453530980"
+  },
+  {
+   "path": "project/prototype/status.css",
+   "size": 6534,
+   "sha256": "9e56f9c7fbd512895092842a4903578cebd7ee7b462210655a417a84618c82de",
+   "server_etag": "1794118853460324"
+  },
+  {
+   "path": "project/prototype/style.css",
+   "size": 20953,
+   "sha256": "5e0e7882ad38391c865b0a4d2d3b0db620df4e2d172424c417200ae49b83773a",
+   "server_etag": "1794118853460324"
+  },
+  {
+   "path": "project/prototype/theme.css",
+   "size": 2212,
+   "sha256": "d735a6c5fa339b63f3cb3d132ba0012d861057f764024dc4d84984ddb7b09fea",
+   "server_etag": "1794120086830326"
+  },
+  {
+   "path": "project/prototype/themes.js",
+   "size": 7105,
+   "sha256": "50dba70506aa51a30d7fb413d5e23c10f5f8d5d505a081e090ff61cf3f6be0e6",
+   "server_etag": "1794173149428515"
+  },
+  {
+   "path": "project/prototype/windows.css",
+   "size": 755,
+   "sha256": "1e140e2de436d2d03c92c1f52b1188c44c83c93385b5314909eaa6e35fdfeac9",
+   "server_etag": "1794180856504004"
+  },
+  {
+   "path": "project/prototype/windows.js",
+   "size": 3897,
+   "sha256": "ab3b967810683732cde63d5bd0501c46b914247d34f0a02df5c4831f1c9cca69",
+   "server_etag": "1794181721125666"
+  },
+  {
+   "path": "project/prototype/icons/agent-antigravity.png",
+   "size": 6748,
+   "sha256": "4d4cc7dfcf9e726cf1de60669dfae2e8e797640419048b941d563743fde4590a",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/agent-claude.png",
+   "size": 6757,
+   "sha256": "b0395f40c3d69f62a80cb23004640e1340acff72f558b6af0fc46cb2c0fbfe7d",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/agent-codex.png",
+   "size": 6661,
+   "sha256": "4c4a3ae56e184fd007a65fb5fe2adbae1583ef22d502b14ff0a1cd96dbf84032",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/agent-gemini.png",
+   "size": 6666,
+   "sha256": "90c02bc053ca518031c067ae3b809b60e7f6955cba9e850bb81a961374cde94b",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/applescript.fill.png",
+   "size": 6456,
+   "sha256": "3d5d4f5f7d46c721c9df7c63fb405e9f15e7130a6a9bfdfde3498a002d87653b",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/bell.fill.png",
+   "size": 6370,
+   "sha256": "79cee58a8d1028dad2b0e6c7761e04c998ce3e182995fce55737b9dc3b8f1129",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/folder.fill.png",
+   "size": 6199,
+   "sha256": "bedc77ebf1be007eeaeb425b572c3d6d9215c0131c1d64586e338a8630df6685",
+   "server_etag": "1794171891739830"
+  },
+  {
+   "path": "project/prototype/icons/internaldrive.fill.png",
+   "size": 6344,
+   "sha256": "c61d15b781b2fae097b96738f21a4eb28ae10562aeacb48d4bb9f9e61d2aed64",
+   "server_etag": "1794172080805469"
+  },
+  {
+   "path": "project/prototype/icons/keyboard.png",
+   "size": 6427,
+   "sha256": "296f88af23836d5dba23c879220ae59f904cb9c7083553fa0306aaa5e88dd9f3",
+   "server_etag": "1794172031031117"
+  },
+  {
+   "path": "project/prototype/icons/mic.fill.png",
+   "size": 6440,
+   "sha256": "49323586f71ee8a0120baaec6be17f4431813fcaa49077e63b2b09709c0bbf99",
+   "server_etag": "1794172031031117"
+  },
+  {
+   "path": "project/prototype/icons/network.png",
+   "size": 6859,
+   "sha256": "a5f31896381b1c0fd075a656ace72bfb36e4afe4a8202fe76ac78e0cc57c0462",
+   "server_etag": "1794172031031117"
+  },
+  {
+   "path": "project/prototype/icons/qwen-code.svg",
+   "size": 8905,
+   "sha256": "9aac494c59eae8fbfe7c48027d2485f481fd87142d1e8fd10299f11ec3fb0201",
+   "server_etag": "1794176469622897"
+  },
+  {
+   "path": "project/prototype/icons/rectangle.on.rectangle.png",
+   "size": 6296,
+   "sha256": "2b9db5bea95cc2cb5cade062322ea33323b367c6c8e42efc6ace44dda4777e0c",
+   "server_etag": "1794172031031117"
+  },
+  {
+   "path": "project/prototype/icons/speaker.wave.2.fill.png",
+   "size": 6398,
+   "sha256": "a4e1c0e9de0dcebcf64e01b498dd8a7806eaa1e4f1355fc8c90836658443844e",
+   "server_etag": "1794172080805469"
+  },
+  {
+   "path": "project/prototype/icons/terminal.fill.png",
+   "size": 6222,
+   "sha256": "b32038619a6a0dffedaba35675bb8263e82e88af452a3bb0623224f8ddd8a429",
+   "server_etag": "1794172031031117"
+  },
+  {
+   "path": "project/assets/takocore-mark.svg",
+   "size": 1854,
+   "sha256": "70f6fe2602caa469fa15818381b7d1f2c4f2c65691a7d942789472ef68d840da",
+   "server_etag": "1785910052513199"
+  },
+  {
+   "path": "shots/A01-desktop.png",
+   "size": 240524,
+   "sha256": "82206f7922f3cfaa9ab0dcceae454076b5ce8f58de1db06ffe4593e2c4fd2c5e"
+  },
+  {
+   "path": "shots/A02-settings-general.png",
+   "size": 448060,
+   "sha256": "f77c89480ea8bf6d32e720702c6261cdc1e91c760d2eefc225e512b738b96ac4"
+  },
+  {
+   "path": "shots/A03-themes-catalog.png",
+   "size": 477856,
+   "sha256": "7a466bbeb5d149cd2b5ce7f94ae51b627720ee7030a23d11cf8ef0682b5620fd"
+  },
+  {
+   "path": "shots/A04-theme-editor-colors.png",
+   "size": 415162,
+   "sha256": "b6eabe92b3a78d4ae513e69605383531b810c8012e9493420a91191a9ac3a8ac"
+  },
+  {
+   "path": "shots/A05-theme-editor-type.png",
+   "size": 441980,
+   "sha256": "998857dfcded01b3b99cd17e23712c6c7bce5e1828c6bad4f2a9540242225c27"
+  },
+  {
+   "path": "shots/A06-font-picker.png",
+   "size": 521629,
+   "sha256": "fa8dcf5009ce3b53e7bd8b48ef5e23f967145dcbf8744a261934a68e6cc2eac5"
+  },
+  {
+   "path": "shots/A07-size-zoom.png",
+   "size": 468845,
+   "sha256": "7af19564e3f2d5a829bd3323eb13d1e9468aabe76b5bb8ccdabe8b1e0fc19df1"
+  },
+  {
+   "path": "shots/A08-keys.png",
+   "size": 497028,
+   "sha256": "55de3e56b70807eda3148b7552ef19e2d84c62fb919084d3265ec34c577999ab"
+  },
+  {
+   "path": "shots/A09-keys-recording.png",
+   "size": 459765,
+   "sha256": "58a55003d771fb97e8ce4dc3fe21ec60e8545f9bf9589e9fb85a3f015ad0fc21"
+  },
+  {
+   "path": "shots/A10-keys-conflict.png",
+   "size": 474276,
+   "sha256": "a2e07f0f057360af74cd24613eb2878b38351d49c70717bd327f87c11683cfd7"
+  },
+  {
+   "path": "shots/A11-activity.png",
+   "size": 483776,
+   "sha256": "57539d7f69fcd05fc5db632ca3f0bc9830028bbc36a10238766e1fb0747ef85f"
+  },
+  {
+   "path": "shots/A12-app-theme-light.png",
+   "size": 461466,
+   "sha256": "668030ac30a76150a81bd01902049545156c6f8167b0bf2f141ea77db127d8ba"
+  },
+  {
+   "path": "shots/A13-desktop-light-shell.png",
+   "size": 258903,
+   "sha256": "9c2bae1b7034e8a796cd99c571e08798bee4caee53958abae355a18d768ceb13"
+  },
+  {
+   "path": "shots/A14-welcome.png",
+   "size": 293255,
+   "sha256": "674eb8d8e24861c050daaf432e437d2f5dc1133d1a82c1b8bdf9c772d9007fc2"
+  },
+  {
+   "path": "shots/A15-permissions.png",
+   "size": 462967,
+   "sha256": "25cc7478544edc99670818384b86402fc2dce10f2f0a512aaeee0c1e63098a2d"
+  },
+  {
+   "path": "shots/A16-ready.png",
+   "size": 264240,
+   "sha256": "dbcdb65eb04622f2bd54c4fc75244d72913149abd50f8e9adea76263aeb7ba7e"
+  },
+  {
+   "path": "shots/A17-floating-shelf.png",
+   "size": 305341,
+   "sha256": "4582d8b3572d327c2672bf5eea831b3bc026b82695d56b31a6c2d6054f1d7276"
+  },
+  {
+   "path": "shots/A18-context-appearance.png",
+   "size": 332324,
+   "sha256": "6deb55c400fa582d59f5b44d9388cc6d080dcd8f42b2703627c73b198d3bd3c2"
+  },
+  {
+   "path": "shots/B01-small-desktop.png",
+   "size": 202061,
+   "sha256": "788058425d5ce06485ed742725f716461694bd4fe4e28a48fbb6a27ce8286a28"
+  },
+  {
+   "path": "shots/B02-small-settings.png",
+   "size": 288457,
+   "sha256": "95ae6122e3a450659d999202d55592ff83cb57b9b2adafad0029770970caf05e"
+  }
+ ]
+}

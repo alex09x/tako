@@ -19,7 +19,7 @@ extension WalkthroughTests {
         let code = app.secureTextFields["auth.challenge.prompt.0"]
         XCTAssertTrue(code.waitForExistence(timeout: 20),
                       "the server's hidden verification-code prompt never appeared")
-        XCTAssertTrue(waitForHittable(code, timeout: 10),
+        XCTAssertTrue(waitForUncoveredMFAControl(code),
                       "the verification-code prompt stayed covered")
         code.tap()
         XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 5),
@@ -74,7 +74,7 @@ extension WalkthroughTests {
 
         let code = app.secureTextFields["auth.challenge.prompt.0"]
         XCTAssertTrue(code.waitForExistence(timeout: 20))
-        XCTAssertTrue(waitForHittable(code, timeout: 10),
+        XCTAssertTrue(waitForUncoveredMFAControl(code),
                       "the rejected-code prompt stayed covered")
         code.tap()
         XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 5),
@@ -102,7 +102,10 @@ extension WalkthroughTests {
         XCTAssertTrue(app.secureTextFields["auth.challenge.prompt.0"]
             .waitForExistence(timeout: 20))
         shot("03 mfa cancel · challenge visible")
-        app.buttons["auth.challenge.cancel"].tap()
+        let cancel = app.buttons["auth.challenge.cancel"]
+        XCTAssertTrue(waitForUncoveredMFAControl(cancel),
+                      "the MFA Cancel button stayed covered")
+        cancel.tap()
 
         let disconnected = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "disconnected")
@@ -112,6 +115,21 @@ extension WalkthroughTests {
         XCTAssertFalse(terminalText().contains("TYPE SOMETHING"),
                        "canceling MFA nevertheless opened a shell")
         shot("04 mfa cancel · transport closed")
+    }
+
+    /// The first MFA action follows the password typed before Trust, so iOS's
+    /// "Save Password?" sheet can arrive after `beginMFAChallenge` stopped
+    /// looking for it and cover the challenge; a tap then lands at {-1, -1}
+    /// and never reaches the app. Answer that late prompt, then require the
+    /// control to be hittable, as a finger would.
+    func waitForUncoveredMFAControl(_ control: XCUIElement) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            if control.exists && control.isHittable { return true }
+            let remaining = deadline.timeIntervalSinceNow
+            if remaining > 0 { _ = dismissSystemPrompt(timeout: min(0.2, remaining)) }
+        }
+        return control.exists && control.isHittable
     }
 
     /// Opens a session by filling the form in, then types in the terminal.

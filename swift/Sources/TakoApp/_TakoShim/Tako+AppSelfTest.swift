@@ -32,8 +32,8 @@ extension Tako {
     }
 
     /// Save the pixels the renderer committed for the window, and check that
-    /// the grid is where the layout says: a red block in the first cells
-    /// must start inside the padding, with the padding itself left alone.
+    /// the grid is where the layout says using the red block's extent.
+    /// Margins follow the configured window-padding-color policy.
     /// The PNG is for the eye as much as for the script.
     @MainActor static func runFrameSelfTest() {
         guard let (window, surface) = selfTestTarget() else { return }
@@ -65,7 +65,8 @@ extension Tako {
             // show the shell's prompt.
             guard let report = Self.frameCheck(
                 pixels: pixels, width: width, height: height,
-                scale: CGFloat(width) / max(surface.bounds.width, 1), layout: layout, cell: cell
+                scale: CGFloat(width) / max(surface.bounds.width, 1), layout: layout, cell: cell,
+                paddingColor: surface.theme.windowPaddingColor
             ) else { return }
             captured = true
             renderer.committedFrameCaptureForTesting = nil
@@ -77,9 +78,18 @@ extension Tako {
 
     /// The frame self-test's verdict on a BGRA frame, or nil while the frame
     /// does not show the red block in its first cells yet.
+    ///
+    /// Where the grid is comes from the block itself: four red cells from the
+    /// grid's left edge, so red must stop four cells in. What fills the space
+    /// around the grid is `window-padding-color`'s: `background` leaves it the
+    /// background, while `extend` (the default) and `extend-always` repeat the
+    /// edge cell beside the grid. Above the grid, `extend` repeats a row only
+    /// when it has no default-background cell, and the block's row has. A
+    /// margin of zero (no padding, no command-mark gutter) has nothing to check.
     static func frameCheck(
         pixels: [UInt8], width: Int, height: Int, scale: CGFloat,
-        layout: TerminalGridLayout, cell: CGSize
+        layout: TerminalGridLayout, cell: CGSize,
+        paddingColor: TerminalTheme.WindowPaddingColor = .background
     ) -> String? {
         guard width > 0, height > 0, pixels.count >= width * height * 4 else { return nil }
         func rgb(_ x: CGFloat, _ y: CGFloat) -> (Int, Int, Int) {
@@ -89,17 +99,41 @@ extension Tako {
             return (Int(pixels[i + 2]), Int(pixels[i + 1]), Int(pixels[i]))
         }
         func red(_ c: (Int, Int, Int)) -> Bool { c.0 > 150 && c.1 < 100 && c.2 < 100 }
-        let inCell = rgb(layout.left + cell.width * 1.5, layout.top + cell.height / 2)
+        let rowY = layout.top + cell.height / 2
+        let inCell = rgb(layout.left + cell.width * 1.5, rowY)
         guard red(inCell) else { return nil }
-        let inPadding = rgb(layout.left / 2, layout.top + cell.height / 2)
-        let abovePadding = rgb(layout.left + cell.width * 1.5, layout.top / 2)
-        var report = "grid at (\(layout.left), \(layout.top)) pt, cell \(cell.width)x\(cell.height), scale \(scale)\n"
-        func line(_ name: String, _ ok: Bool, _ got: (Int, Int, Int)) {
-            report += "\(ok ? "ok  " : "FAIL") \(name.padding(toLength: 30, withPad: " ", startingAt: 0)) rgb=\(got)\n"
+        var report = "grid at (\(layout.left), \(layout.top)) pt, cell \(cell.width)x\(cell.height), "
+            + "scale \(scale), window-padding-color \(paddingColor.rawValue)\n"
+        func line(_ name: String, _ ok: Bool, _ got: String) {
+            report += "\(ok ? "ok  " : "FAIL") \(name.padding(toLength: 34, withPad: " ", startingAt: 0)) \(got)\n"
         }
-        line("first cells are red", true, inCell)
-        line("left padding is not the cell", !red(inPadding), inPadding)
-        line("top padding is not the cell", !red(abovePadding), abovePadding)
+        line("first cells are red", true, "rgb=\(inCell)")
+        // Where red stops, scanning across the end of the block.
+        let expectedEnd = layout.left + cell.width * 4
+        let end = stride(from: layout.left + cell.width * 3, through: layout.left + cell.width * 5, by: 0.5)
+            .first { !red(rgb($0, rowY)) }
+        line("the block ends four cells in", end.map { abs($0 - expectedEnd) <= 1 } ?? false,
+             "at x=\(end.map { "\($0)" } ?? "none") pt, want \(expectedEnd)")
+        if layout.left >= 1 {
+            let margin = rgb(layout.left / 2, rowY)
+            if paddingColor == .background {
+                line("left margin is the background", !red(margin), "rgb=\(margin)")
+            } else {
+                line("left margin repeats the edge cell", red(margin), "rgb=\(margin)")
+            }
+        } else {
+            report += "--   no left margin (0 pt)\n"
+        }
+        if layout.top >= 1 {
+            let margin = rgb(layout.left + cell.width * 1.5, layout.top / 2)
+            if paddingColor == .extendAlways {
+                line("top margin repeats the edge cell", red(margin), "rgb=\(margin)")
+            } else {
+                line("top margin is the background", !red(margin), "rgb=\(margin)")
+            }
+        } else {
+            report += "--   no top margin (0 pt)\n"
+        }
         return report
     }
 
@@ -123,11 +157,13 @@ extension Tako {
     @MainActor static func runScrollSelfTest() {
         guard let (window, surface) = selfTestTarget() else { return }
         window.makeFirstResponder(surface)
+        let reportPath = Tako.selfTestReportPath("tako-scrolltest.txt")
 
         // Somewhere to scroll to. Fed straight to the engine rather than
         // through the shell, so the test does not depend on what the shell
         // prints or how fast it does it.
         let history = (0..<400).map { "history line \($0)" }.joined(separator: "\r\n") + "\r\n"
+        let beforeHistory = surface.presentationCadence.submitted
         surface.feed(data: Data(history.utf8))
 
         /// One precise wheel event. `hasPreciseScrollingDeltas` cannot be set
@@ -165,13 +201,60 @@ extension Tako {
             if let event = precise(-1) { surface.scrollWheel(with: event) }
         }
         line("after reversing all the way", surface.presentedScrollRows, 0)
-
-        let cadence = surface.presentationCadence
-        report += "\nframes submitted=\(cadence.submitted) presented=\(cadence.sequence)\n"
-        if cadence.submitted == 0 {
-            report += "FAIL  nothing was ever handed to the display\n"
+        // Geometry-only callers can inspect these synchronous assertions. A
+        // pending report is a failure to the runner until display checks finish.
+        try? (report + "FAIL  display check pending\n")
+            .write(toFile: reportPath, atomically: true, encoding: .utf8)
+        Task { @MainActor in
+            // A geometry-only host may already have closed its test surface.
+            guard surface.window === window, FileManager.default.fileExists(atPath: reportPath) else { return }
+            let deadline = ProcessInfo.processInfo.systemUptime + 5
+            @MainActor func awaitSubmission(_ label: String, after baseline: UInt64) async {
+                let immediate = surface.presentationCadence
+                let initialState = surface.selfTestPresentationDiagnostics
+                let didSubmit = await waitForSelfTestSubmission(
+                    after: baseline, timeout: max(0, deadline - ProcessInfo.processInfo.systemUptime)
+                ) { surface.presentationCadence.submitted }
+                let cadence = surface.presentationCadence
+                report += "\(didSubmit ? "ok  " : "FAIL")  \(label): baseline=\(baseline) immediate=\(immediate.submitted)"
+                    + " submitted=\(cadence.submitted) presented=\(cadence.sequence)\n"
+                report += "  before: \(initialState)\n  after: \(surface.selfTestPresentationDiagnostics)\n"
+            }
+            // Exclude startup/history frames before measuring a new scroll.
+            await awaitSubmission("history display", after: beforeHistory)
+            let baseline = surface.presentationCadence
+            if let event = precise(1) {
+                surface.scrollWheel(with: event)
+                line("fraction before display", surface.presentedScrollRows, 1 / 3)
+                // Hold the fraction until the normal display loop submits it.
+                await awaitSubmission("fractional scroll display", after: baseline.submitted)
+                line("fraction retained through display", surface.presentedScrollRows, 1 / 3)
+            } else { report += "FAIL  could not build event\n" }
+            let beforeReverse = surface.presentationCadence.submitted
+            if let event = precise(-1) { surface.scrollWheel(with: event) }
+            line("reverse before display", surface.presentedScrollRows, 0)
+            await awaitSubmission("reverse scroll display", after: beforeReverse)
+            let cadence = surface.presentationCadence
+            report += "\nframes submitted=\(cadence.submitted - baseline.submitted)"
+                + " presented=\(cadence.sequence - baseline.sequence)"
+                + " baseline=\(baseline.submitted) total=\(cadence.submitted)\ncomplete\n"
+            try? report.write(toFile: reportPath, atomically: true, encoding: .utf8)
         }
-        try? report.write(toFile: Tako.selfTestReportPath("tako-scrolltest.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// Poll a real submission count while yielding MainActor to AppKit's
+    /// display link. The interval is a poll cadence, not the success condition.
+    @MainActor static func waitForSelfTestSubmission(
+        after baseline: UInt64, timeout: TimeInterval = 5,
+        submitted: () -> UInt64
+    ) async -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while submitted() <= baseline {
+            guard ProcessInfo.processInfo.systemUptime < deadline, !Task.isCancelled else { return false }
+            do { try await Task.sleep(nanoseconds: 10_000_000) }
+            catch { return false }
+        }
+        return true
     }
 
     @MainActor static func runKeySelfTest() {

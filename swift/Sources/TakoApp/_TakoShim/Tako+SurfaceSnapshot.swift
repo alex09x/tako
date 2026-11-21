@@ -27,6 +27,8 @@ extension Tako.SurfaceView {
         /// because Shortcuts and Accessibility can ask for it repeatedly.
         func showSnapshot(_ snapshot: SessionSnapshot) {
             guard (try? core.checkpointImport(blob: snapshot.checkpoint)) != nil else { return }
+            _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
+            applyProgramStatusEvent(.restored(programStatusSnapshot()))
             if let geom = snapshot.checkpointGeometry {
                 self.cols = geom.cols
                 self.rows = geom.rows
@@ -42,7 +44,21 @@ extension Tako.SurfaceView {
             }
             core.feed(bytes: Data(SessionSnapshot.separator(
                 savedAt: snapshot.savedAt, cursorRow: core.cursorRow(), cursorCol: core.cursorCol())))
+            // Imported straight into the engine, past the view's content
+            // callback: a colour the saved session carried reaches the card here.
+            refreshDrawnColors()
             reflowToCurrentBounds(forcePtyResize: true)
+        }
+
+        func handleConfirmedProcessExit() {
+            notifyProgramStatusProcessExited()
+            if programStatusSnapshot().effective == nil {
+                self.progressReport = nil
+                self.crab.progressReported(state: 0, value: nil)
+                self.updateProgressBar(state: .none, progress: nil)
+            }
+            (NSApp?.delegate as? AppDelegate)?.setDockBadge()
+            Tako.TabBarController.refreshAll()
         }
 
         /// The process ended. A persistent session's client may end on
@@ -51,13 +67,22 @@ extension Tako.SurfaceView {
             // Only the current process decides: one replaced since (a
             // reattach check, a session that started anew) is history.
             guard let process, process === pty else { return }
-            self.progressReport = nil
-            self.crab.progressReported(state: 0, value: nil)
-            self.updateProgressBar(state: .none, progress: nil)
-            (NSApp.delegate as? AppDelegate)?.setDockBadge()
-            Tako.TabBarController.refreshAll()
             if persistence?.clientExited(self) == true { return }
+            handleConfirmedProcessExit()
             onExit?(self)
+        }
+
+        func afterPendingOutput(_ work: @escaping () -> Void) {
+            parserQueue.async(execute: work)
+        }
+
+        public func close() {
+            withdrawAllProgramStatusNotifications()
+            BroadcastInputStore.shared.paneClosed(id)
+            InputOwnershipStore.shared.remove(paneId: id)
+            OverlayStore.shared.closeOverlay(paneId: id)
+            SecureInput.shared.removeScoped(ObjectIdentifier(self))
+            pty?.terminate()
         }
 
         /// The app this surface belongs to, for the session code.

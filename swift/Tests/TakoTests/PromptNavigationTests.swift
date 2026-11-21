@@ -30,6 +30,13 @@ struct PromptNavigationTests {
     @Test func promptNavigationJumpsDirectlyBetweenPrompts() {
         let view = makeSurfaceView()
         defer { view.close() }
+        // The helper's 80×24 frame is in points, not terminal cells. A
+        // one-row viewport makes Prompt 2 the previous prompt already.
+        let gridPadding = view.effectivePadding
+        view.setFrameSize(NSSize(width: 80 * view.cellWidth + gridPadding.left + gridPadding.right,
+                                 height: 24 * view.cellHeight + gridPadding.top + gridPadding.bottom))
+        view.flushPendingResizeForTesting()
+        #expect(view.cols == 80 && view.rows == 24)
 
         // Prompt 1
         view.feed(data: Data("\u{1b}]133;A\u{07}prompt1$ ".utf8))
@@ -225,7 +232,9 @@ struct PromptNavigationTests {
         #expect(prevItem.keyEquivalentModifierMask == .command)
         #expect(nextItem.keyEquivalent == String(utf16CodeUnits: [unichar(NSDownArrowFunctionKey)], count: 1))
         #expect(nextItem.keyEquivalentModifierMask == .command)
-        #expect(selectItem.keyEquivalent == "a")
+        // MenuShortcutKey.appKitKeyEquivalent represents shifted letters
+        // in uppercase; the Shift modifier is still asserted separately.
+        #expect(selectItem.keyEquivalent == "A")
         #expect(selectItem.keyEquivalentModifierMask == [.command, .shift])
 
         // Remap jump_to_prompt:previous to cmd+k

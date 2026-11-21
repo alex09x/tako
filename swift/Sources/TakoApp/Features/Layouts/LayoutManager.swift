@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 
@@ -40,22 +50,27 @@ enum LayoutManager {
             guard let controller = tabWindow.windowController as? BaseTerminalController else { continue }
             let title = controller.titleOverride ?? tabWindow.title
             let color = (tabWindow as? TerminalWindow).flatMap { $0.tabColor == .none ? nil : $0.tabColor.name }
-            let rootNode = convertToLayoutNode(controller.surfaceTree.root)
+            let rootNode = convertToLayoutNode(controller.surfaceTree.root, in: controller)
             tabs.append(LayoutTab(title: title.isEmpty ? nil : title, color: color, root: rootNode))
         }
 
         let frame = LayoutFrame(targetWindow.frame)
+        let shown = (group.selectedWindow ?? targetWindow).windowController as? BaseTerminalController
+        let windowState: String? = shown?.fullscreenStyle?.isFullscreen == true ? "fullscreen"
+            : (group.selectedWindow ?? targetWindow).isMiniaturized ? "minimized" : nil
         let windowDoc = LayoutWindow(
             title: targetWindow.title.isEmpty ? nil : targetWindow.title,
             frame: frame,
             selectedTab: selectedIndex,
-            tabs: tabs
+            tabs: tabs,
+            state: windowState
         )
 
         return LayoutDocument(version: 1, name: targetWindow.title, windows: [windowDoc])
     }
 
-    private static func convertToLayoutNode(_ node: SplitTree<Tako.SurfaceView>.Node?) -> LayoutNode {
+    private static func convertToLayoutNode(_ node: SplitTree<Tako.SurfaceView>.Node?,
+                                            in controller: BaseTerminalController) -> LayoutNode {
         guard let node else {
             return .leaf(LayoutPane())
         }
@@ -64,18 +79,19 @@ enum LayoutManager {
             let cwd = surface.pwd
             let title = surface.title
             let command = surface.runProgram
-            return .leaf(LayoutPane(
+            let pane = LayoutPane(
                 title: title.isEmpty ? nil : title,
                 cwd: cwd,
                 env: nil,
                 command: command,
                 argv: nil,
                 shell: false
-            ))
+            )
+            return .leaf(LayoutPanePresentation.capture(surface, in: controller, into: pane))
         case .split(let split):
             let dir = LayoutSplitDirection(from: split.direction)
-            let left = convertToLayoutNode(split.left)
-            let right = convertToLayoutNode(split.right)
+            let left = convertToLayoutNode(split.left, in: controller)
+            let right = convertToLayoutNode(split.right, in: controller)
             return .split(LayoutSplit(direction: dir, ratio: split.ratio, left: left, right: right))
         }
     }
@@ -102,6 +118,7 @@ enum LayoutManager {
         guard !windowsToApply.isEmpty else {
             throw ControlError(.invalid, "layout document contains no windows or tabs")
         }
+        try validateStates(document)
 
         var totalTabs = 0
         var totalPanes = 0
@@ -157,6 +174,7 @@ enum LayoutManager {
                 if tabIndex == (windowDoc.selectedTab ?? 0) {
                     selectedWindow = window
                 }
+                LayoutPanePresentation.apply(tabDoc, to: controller)
 
                 totalTabs += 1
             }
@@ -164,6 +182,17 @@ enum LayoutManager {
             if let anchor = anchorWindow, let selected = selectedWindow {
                 Tako.CustomTabGroup.group(for: anchor).select(selected)
                 selected.makeKeyAndOrderFront(nil)
+                switch windowDoc.state {
+                case "minimized"?:
+                    selected.miniaturize(nil)
+                case "fullscreen"?:
+                    if let shown = selected.windowController as? BaseTerminalController,
+                       shown.fullscreenStyle?.isFullscreen != true {
+                        shown.toggleFullscreen(mode: tako.config.windowFullscreen ?? .native)
+                    }
+                default:
+                    break
+                }
             }
         }
 
@@ -175,6 +204,18 @@ enum LayoutManager {
             programsSuppressed: programsSuppressed,
             isTrusted: isTrusted
         )
+    }
+
+    /// The states a document names, all checked before anything opens.
+    static func validateStates(_ document: LayoutDocument) throws {
+        for window in document.effectiveWindows {
+            if let state = window.state, !LayoutWindow.states.contains(state) {
+                throw ControlError(.invalid, "unknown window state \"\(state)\"; use \(LayoutWindow.states.joined(separator: ", "))")
+            }
+        }
+        for pane in document.allPanes {
+            try LayoutPanePresentation.validate(pane)
+        }
     }
 
     private static func buildSplitTreeNode(

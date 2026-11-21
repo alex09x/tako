@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import Combine
 import SwiftUI
 
 /// A sidebar row's status drawn as a pill tab's is: the same Core Animation
@@ -32,16 +33,26 @@ struct SidebarStatusLayerView: NSViewRepresentable {
     var drawsRing = true
     /// The ring alone, drawn this many points across (a pill's ring is 14).
     var ringOnly: CGFloat? = nil
+    /// `status-show` / `status-animate`, read when the row is built so a
+    /// change re-renders it (the sidebar observes LivingAnimationState).
+    var statusShown = LivingAnimationState.shared.statusShown
+    var statusAnimates = LivingAnimationState.shared.statusAnimates
+    var palette: Tako.TabStatusPalette? = nil
+    /// The panes whose bursts ripple the ring, watched by the layer itself.
+    var pulseSources: Set<UUID> = []
+    /// The row's ring drawn smaller about its centre (a sidebar style).
+    var ringScale: CGFloat = 1
 
     func makeNSView(context: Context) -> StatusLayerHostView {
         StatusLayerHostView()
     }
 
     func updateNSView(_ view: StatusLayerHostView, context: Context) {
-        view.configure(.init(state: state, ringCenter: ringCenter, cornerRadius: cornerRadius,
-                             reduceMotion: reduceMotion, paused: paused, pulses: pulses,
+        view.watchPulses(of: pulseSources)
+        view.configure(.init(state: statusShown ? state : .idle, ringCenter: ringCenter, cornerRadius: cornerRadius,
+                             reduceMotion: reduceMotion || !statusAnimates, paused: paused, pulses: statusShown ? pulses : 0,
                              progressInset: progressInset, cometForProgress: cometForProgress,
-                             drawsRing: drawsRing, ringOnly: ringOnly))
+                              drawsRing: drawsRing, ringOnly: ringOnly, palette: palette, ringScale: ringScale))
     }
 }
 
@@ -58,10 +69,16 @@ final class StatusLayerHostView: NSView {
         var cometForProgress: Bool
         var drawsRing: Bool
         var ringOnly: CGFloat?
+        var palette: Tako.TabStatusPalette? = nil
+        var ringScale: CGFloat = 1
     }
 
     let statusLayer = Tako.TabStatusLayer()
     private var config: Config?
+    private struct WeakCrab { weak var crab: Tako.CrabTracker? }
+    private var pulseSources: Set<UUID> = []
+    private var pulseCrabs: [WeakCrab] = []
+    private var pulseWatch: AnyCancellable?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -86,15 +103,52 @@ final class StatusLayerHostView: NSView {
         apply()
     }
 
+    /// Ripples the ring for each burst of these panes' output, without
+    /// SwiftUI: a burst comes every second a stream prints, and a row rebuilt
+    /// for it rebuilt the whole sidebar.
+    func watchPulses(of ids: Set<UUID>) {
+        guard ids != pulseSources else { return }
+        pulseSources = ids
+        let surfaces = ids.isEmpty ? [] : TerminalController.all.flatMap { Array($0.surfaceTree) }
+        watchPulses(of: surfaces.filter { ids.contains($0.id) }.map(\.crab))
+    }
+
+    /// Internal so a test can hand it trackers of panes in no window.
+    func watchPulses(of crabs: [Tako.CrabTracker]) {
+        pulseCrabs = crabs.map { WeakCrab(crab: $0) }
+        pulseWatch = crabs.isEmpty ? nil : Publishers.MergeMany(crabs.map { $0.$live.dropFirst().map { _ in () } })
+            // On the next turn: a publisher fires before the value is set.
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in MainActor.assumeIsolated { self?.pulsed() } }
+    }
+
+    /// The watched panes' bursts, nil when none are watched.
+    private var watchedPulses: Int? {
+        let crabs = pulseCrabs.compactMap(\.crab)
+        return crabs.isEmpty ? nil : crabs.reduce(0) { $0 &+ ($1.live?.pulses ?? 0) }
+    }
+
+    private func pulsed() {
+        // A row that is not flowing yet keeps the burst: the change that
+        // makes it flow ripples it, as it did when both came together.
+        guard let config, config.state == .live(flowing: true), let pulses = watchedPulses else { return }
+        statusLayer.rippleIfPulsed(pulses, state: config.state, reduceMotion: config.reduceMotion, paused: config.paused)
+    }
+
     private func apply() {
         guard let config, bounds.width > 0, bounds.height > 0 else { return }
+        // The row's own count is the one it was built with, seconds old. A
+        // row laid out before it knows its stream flows keeps the burst for
+        // the change that makes it flow.
+        let pulses = watchedPulses.map { config.state == .live(flowing: true) ? $0 : statusLayer.lastPulses }
+            ?? config.pulses
         if let side = config.ringOnly {
             // A pill's 14 pt ring, centred and scaled to `side`.
             statusLayer.drawsSurface = false
             statusLayer.geometry = .init(cornerRadius: 0, ringOrigin: .zero)
             let ring = CGRect(x: (bounds.width - 14) / 2, y: (bounds.height - 14) / 2, width: 14, height: 14)
             statusLayer.apply(state: config.state, in: ring, hideRing: false, reduceMotion: config.reduceMotion,
-                              paused: config.paused, pulses: config.pulses)
+                              paused: config.paused, pulses: pulses, palette: config.palette)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             statusLayer.transform = CATransform3DMakeScale(side / 14, side / 14, 1)
@@ -106,9 +160,10 @@ final class StatusLayerHostView: NSView {
             cornerRadius: config.cornerRadius,
             ringOrigin: config.ringCenter.map { CGPoint(x: ($0.x - 7).rounded(), y: (bounds.height - $0.y - 7).rounded()) },
             progressInset: config.progressInset,
-            cometForProgress: config.cometForProgress)
+            cometForProgress: config.cometForProgress,
+            ringScale: config.ringScale)
         statusLayer.apply(state: config.state, in: bounds, hideRing: !config.drawsRing, reduceMotion: config.reduceMotion,
-                          paused: config.paused, pulses: config.pulses)
+                          paused: config.paused, pulses: pulses, palette: config.palette)
     }
 }
 

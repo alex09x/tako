@@ -32,18 +32,52 @@ extension TakoTerminalNSView {
     /// Where the grid on screen sits in this view: inside the configured
     /// padding, centred in the spare space with `window-padding-balance`.
     /// Every path that draws the grid or maps a point to a cell uses this one.
-    public var gridLayout: TerminalGridLayout {
+    ///
+    /// Command marks are chrome of their own, not theme padding: while they
+    /// are on, the left edge keeps at least their gutter -- the marks', or
+    /// the wider one their durations or start times need. It follows the
+    /// setting, not whether a mark exists, so the grid never jumps as marks
+    /// come and go or a full-screen program hides them.
+    var layoutTheme: TerminalTheme {
         var effectiveTheme = theme
-        if commandMarksEnabled && (commandDurationsEnabled || commandTimestampsEnabled) {
-            let minGutter: CGFloat = commandTimestampsEnabled ? 64.0 : 44.0
+        if commandMarksEnabled {
+            let minGutter: CGFloat = commandTimestampsEnabled ? 64.0
+                : commandDurationsEnabled ? 44.0 : Self.commandMarkGutter
             if effectiveTheme.padding.left < minGutter {
                 effectiveTheme.padding.left = minGutter
             }
         }
-        return TerminalGridLayout(
+        return effectiveTheme
+    }
+
+    /// The narrowest gutter that shows command marks: the 3 pt mark, 2 pt
+    /// before the grid and 1 pt from the edge.
+    public static let commandMarkGutter: CGFloat = 6
+
+    /// The padding the grid really sits in: the theme's, widened for the
+    /// command-mark gutter. Size a view for a grid of N cells with this.
+    public var effectivePadding: TerminalPadding { layoutTheme.padding }
+
+    /// Fit and paint with the same gutter, including opt-in duration labels.
+    public func fittedGridLayout(for size: CGSize) -> TerminalGridLayout {
+        TerminalGridLayout(
+            viewSize: size,
+            cellSize: CGSize(width: cellWidth, height: cellHeight),
+            theme: layoutTheme
+        )
+    }
+
+    func updateCommandGutterLayout() {
+        needsLayout = true
+        updateGutterMarks()
+        updateScroller()
+    }
+
+    public var gridLayout: TerminalGridLayout {
+        TerminalGridLayout(
             viewSize: bounds.size,
             cellSize: CGSize(width: cellWidth, height: cellHeight),
-            theme: effectiveTheme,
+            theme: layoutTheme,
             cols: cols,
             rows: rows
         )

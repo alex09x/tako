@@ -49,6 +49,21 @@ public protocol TakoTerminalViewDelegate: AnyObject {
 
     /// Screen content changed.
     func terminalViewDidChangeContent(_ view: TakoTerminalView)
+
+    /// The shell reached an OSC 133 prompt mark.
+    func terminalViewPromptMark(_ view: TakoTerminalView)
+
+    /// A program set explicit pane status via escape sequence (OSC 1337 / OSC 9;5).
+    func terminalView(_ view: TakoTerminalView, didReportStatus status: String, text: String?)
+
+    /// A program cleared explicit pane status via escape sequence.
+    func terminalViewDidClearStatus(_ view: TakoTerminalView)
+
+    /// Structured `OSC 7501` program status changed, coalesced, or restored from a checkpoint.
+    func terminalView(_ view: TakoTerminalView, didUpdateProgramStatus event: TerminalProgramStatusEvent)
+
+    /// The bounded reply queue dropped one or more excess replies while delivering the surviving FIFO prefix.
+    func terminalView(_ view: TakoTerminalView, didDropOverflowedReplies count: UInt32)
 }
 
 public extension TakoTerminalViewDelegate {
@@ -61,5 +76,10 @@ public extension TakoTerminalViewDelegate {
     func terminalView(_ view: TakoTerminalView, didChangeWorkingDirectory url: String) {}
     func terminalView(_ view: TakoTerminalView, didScrollTo position: Double) {}
     func terminalViewDidChangeContent(_ view: TakoTerminalView) {}
+    func terminalViewPromptMark(_ view: TakoTerminalView) {}
+    func terminalView(_ view: TakoTerminalView, didReportStatus status: String, text: String?) {}
+    func terminalViewDidClearStatus(_ view: TakoTerminalView) {}
+    func terminalView(_ view: TakoTerminalView, didUpdateProgramStatus event: TerminalProgramStatusEvent) {}
+    func terminalView(_ view: TakoTerminalView, didDropOverflowedReplies count: UInt32) {}
 }
 #endif

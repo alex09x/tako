@@ -105,6 +105,11 @@ struct TabSwitchCostTests {
         window.windowController = controller
         controller.window = window
         window.contentView = shown
+        // A hidden tab may legitimately expose its unmounted model panes.
+        // This regression is the different case: a visible foreign view.
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close(); withExtendedLifetime(controller) {} }
+        #expect(window.isVisible)
         #expect(Tako.surfaces(in: window) == [shown])
     }
 

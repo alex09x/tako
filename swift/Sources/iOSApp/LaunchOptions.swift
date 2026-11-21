@@ -116,6 +116,16 @@ enum LaunchOptions {
 #endif
     }
 
+    /// Keeps the host-key labels inert for the duration of the dedicated
+    /// DEBUG tap test. XCTest can spend a minute waiting for app idleness.
+    static var hostKeyArmingHold: Bool {
+#if DEBUG
+        return arguments.contains("-takoHostKeyArmingHold")
+#else
+        return false
+#endif
+    }
+
     /// `-takoTrustHostKey` accepts the first host key without asking, which
     /// is exactly what a screenshot run needs and exactly what a real one
     /// must not do.

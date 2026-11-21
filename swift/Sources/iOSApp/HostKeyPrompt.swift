@@ -22,7 +22,28 @@ struct HostKeyPrompt: View {
     let presented: KnownHosts.Presented
     let onTrust: () -> Void
     let onCancel: () -> Void
+    let sleepBeforeArming: @MainActor @Sendable (Duration) async throws -> Void
+    /// Nil holds the labels inert in the dedicated DEBUG tap fixture.
+    let armingDelay: Duration?
     @State private var actionsArmed = false
+
+    init(
+        host: String,
+        presented: KnownHosts.Presented,
+        armingDelay: Duration? = .seconds(1),
+        sleepBeforeArming: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        },
+        onTrust: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.host = host
+        self.presented = presented
+        self.armingDelay = armingDelay
+        self.sleepBeforeArming = sleepBeforeArming
+        self.onTrust = onTrust
+        self.onCancel = onCancel
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -121,12 +142,13 @@ struct HostKeyPrompt: View {
             if presented.changed { Haptic.warn() }
         }
         .task {
+            guard let armingDelay else { return }
             // Both variants need a way out. A changed key deliberately has
             // no Trust action, but trapping the user in its sheet is not a
             // security feature. The delay still makes Cancel a second,
             // physically separate gesture from the Connect tap underneath.
             do {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try await sleepBeforeArming(armingDelay)
                 actionsArmed = true
             } catch {
                 // The prompt disappeared before it armed.

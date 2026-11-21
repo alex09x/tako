@@ -179,8 +179,9 @@ struct TerminalWindowRestorationCoverageTests {
     /// path run for real.
     private func withInjectedWindow(_ body: () -> Void) {
         let original = TerminalWindowRestoration.system
-        TerminalWindowRestoration.system = .init(makeController: { app, tree in
+        TerminalWindowRestoration.system = .init(makeController: { app, tree, tabIdentifier in
             let controller = TerminalController(app, withSurfaceTree: tree)
+            controller.restoredTabIdentifier = tabIdentifier
             let window = TerminalWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 400, height: 400),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -277,8 +278,9 @@ struct TerminalWindowRestorationCoverageTests {
         let unarchiver = try encodedState(from: sourceController)
 
         let original = TerminalWindowRestoration.system
-        TerminalWindowRestoration.system = .init(makeController: { app, _ in
+        TerminalWindowRestoration.system = .init(makeController: { app, _, tabIdentifier in
             let controller = TerminalController(app, withSurfaceTree: .init(view: view))
+            controller.restoredTabIdentifier = tabIdentifier
             let window = TerminalWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 400, height: 400),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],

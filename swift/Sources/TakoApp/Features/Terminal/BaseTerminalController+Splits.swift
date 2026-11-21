@@ -37,6 +37,13 @@ extension BaseTerminalController {
     /// Find the next surface to focus when a node is being closed.
     /// Goes to previous split unless we're the leftmost leaf, then goes to next.
     func findNextFocusTargetAfterClosing(node: SplitTree<Tako.SurfaceView>.Node) -> Tako.SurfaceView? {
+        if usesFloatingCanvas {
+            let closedIds = Set(node.map(\.id))
+            guard let topVisible = floatingCanvas.visiblePanesSortedByZ.last(where: { !closedIds.contains($0.surfaceId) }) else {
+                return nil
+            }
+            return surfaceTree.first(where: { $0.id == topVisible.surfaceId })
+        }
         guard let root = surfaceTree.root else { return nil }
 
         // If we're the leftmost, then we move to the next surface after closing.
@@ -59,23 +66,14 @@ extension BaseTerminalController {
             SubagentHierarchyStore.shared.unregister(paneId: surface.id)
         }
 
-        // Move focus if the closed surface was focused and we have a next target
-        let nextFocus: Tako.SurfaceView? = if node.contains(
-            where: { $0 == focusedSurface }
-        ) {
-            findNextFocusTargetAfterClosing(node: node)
-        } else {
-            nil
-        }
+        let closedWasFocused = node.contains(where: { $0 == focusedSurface })
+        let targetFocus: Tako.SurfaceView? = closedWasFocused
+            ? findNextFocusTargetAfterClosing(node: node)
+            : focusedSurface
 
         replaceSurfaceTree(
             surfaceTree.removing(node),
-            // When a non-focused surface is removed and this window stays as the key window,
-            // we should refocus the `focusedSurface` to make sure the window's firstResponder remains as it is.
-            //
-            // This is a weird workaround, since `resignFirstResponder` wasn't called on `focusedSurface` after drag,
-            // but the first responder became the window itself.
-            moveFocusTo: nextFocus ?? focusedSurface,
+            moveFocusTo: targetFocus,
             undoAction: "Close Terminal"
         )
     }
@@ -86,10 +84,19 @@ extension BaseTerminalController {
         moveFocusFrom oldView: Tako.SurfaceView? = nil,
         undoAction: String? = nil
     ) {
-        // Setup our new split tree
         let oldTree = surfaceTree
+        let oldSnapshot = usesFloatingCanvas ? floatingCanvas.snapshot() : nil
         surfaceTree = newTree
-        if let newView {
+        if usesFloatingCanvas {
+            if let newView, newTree.contains(newView), !isMinimizedInFloatingCanvas(newView.id) {
+                revealAndFocusFloatingPane(newView)
+            } else if newTree.isEmpty || floatingCanvas.visiblePanesSortedByZ.isEmpty {
+                focusedSurfaceDidChange(to: nil)
+                if let window {
+                    _ = window.makeFirstResponder(window)
+                }
+            }
+        } else if let newView {
             DispatchQueue.main.async {
                 Tako.moveFocus(to: newView, from: oldView)
             }
@@ -106,7 +113,16 @@ extension BaseTerminalController {
             expiresAfter: undoExpiration
         ) { target in
             target.surfaceTree = oldTree
-            if let oldView {
+            if target.usesFloatingCanvas {
+                target.floatingCanvas.loadRestoredSnapshot(
+                    oldSnapshot,
+                    for: oldTree,
+                    fallbackSize: target.estimatedFloatingCanvasSize()
+                )
+                if let oldView, !target.isMinimizedInFloatingCanvas(oldView.id) {
+                    target.revealAndFocusFloatingPane(oldView)
+                }
+            } else if let oldView {
                 DispatchQueue.main.async {
                     Tako.moveFocus(to: oldView, from: target.focusedSurface)
                 }

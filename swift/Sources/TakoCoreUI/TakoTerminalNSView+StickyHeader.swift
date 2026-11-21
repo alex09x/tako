@@ -20,10 +20,7 @@ extension TakoTerminalNSView {
         guard bounds.width > 0, bounds.height > 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        defer {
-            updateProgressBarLayout()
-            CATransaction.commit()
-        }
+        defer { CATransaction.commit() }
 
         guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
             stickyHeaderLayer.isHidden = true

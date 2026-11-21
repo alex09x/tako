@@ -32,6 +32,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 
 OUT = "target/simtest"
+# Off any external volume, where macOS would ask for access (app_locations.py).
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+import app_locations  # noqa: E402
+from simtest_results import resize_verdict, walkthrough_verdict  # noqa: E402
+DERIVED = app_locations.app_dir("ios-sim-derived")
 FIXTURE = os.path.join(OUT, "sshd")
 BUNDLE_ID = "dev.prod.takocore"
 DEVICE = os.environ.get("TAKO_SIM_DEVICE", "iPhone 17 Pro")
@@ -48,6 +53,45 @@ USER = os.environ["USER"]
 # prompt, which is the only thing standing between a password and a stranger,
 # reaches the same verdict for each of them.
 HOST_KEY_TYPES = ["ed25519", "rsa", "ecdsa"]
+TMUX_SOCKET = "tako-ui"
+REQUIRED_HOST_TOOLS = (
+    "tmux", "less", "vim", "nano", "top",
+    "seq", "sed", "awk", "head", "tail", "wc",
+)
+
+
+def find_host_tool(name):
+    search_path = ":".join([
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        os.environ.get("PATH", ""),
+        "/usr/bin",
+        "/bin",
+    ])
+    return shutil.which(name, path=search_path)
+
+
+def ensure_host_tools():
+    missing = [name for name in REQUIRED_HOST_TOOLS if not find_host_tool(name)]
+    if missing and "tmux" in missing and shutil.which("brew"):
+        run(["brew", "install", "tmux"])
+        missing = [name for name in REQUIRED_HOST_TOOLS if not find_host_tool(name)]
+    if missing:
+        sys.exit(f"missing required host tools for simtest workloads: {missing}")
+
+
+def clean_tmux_fixture():
+    tmux = find_host_tool("tmux")
+    if tmux:
+        subprocess.run([tmux, "-L", TMUX_SOCKET, "kill-server"],
+                       capture_output=True)
+    for path in (
+        "/tmp/tako-ui-less.txt",
+        "/tmp/tako-ui-vim.txt",
+        "/tmp/tako-ui-nano.txt",
+    ):
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def run(cmd, check=True, **kw):
@@ -137,6 +181,8 @@ def make_servers():
     world-readable build directory and a password written in this file, so
     they have no business being reachable from the network.
     """
+    ensure_host_tools()
+    clean_tmux_fixture()
     if os.path.isdir(FIXTURE):
         stop_servers()
         shutil.rmtree(FIXTURE)
@@ -172,7 +218,7 @@ def make_servers():
              "-E", os.path.join(os.path.dirname(cfg), "sshd.log")])
         wait_for_port(PORT + i, f"sshd/{kind}")
 
-    run(["cargo", "build", "--features", "ssh", "--example", "test_sshd"])
+    run(["mitts", "build", "--features", "ssh", "--example", "test_sshd"])
     log = open(os.path.join(FIXTURE, "test_sshd.log"), "w")
     proc = subprocess.Popen(
         ["target/debug/examples/test_sshd",
@@ -223,6 +269,7 @@ def make_servers():
 
 
 def stop_servers():
+    clean_tmux_fixture()
     for pid_file in (
         "sshd.pid", "test_sshd.pid", "test_sshd_mfa.pid", "fault_proxy.pid"
     ):
@@ -239,7 +286,7 @@ def build_and_install():
     run(["xcodebuild", "-project", "ios/TakoCore.xcodeproj", "-scheme", "TakoCore",
          "-configuration", "Debug",
          "-destination", f"platform=iOS Simulator,name={DEVICE}",
-         "-derivedDataPath", "target/ios-sim-derived", "build"])
+         "-derivedDataPath", DERIVED, "build"])
 
     # Start from a freshly booted device, not whatever an earlier run (or a
     # person at the Simulator) left behind. `simctl boot` on a device that is
@@ -252,7 +299,7 @@ def build_and_install():
     subprocess.run(["xcrun", "simctl", "boot", DEVICE], capture_output=True)
     run(["xcrun", "simctl", "bootstatus", DEVICE, "-b"])
     run(["xcrun", "simctl", "install", DEVICE,
-         "target/ios-sim-derived/Build/Products/Debug-iphonesimulator/TakoCore.app"])
+         os.path.join(DERIVED, "Build/Products/Debug-iphonesimulator/TakoCore.app")])
 
 
 def container():
@@ -336,10 +383,12 @@ BEHAVIOUR = [
         # and the window change as text. A real shell only reacts to them,
         # and a scenario that reads a reaction is a scenario that passes when
         # the size is wrong in a way the shell does not mind.
+        # The PTY may be opened at the 80x24 default or already at the laid-out
+        # size, whichever comes first; the last RESIZE must be the grid the
+        # app's core reports, and no stale 80x24 (simtest_results.resize_verdict).
         "port": "echo",
         "send": r"\x0c",
-        "expect": ["PTY xterm-256color 80x24", "RESIZE "],
-        "reject": ["RESIZE 80x24"],
+        "verdict": resize_verdict,
     },
 ]
 
@@ -534,6 +583,21 @@ def scenario(spec):
         time.sleep(0.5)
 
     if not os.path.exists(dump):
+        # Preserve the first cold-launch failure before the next scenario
+        # terminates it. Capture only this test simulator and this app's log;
+        # never upload the SSH fixture directory or its private keys.
+        diagnostics = os.path.join(out, "launch-diagnostics.log")
+        with open(diagnostics, "w") as log:
+            for label, command in (
+                ("screen", ["xcrun", "simctl", "io", DEVICE, "screenshot", os.path.join(out, "screen.png")]),
+                ("app-log", ["xcrun", "simctl", "spawn", DEVICE, "log", "show", "--style", "compact",
+                             "--last", "3m", "--predicate", 'process == "TakoCore"']),
+            ):
+                try:
+                    result = subprocess.run(command, stdout=log, stderr=log, timeout=15)
+                    log.write(f"{label} exited {result.returncode}\n")
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    log.write(f"{label}: {type(error).__name__}\n")
         return {"name": name, "why": spec["why"], "ok": False,
                 "note": "the app never wrote a dump"}
 
@@ -560,6 +624,8 @@ def scenario(spec):
     screen = text.partition("── on screen ──")[2].partition("── buffer ──")[0]
     missing = [e for e in spec.get("expect", []) if e not in text]
     missing += [e for e in spec.get("expect_on_screen", []) if e not in screen]
+    if spec.get("verdict"):
+        missing += spec["verdict"](text)
     leaked = [r for r in spec.get("reject", []) if r in text]
     wanted_status = spec.get("expect_status", "connected")
     status_ok = f"status: {wanted_status}" in text
@@ -692,7 +758,7 @@ def run_walkthrough():
          "-project", "ios/TakoCore.xcodeproj",
          "-scheme", "TakoCore",
          "-destination", f"platform=iOS Simulator,name={DEVICE}",
-         "-derivedDataPath", "target/ios-sim-derived",
+         "-derivedDataPath", DERIVED,
          "-resultBundlePath", result,
          *only,
          "TAKO_TEST_HOST=127.0.0.1",
@@ -707,24 +773,23 @@ def run_walkthrough():
          f"TAKO_TEST_FAULT_CONTROL_PORT={FAULT_CONTROL_PORT}",
          f"TAKO_TEST_KEY_PATH={key_path}"],
         capture_output=True, text=True, env=env)
+    for suffix, output in (("stdout.log", r.stdout), ("stderr.log", r.stderr)):
+        with open(os.path.join(OUT, "walkthrough-" + suffix), "w") as f:
+            f.write(output or "")
     summary_result = run(
         ["xcrun", "xcresulttool", "get", "test-results", "summary",
          "--path", result, "--compact"],
         check=False)
-    if summary_result.returncode == 0:
-        summary = json.loads(summary_result.stdout)
-        passed = summary["passedTests"]
-        failed = [failure["failureText"]
-                  for failure in summary.get("testFailures", [])]
-    else:
-        passed = 0
-        failed = [line.strip() for line in r.stdout.splitlines()
-                  if " error: " in line]
-        if r.returncode != 0 and not failed:
-            failed = [(r.stderr or r.stdout)[-2000:].strip()
-                      or "xcodebuild failed without diagnostic output"]
+    with open(os.path.join(OUT, "walkthrough-summary.json"), "w") as f:
+        f.write(summary_result.stdout or "")
+    with open(os.path.join(OUT, "walkthrough-summary.stderr.log"), "w") as f:
+        f.write(summary_result.stderr or "")
+    verdict = walkthrough_verdict(r, summary_result)
+    with open(os.path.join(OUT, "walkthrough-status.json"), "w") as f:
+        json.dump({**verdict, "build_rc": r.returncode,
+                   "summary_rc": summary_result.returncode}, f, indent=2)
     shots = export_walkthrough_screenshots(result)
-    return {"passed": passed, "failed": failed, "result": result,
+    return {**verdict, "result": result,
             "screenshots": shots}
 
 
@@ -735,6 +800,14 @@ def main():
         for spec in SCENARIOS:
             print(f"  {spec['name']:<32} {spec['why']}")
         return
+
+    # The source tree, the app's DerivedData and the fixtures' target/ (the
+    # sshd stand-ins run from there): none of them may resolve onto a volume.
+    reason = (app_locations.check_source("simtest") or app_locations.check_app(DERIVED)
+              or app_locations.check_app(OUT) or app_locations.check_app("target/debug/examples"))
+    if reason:
+        print(reason, file=sys.stderr)
+        sys.exit(3)
 
     unknown = [arg for arg in sys.argv[1:]
                if arg.startswith("-") and arg != "--keep"]

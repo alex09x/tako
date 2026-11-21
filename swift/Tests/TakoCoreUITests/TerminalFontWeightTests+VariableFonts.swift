@@ -28,16 +28,7 @@ extension TerminalFontWeightTests {
     }
 
     private func variableFixture() throws -> CTFont {
-        let names = ["STIXTwoText", "KefaIII-Regular"]
-            + (CTFontManagerCopyAvailablePostScriptNames() as? [String] ?? [])
-        for name in names {
-            let font = CTFontCreateWithName(name as CFString, 32, nil)
-            guard let axis = TerminalRenderer.Metrics.weightAxis(font), axis.min <= 400, axis.max >= 600 else { continue }
-            guard CTFontGetGlyphWithName(font, "M" as CFString) != 0 else { continue }
-            print("Variable font fixture: \(CTFontCopyPostScriptName(font)), wght \(axis.min)...\(axis.max)")
-            return font
-        }
-        throw XCTSkip("No actual system variable font with a wght range spanning 400...600; variable rendering/cache coverage unavailable")
+        try VariableFontFixture.weightVariableFont(size: 32)
     }
 
     func testVariableWeightsChangeGlyphsAndSeparateBothAtlasCaches() throws {

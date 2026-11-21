@@ -90,6 +90,58 @@ struct CrossSessionSearchTests {
         #expect(search.results.map(\.hit.matched) == ["beta"])
     }
 
+    @Test func changingTheQueryClearsMatchesForItsPrefix() async throws {
+        let terminal = core("grp-build two")
+        let tab = target(terminal, "tab")
+        let search = CrossSessionSearch()
+        search.targets = { [tab] }
+        search.debounce = .zero
+        defer { search.cancel() }
+        search.query = "grp"
+        try #require(await eventually { search.status == .done(more: false) })
+        let prefix = try #require(search.results.first?.hit)
+        #expect(prefix.matched == "grp")
+
+        // Both queries show the same excerpt, but the old match has a shorter range.
+        search.debounce = .seconds(60)
+        search.query = "grp-build"
+        #expect(terminal.searchHitIsCurrent(needle: "grp", hit: prefix))
+        #expect(!terminal.searchHitIsCurrent(needle: search.query, hit: prefix))
+        #expect(search.status == .searching)
+        #expect(search.results.isEmpty)
+
+        search.debounce = .zero
+        search.refresh()
+        try #require(await eventually { search.status == .done(more: false) })
+        #expect(search.results.map(\.hit.matched) == ["grp-build"])
+    }
+
+    @Test func closingOnePanelDoesNotCancelAnotherPanelsRefresh() async throws {
+        let terminal = core("match")
+        let tab = target(terminal, "tab")
+        let unavailable = target(core("another match"), "other tab")
+        let search = CrossSessionSearch()
+        let first = UUID()
+        let second = UUID()
+        search.targets = { [tab, unavailable] }
+        search.debounce = .zero
+        search.panelOpened(first)
+        defer {
+            search.panelClosed(first)
+            search.panelClosed(second)
+        }
+        search.query = "match"
+        try #require(await eventually { search.results.count == 2 })
+
+        terminal.feed(bytes: Data("\r\nmatch again".utf8))
+        search.targets = { [tab] }
+        search.panelOpened(second)
+        #expect(search.results.map(\.surfaceID) == [tab.surfaceID], "refresh retains only eligible excerpts")
+        search.panelClosed(first)
+
+        #expect(await eventually { search.status == .done(more: false) && search.results.count == 2 })
+    }
+
     @Test func anEmptyQueryClearsTheList() async {
         let search = CrossSessionSearch()
         search.targets = { [target(core("alpha"), "tab")] }
@@ -105,16 +157,40 @@ struct CrossSessionSearchTests {
 
     @Test func aResultInAClosedTerminalIsReportedNotShown() async throws {
         let search = CrossSessionSearch()
-        search.targets = { [] }
+        let closedTarget = target(core("x"), "tab")
+        search.targets = { [closedTarget] }
         search.debounce = .zero
-        let found = try #require(await CrossSessionSearch.search("x", in: [target(core("x"), "tab")]))
-        let gone = try #require(found.results.first)
+        defer { search.cancel() }
+        search.query = "x"
+        try #require(await eventually { search.results.count == 1 })
+        let gone = try #require(search.results.first)
+        search.targets = { [] }
 
         var selected: Bool?
         search.reveal(gone) { selected = $0 }
 
         #expect(selected == false)
         #expect(search.notice == "That terminal has been closed.")
+        #expect(search.results.isEmpty)
+    }
+
+    @Test func reopeningAfterTheLastPanelClosesDiscardsOldExcerpts() async throws {
+        let search = CrossSessionSearch()
+        let tab = target(core("previous output"), "tab")
+        let first = UUID()
+        let second = UUID()
+        search.targets = { [tab] }
+        search.debounce = .zero
+        search.panelOpened(first)
+        defer { search.panelClosed(second) }
+        search.query = "previous"
+        try #require(await eventually { search.results.count == 1 })
+        search.panelClosed(first)
+
+        search.targets = { [] }
+        search.panelOpened(second)
+        #expect(search.results.isEmpty, "the previous panel's excerpts must not remain actionable")
+        #expect(await eventually { search.status == .done(more: false) })
     }
 
     @Test func cancellingStopsAWorkerThatHasStartedScanning() async {

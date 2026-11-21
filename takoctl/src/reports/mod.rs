@@ -16,6 +16,8 @@ pub mod redact;
 pub mod review;
 pub mod session;
 pub(crate) mod theme;
+pub mod window;
+pub mod workspace;
 
 pub use control::*;
 pub use diagnostics::*;
@@ -26,6 +28,7 @@ pub use review::*;
 pub use session::*;
 
 use serde_json::Value;
+pub use workspace::workspace_report;
 
 pub fn render(cmd: &str, result: &Value) -> String {
     match cmd {
@@ -65,14 +68,14 @@ pub fn render(cmd: &str, result: &Value) -> String {
                             .filter(|p| p.get("parent").is_none() || p["parent"].is_null())
                         {
                             out += &pane_line(pane, 2);
-                            if pane["collapsed"].as_bool() != Some(true) {
-                                if let Some(children_ids) = pane["children"].as_array() {
-                                    for cid in children_ids.iter().filter_map(Value::as_str) {
-                                        if let Some(child_pane) =
-                                            panes.iter().find(|p| p["id"].as_str() == Some(cid))
-                                        {
-                                            out += &pane_line(child_pane, 3);
-                                        }
+                            if pane["collapsed"].as_bool() != Some(true)
+                                && let Some(children_ids) = pane["children"].as_array()
+                            {
+                                for cid in children_ids.iter().filter_map(Value::as_str) {
+                                    if let Some(child_pane) =
+                                        panes.iter().find(|p| p["id"].as_str() == Some(cid))
+                                    {
+                                        out += &pane_line(child_pane, 3);
                                     }
                                 }
                             }
@@ -135,6 +138,9 @@ pub fn render(cmd: &str, result: &Value) -> String {
         "history" => history_report(result),
         "triggers" => triggers_report(result),
         "activity" => activity_report(result),
+        "pane" => window::pane_report(result),
+        "window" => window::window_report(result),
+        "config" => window::config_report(result),
         _ => format!("{result}\n"),
     }
 }

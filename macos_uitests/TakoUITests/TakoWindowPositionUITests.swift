@@ -81,108 +81,9 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         XCTAssertEqual(windowFrame4.minY, windowFrame3.minY + 30, accuracy: 5, "New window should be on the bottom right")
     }
 
-    @MainActor func testDragSplitWindowPosition() async throws {
-        try updateConfig(
-            """
-            window-width = 40
-            window-height = 20
-            title = "TakoWindowPositionUITests"
-            macos-titlebar-style = hidden
-            """
-        )
-
-        let app = try takoApplication()
-        // Suppress Restoration
-        app.launchArguments += ["-NSQuitAlwaysKeepsWindows", "NO"]
-        // Clean run
-        app.launchEnvironment["TAKO_CLEAR_USER_DEFAULTS"] = "YES"
-
-        app.launch() // window in the center
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5), "New window should appear")
-
-        // remove fixed size
-        try updateConfig(
-            """
-            title = "TakoWindowPositionUITests"
-            macos-titlebar-style = hidden
-            """
-        )
-        app.typeKey(",", modifierFlags: [.command, .shift])
-
-        app.typeKey("d", modifierFlags: [.command])
-
-        let rightSplit = app.groups["Right pane"]
-        let rightFrame = rightSplit.frame
-
-        let sourcePos = rightSplit.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: rightFrame.size.width / 2, dy: 3))
-
-        let targetPos = rightSplit.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: rightFrame.size.width + 100, dy: 0))
-
-        sourcePos.click(forDuration: 0.2, thenDragTo: targetPos)
-
-        let window2 = app.windows.firstMatch
-        XCTAssertTrue(window2.waitForExistence(timeout: 5), "New window should appear")
-        let windowFrame2 = window2.frame
-
-        try await Task.sleep(for: .seconds(0.5))
-
-        XCTAssertEqual(windowFrame2.minX, rightFrame.maxX + 100, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.minY, rightFrame.minY, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.width, rightFrame.width, accuracy: 5, "New window should use size from config")
-         XCTAssertEqual(windowFrame2.height, rightFrame.height, accuracy: 5, "New window should use size from config")
-    }
-
-    @MainActor func testDragSplitWindowPositionWithFixedSize() async throws {
-        try updateConfig(
-            """
-            window-width = 40
-            window-height = 20
-            title = "TakoWindowPositionUITests"
-            macos-titlebar-style = hidden
-            """
-        )
-
-        let app = try takoApplication()
-        // Suppress Restoration
-        app.launchArguments += ["-NSQuitAlwaysKeepsWindows", "NO"]
-        // Clean run
-        app.launchEnvironment["TAKO_CLEAR_USER_DEFAULTS"] = "YES"
-
-        app.launch() // window in the center
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5), "New window should appear")
-        let windowFrame = window.frame
-
-        app.typeKey("d", modifierFlags: [.command])
-
-        let rightSplit = app.groups["Right pane"]
-        let rightFrame = rightSplit.frame
-
-        let sourcePos = rightSplit.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: rightFrame.size.width / 2, dy: 3))
-
-        let targetPos = rightSplit.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: rightFrame.size.width + 100, dy: 0))
-
-        sourcePos.click(forDuration: 0.2, thenDragTo: targetPos)
-
-        let window2 = app.windows.firstMatch
-        XCTAssertTrue(window2.waitForExistence(timeout: 5), "New window should appear")
-        let windowFrame2 = window2.frame
-
-        try await Task.sleep(for: .seconds(0.5))
-
-        XCTAssertEqual(windowFrame2.minX, rightFrame.maxX + 100, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.minY, rightFrame.minY, accuracy: 5, "New window should be target position")
-        XCTAssertEqual(windowFrame2.width, windowFrame.width, accuracy: 5, "New window should use size from config")
-        // We're still using right frame, because of the debug banner
-         XCTAssertEqual(windowFrame2.height, rightFrame.height, accuracy: 5, "New window should use size from config")
-    }
+    // The split-tree drag-handle cases (rejected drop, drag out, drag out with a fixed
+    // size) moved to TakoFloatingTerminalUITests: terminal windows use the floating
+    // canvas, where they are a header drop and Move Pane to New Window.
 
     // MARK: - Restore round-trip per titlebar style
 
@@ -270,7 +171,7 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         )
         app.typeKey(",", modifierFlags: [.command, .shift])
         try await Task.sleep(for: .seconds(0.5))
-        app.typeKey("w", modifierFlags: [.command])
+        closeOnlyWindowThroughEmptyCanvas(app)
         app.typeKey("n", modifierFlags: [.command])
 
         let newWindow = app.windows.firstMatch
@@ -317,7 +218,7 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         XCTAssertEqual(firstFrame.midX, screenFrame.midX, accuracy: 5.0, "First window should be centered horizontally")
 
         // Close the window and open a new one — it should restore the same frame.
-        app.typeKey("w", modifierFlags: [.command])
+        closeOnlyWindowThroughEmptyCanvas(app)
         app.typeKey("n", modifierFlags: [.command])
 
         let window2 = app.windows.firstMatch

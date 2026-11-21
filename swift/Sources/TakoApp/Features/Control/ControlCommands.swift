@@ -229,6 +229,8 @@ enum ControlCommands {
                 try PromptManager.shared.ask(request: request, surface: surface, reply: reply)
             case "overlay" where request.args["wait"] == .bool(true) && request.args["subcommand"] == .string("open"):
                 try overlayOpenAndWait(request, all: all, reply: reply)
+            case "window" where request.args["action"] == .string("close"):
+                try windowClose(request, all: all, reply: reply)
             default:
                 reply(handle(request, all: all))
             }
@@ -301,6 +303,15 @@ enum ControlCommands {
                 return .ok(try workspaceCommand(request, all: all))
             case "theme":
                 return .ok(try themeCommand(request, all: all))
+            case "pane":
+                return .ok(try paneCommand(request, all: all))
+            case "window":
+                guard request.args["action"] != .string("close") else {
+                    throw ControlError(.internalError, "window close is answered asynchronously")
+                }
+                return .ok(try windowCommand(request, all: all))
+            case "config":
+                return .ok(try configCommand(request, all: all))
             case "layout":
                 return .ok(try layoutCommand(request, all: all))
             case "action":

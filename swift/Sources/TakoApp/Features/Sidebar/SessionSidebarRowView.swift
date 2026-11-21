@@ -28,26 +28,24 @@ struct SessionSidebarRowView: View {
     /// No frames at all: the window is hidden or the app has been away.
     var motionPaused: Bool = false
     var onSelect: () -> Void = {}
+    var onClose: (() -> Void)? = nil
+    /// `sidebar-style`; the row's sizes come from it (`SidebarRowMetrics`).
+    var style: SidebarStyle = .classic
+    /// Grouped by status, the row shows its workspace as a dot beside the title.
+    var workspace: SidebarStatusBucket.WorkspaceBadge? = nil
+    /// `sidebar-text-size` and `sidebar-secondary-text`.
+    var textSize: SidebarTextSize = .standard
+    var secondaryText: SidebarSecondaryText = .standard
+    private var m: SidebarRowMetrics { .of(style, textScale: textSize.scale) }
 
     @ObservedObject var store = SessionSidebarStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
     /// Bumped when a state that moves once comes to rest, so the row is
     /// drawn again and its frames stop.
     @State private var restCount = 0
+    @State private var isHovering = false
 
     typealias T = Tako.LivingTokens
-
-    var isNavSelected: Bool {
-        selectedIndex == index
-    }
-
-    var isTabActive: Bool {
-        item.isSelected
-    }
-
-    var state: Tako.SurfaceState {
-        item.surfaceState
-    }
 
     private var animationKey: String { "sidebar-\(item.id)" }
 
@@ -98,11 +96,12 @@ struct SessionSidebarRowView: View {
                             reduceMotion: reduceMotion,
                             pulses: item.live?.pulses ?? 0
                         )
+                        .scaleEffect(m.ringScale)
                     }
                 case .ownLayer:
                     SidebarStatusLayerView(state: state, ringCenter: nil, cornerRadius: 0, reduceMotion: reduceMotion,
                                            paused: motionPaused, pulses: item.live?.pulses ?? 0,
-                                           ringOnly: StatusRingSize.small.rawValue)
+                                           ringOnly: StatusRingSize.small.rawValue * m.ringScale, pulseSources: item.surfaceIds)
                 case .rowLayer:
                     EmptyView()
                 }
@@ -139,41 +138,51 @@ struct SessionSidebarRowView: View {
     // MARK: - Level 1: Session Row (§5.5)
 
     private func sessionParentRow(moving: Bool) -> some View {
-        let radius: CGFloat = 7
-        let hasBorderBox1px: Bool = {
-            if state == .working || state == .offline { return true }
-            if case .progress = state { return true }
-            return false
-        }()
-        let vPad: CGFloat = hasBorderBox1px ? 7 : 6
+        // Reference A01 `.row`: 46 pt, radius 8, padding 5/5/5/3 inside a 1 pt
+        // border, title 12.5/500, meta 11 under the title (33 pt in).
+        let shape = SidebarChromeMetrics.of(style)
+        let radius = shape.rowRadius
+        let vPad = m.rowVerticalPadding
         let glowBacking: NSColor = isTabActive ? T.surfaceActive : (isNavSelected ? T.surfaceHover : T.body)
+        let second = m.showsSecondLine(for: state) ? sessionSecondLineContent : nil
 
-        return VStack(alignment: .leading, spacing: 3) {
-            // Line 1: chevron (10pt) -> gap 7 -> ring S=14 -> gap 7 -> title -> timer/"NN%" -> Ø5 unread dot
-            HStack(spacing: 7) {
+        return VStack(alignment: .leading, spacing: 2) {
+            // Line 1: chevron (10pt) -> gap -> ring S=14 -> gap -> title -> timer/"NN%" -> Ø5 unread dot
+            HStack(spacing: m.gap) {
                 if item.hasChildren {
                     Button(action: { store.toggleRowCollapsed(item) }) {
                         Text(item.isCollapsed ? "▸" : "▾")
                             .font(Font(T.monoFont(size: 9, weight: .regular)))
                             .foregroundColor(Color(nsColor: T.faint))
-                            .frame(width: 10, height: 14, alignment: .center)
+                            .frame(width: 12, height: 16, alignment: .center)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
                     .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
                 } else {
-                    Color.clear.frame(width: 10, height: 14)
+                    Color.clear.frame(width: 12, height: 16)
                 }
 
                 ring(moving: moving, painter: layered ? .rowLayer : .swiftUI)
                     .help("Status: \(item.status.rawValue)")
 
-                Text(item.title)
-                    .font(Font(T.monoFont(size: 12, weight: isTabActive ? .medium : .regular)))
-                    .foregroundColor(sessionTitleColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    SidebarRowTitle(item: item, targetWindow: targetWindow, font: m.titleFont, color: sessionTitleColor)
+                    if let workspace { workspaceBadge(workspace) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if m.inlineSecondLine, let second {
+                    Text(second.text)
+                        .font(Font(m.metaFont))
+                        .foregroundColor(second.color)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        // Up to 45% of the row; the title, flexible, takes the rest.
+                        .frame(maxWidth: 110, alignment: .trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 if let meta = item.metaDisplayText {
                     SessionSidebarMetaLabel(text: meta, style: item.metaStyle)
@@ -184,29 +193,37 @@ struct SessionSidebarRowView: View {
                         .fill(Color(nsColor: T.claw))
                         .frame(width: 5, height: 5)
                 }
-            }
-            .frame(height: 16)
 
-            // Line 2: 31pt left indent (= 10 + 7 + 14, directly under title)
-            if let secondLine = sessionSecondLineContent {
+                if isHovering, let onClose {
+                    closeRowButton(action: onClose, isChild: false)
+                }
+            }
+            .frame(height: m.titleHeight)
+
+            SidebarRenameErrorLine(item: item, targetWindow: targetWindow)
+                .padding(.leading, m.secondLineIndent)
+
+            // Line 2: under the title (33 pt in the reference = 12 + 7 + 14)
+            if !m.inlineSecondLine, let secondLine = second {
                 HStack(spacing: 6) {
                     Text(secondLine.text)
-                        .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                        .font(Font(m.metaFont))
                         .foregroundColor(secondLine.color)
                         .lineLimit(1)
                         .truncationMode(secondLine.truncation)
                     Spacer(minLength: 0)
                 }
-                .frame(height: 14)
-                .padding(.leading, 31)
+                .frame(height: m.secondLineHeight)
+                .padding(.leading, m.secondLineIndent)
             }
 
             if editingItemId == item.id || !(item.userDescription?.isEmpty ?? true) {
                 descriptionSection
-                    .padding(.leading, 31)
+                    .padding(.leading, m.secondLineIndent)
             }
         }
-        .padding(.horizontal, hasBorderBox1px ? 9 : 8)
+        .padding(.leading, shape.rowLeading)
+        .padding(.trailing, shape.rowTrailing)
         .padding(.vertical, vPad)
         // Behind the text, over the row's fill, as the glint is in the design;
         // the ring, the border, the line and the glow do not reach the text.
@@ -220,8 +237,10 @@ struct SessionSidebarRowView: View {
                         reduceMotion: reduceMotion,
                         paused: motionPaused,
                         pulses: item.live?.pulses ?? 0,
-                        progressInset: hasBorderBox1px ? 9 : 8,
-                        cometForProgress: true
+                        progressInset: 8,  // 4a `.pfill` left: 8px
+                        cometForProgress: true,
+                        pulseSources: item.surfaceIds,
+                        ringScale: m.ringScale
                     )
                 }
             }
@@ -259,7 +278,7 @@ struct SessionSidebarRowView: View {
                         cometLineWidth: 1.0,
                         showsCometForProgress: true,
                         showsBottomProgressLine: true,
-                        progressInsetLeft: hasBorderBox1px ? 9 : 8,
+                        progressInsetLeft: 8,
                         drawsDoneGlint: false,
                         now: now,
                         elapsedInState: elapsedInState,
@@ -270,28 +289,30 @@ struct SessionSidebarRowView: View {
         }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
-        .onPress(perform: onSelect)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .onHover { isHovering = $0 }
+        .onPress {
+            onSelect()
+            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)
+        }
+        .accessibilityAction(named: Text("Close Session")) { onClose?() }
+        .padding(.horizontal, m.rowMarginHorizontal)
+        .padding(.vertical, m.rowMarginVertical)
     }
 
     // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
 
     private func paneChildRow(moving: Bool) -> some View {
-        let radius: CGFloat = 6
+        let radius = m.childRadius
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
-        let vPad: CGFloat = (paneEffectState == .working) ? 5 : 4
-        let hPad: CGFloat = (paneEffectState == .working) ? 9 : 8
+        let vPad: CGFloat = m.childVerticalPadding + (paneEffectState == .working ? 1 : 0)
+        let hPad: CGFloat = m.childHorizontalPadding + (paneEffectState == .working ? 1 : 0)
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
                 ring(moving: moving, painter: layered ? .ownLayer : .swiftUI)
 
-                Text(item.title)
-                    .font(Font(T.monoFont(size: 11, weight: .regular)))
-                    .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textInactive))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                SidebarRowTitle(item: item, targetWindow: targetWindow, font: m.childFont,
+                                color: Color(nsColor: state == .offline ? T.faint : T.textInactive))
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
@@ -304,9 +325,9 @@ struct SessionSidebarRowView: View {
                         .frame(width: 5, height: 5)
                 }
 
-                if let tag = item.compactPaneTag {
+                if m.showsChildTag, let tag = item.compactPaneTag {
                     Text(tag)
-                        .font(Font(T.monoFont(size: 9.5, weight: .medium)))
+                        .font(Font(T.monoFont(size: 9.5, weight: .semibold)))
                         .foregroundColor(Color(nsColor: T.textInactive))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -314,13 +335,20 @@ struct SessionSidebarRowView: View {
                         .padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.badge)))
                 }
+
+                if isHovering, let onClose {
+                    closeRowButton(action: onClose, isChild: true)
+                }
             }
             .frame(height: 15)
 
+            SidebarRenameErrorLine(item: item, targetWindow: targetWindow)
+                .padding(.leading, 21)
+
             if let pwd = item.paneDirectoryToShow {
                 Text(Tako.formatCompactDirectory(pwd))
-                    .font(Font(T.monoFont(size: 10.5, weight: .regular)))
-                    .foregroundColor(Color(nsColor: T.dim))
+                    .font(Font(T.monoFont(size: 10.5 * textSize.scale, weight: .regular)))
+                    .foregroundColor(Color(nsColor: secondaryText.color))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.leading, 21)
@@ -332,10 +360,11 @@ struct SessionSidebarRowView: View {
             RoundedRectangle(cornerRadius: radius)
                 .fill(isNavSelected ? Color(nsColor: T.surfaceHover) : Color.clear)
         )
-        .overlay(
-            SidebarPaneTreeConnectorShape()
-                .stroke(Color(nsColor: T.badge), lineWidth: 1.0)
-        )
+        .overlay {
+            if m.showsTreeLines {
+                SidebarPaneTreeConnectorShape().stroke(Color(nsColor: T.badge), lineWidth: 1.0)
+            }
+        }
         .overlay {
             if !layered {
                 clock(moving: moving) { now, elapsedInState in
@@ -355,10 +384,14 @@ struct SessionSidebarRowView: View {
         }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
-        .onPress(perform: onSelect)
-        .padding(.leading, 36)
-        .padding(.trailing, 8)
-        .padding(.vertical, 1)
+        .onHover { isHovering = $0 }
+        .onPress {
+            onSelect()
+            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)
+        }
+        .accessibilityAction(named: Text(FloatingPaneCopy.close)) { onClose?() }
+        .padding(.leading, m.childIndent)
+        .padding(.trailing, m.rowMarginHorizontal)
+        .padding(.vertical, m.rowMarginVertical)
     }
-
 }

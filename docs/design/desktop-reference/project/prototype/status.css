@@ -1,0 +1,68 @@
+/* Tako desktop prototype — status family 1b + 5a, values from Sessions UI.dc.html */
+@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
+@property --p{syntax:'<number>';inherits:true;initial-value:0}
+
+/* ring inside every surface */
+.ring{flex:none;width:14px;height:14px;border-radius:50%;position:relative;display:inline-block;box-sizing:border-box}
+.ring.sm{width:11px;height:11px}
+.r-idle{border:1.5px solid #5A4D43}
+.r-work{background:conic-gradient(from 0deg,rgba(244,88,28,0) 0deg,#F4581C 280deg,rgba(244,88,28,0) 281deg);box-shadow:inset 0 0 0 2.5px rgba(244,88,28,.16);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));animation:spin .9s linear infinite;animation-delay:var(--ph900,0s)}
+.ring.sm.r-work{-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.1px),#000 calc(100% - 1.9px));mask:radial-gradient(farthest-side,transparent calc(100% - 2.1px),#000 calc(100% - 1.9px))}
+.r-prog{background:conic-gradient(#C23E0E 0%,#F4581C calc(var(--p)*1%),#3A2E26 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px))}
+.ring.sm.r-prog{-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.1px),#000 calc(100% - 1.9px));mask:radial-gradient(farthest-side,transparent calc(100% - 2.1px),#000 calc(100% - 1.9px))}
+.r-attn{border:2px solid #FF7A3D}
+.r-attn::before{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:#FF7A3D;animation:dotblink 1.6s ease-in-out infinite;animation-delay:var(--ph1600,0s)}
+.r-attn::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid #FF7A3D;animation:halo 1.6s ease-out infinite;animation-delay:var(--ph1600,0s)}
+.ring.sm.r-attn{border-width:1.5px}.ring.sm.r-attn::before{width:3px;height:3px;margin:-1.5px 0 0 -1.5px}.ring.sm.r-attn::after{inset:-1.5px;border-width:1.5px}
+.r-done{background:#7BD88F}
+.r-done::after{content:"";position:absolute;left:4.6px;top:2.4px;width:3px;height:6px;border-right:2px solid #14100E;border-bottom:2px solid #14100E;transform:rotate(45deg)}
+.ring.sm.r-done::after{left:3.5px;top:1.6px;width:2.4px;height:5px;border-width:0 1.6px 1.6px 0}
+.r-done.pop{animation:pop1 .7s cubic-bezier(.3,1.6,.5,1) 1}
+.r-err{background:#D54E53}
+.r-err::before{content:"";position:absolute;left:50%;top:3px;width:2px;height:5px;margin-left:-1px;border-radius:1px;background:#14100E}
+.r-err::after{content:"";position:absolute;left:50%;bottom:2.5px;width:2px;height:2px;margin-left:-1px;border-radius:1px;background:#14100E}
+.ring.sm.r-err::before{top:2.2px;height:3.8px;width:1.6px;margin-left:-.8px}.ring.sm.r-err::after{bottom:2px;width:1.6px;height:1.6px;margin-left:-.8px}
+.r-ghost{border:1.5px dashed #6B6259}
+.r-calm{border:1.5px solid rgba(244,88,28,.45)}
+.r-flow{border:1.5px solid #F4581C}
+.r-flow::after{content:"";position:absolute;inset:-1.5px;border-radius:50%;border:1.5px solid #FF7A3D;opacity:0;animation:tick 1s linear infinite;animation-delay:var(--ph1000,0s)}
+
+/* living surface: row, window, pill */
+.sweep{border-color:transparent!important;background:linear-gradient(var(--sbg),var(--sbg)) padding-box,conic-gradient(from var(--a),var(--sbg) 0 62%,#C23E0E 78%,#FF7A3D 88%,var(--sbg) 100%) border-box!important;animation:orbit 2.2s linear infinite;animation-delay:var(--ph2200,0s)}
+.glow{animation:breathe 1.6s ease-in-out infinite;animation-delay:var(--ph1600,0s)}
+.errline{box-shadow:inset 0 -2px 0 #D54E53!important}
+.fx-shim{position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:6;background:linear-gradient(100deg,transparent 30%,rgba(123,216,143,.26) 50%,transparent 70%);background-size:250% 100%;background-position:-60% 0;animation:shimOnce .9s ease-out 1 both}
+.fx-shake{animation:shake1 .4s ease-in-out 1}
+.pfill{position:absolute;left:8px;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,#C23E0E,#F4581C);transition:width .3s var(--ease)}
+.chip.c-live{color:#F4581C;box-shadow:inset 0 0 0 1px rgba(244,88,28,.3)}
+.chip.c-quiet{color:var(--dim);box-shadow:inset 0 0 0 1px var(--line2)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes orbit{to{--a:360deg}}
+@keyframes halo{0%{transform:scale(1);opacity:.75}100%{transform:scale(2.1);opacity:0}}
+@keyframes dotblink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes pop1{0%{transform:scale(1)}27%{transform:scale(.55)}64%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes shake1{0%,100%{transform:translateX(0)}14%{transform:translateX(-2px)}28%{transform:translateX(2px)}43%{transform:translateX(-2px)}57%{transform:translateX(2px)}71%{transform:translateX(-1px)}86%{transform:translateX(0)}}
+@keyframes breathe{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,122,61,.4),0 0 0 0 rgba(255,122,61,0)}50%{box-shadow:inset 0 0 0 1px rgba(255,122,61,.95),0 0 16px 1px rgba(255,122,61,.3)}}
+@keyframes shimOnce{from{background-position:120% 0}to{background-position:-60% 0}}
+@keyframes tick{0%{opacity:.95;transform:scale(1)}30%{opacity:0;transform:scale(1.7)}100%{opacity:0;transform:scale(1.7)}}
+
+/* reduce motion (system setting or the demo toggle) */
+body.rm *,body.rm *::before,body.rm *::after{animation:none!important}
+body.rm .sweep{background:var(--sbg)!important;border-color:#F4581C!important}
+body.rm .glow{box-shadow:inset 0 0 0 1px #FF7A3D,0 0 10px 0 rgba(255,122,61,.2)!important}
+body.rm .fx-shim{display:none}
+body.rm .r-flow::after{opacity:0}
+@media (prefers-reduced-motion:reduce){body:not(.motion) *{animation:none!important}}
+
+/* legend */
+.legend{position:fixed;left:20px;bottom:28px;z-index:99998;width:min(1060px,calc(100vw - 40px));background:#14100E;border-radius:12px;box-shadow:0 0 0 1px #2A211B,0 24px 60px rgba(0,0,0,.45);padding:14px 16px 16px;display:none}
+.legend.show{display:block}
+.legend h4{margin:0 0 10px;font:700 13px var(--grot);color:var(--text)}
+.legend h4 small{font:400 11px var(--mono);color:var(--dim);margin-left:8px}
+.lg{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px 14px}
+.lg-c{display:flex;flex-direction:column;gap:6px;min-width:0}
+.lg-c .row{margin:0;cursor:default}
+.lg-n{font:600 11px var(--mono);color:var(--text)}
+.lg-t{font:10.5px/1.45 var(--mono);color:var(--dim)}
+.lg-c button{align-self:flex-start;font:500 10.5px var(--mono);color:var(--claw);padding:0}

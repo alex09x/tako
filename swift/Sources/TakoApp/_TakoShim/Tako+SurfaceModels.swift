@@ -69,6 +69,11 @@ extension Tako {
     ) {
         guard let to else { return }
         let move = {
+            if let controller = BaseTerminalController.owningController(for: to),
+               controller.usesFloatingCanvas {
+                controller.revealAndFocusFloatingPane(to)
+                return
+            }
             guard let window = to.window, window.isVisible else { return }
             window.makeFirstResponder(to)
         }

@@ -44,6 +44,12 @@ extension Tako.SurfaceView {
         applyTheme(Self.scaledTheme(configured, toFontSize: clamped))
     }
 
+    /// The size the configuration asked for, before this terminal's zoom.
+    var fontBaseSize: CGFloat { (configuredTheme ?? theme).fontSize }
+
+    /// This terminal's temporary zoom: ⌘+ / ⌘− / ⌘0, never saved.
+    var fontZoomDelta: CGFloat { theme.fontSize - fontBaseSize }
+
     /// `theme` with its font size (and any explicit cell size) scaled to
     /// `target`, keeping the grid's proportions. Used both for zooming an
     /// existing surface and for seeding a new one at another surface's
@@ -63,7 +69,11 @@ extension Tako.SurfaceView {
     /// change, so it is given one at the size it already has.
     func applyTheme(_ newTheme: TerminalTheme) {
         theme = newTheme
+        refreshDrawnColors()
         setFrameSize(frame.size)
+        // A base-size edit or preview can reset zoom too. Keep its UI in sync
+        // with every actual theme application, not only the +/- shortcuts.
+        NotificationCenter.default.post(name: .takoSurfaceZoomDidChange, object: self)
         if let window {
             let host = Tako.CustomTabGroup.existingGroup(for: window)?.selectedWindow ?? window
             Tako.TabBarController.bar(for: host)?.refresh()
@@ -84,6 +94,10 @@ extension Tako.SurfaceView {
     /// holds them as base colors, which a reset returns to.
     public func resetTerminal() {
         core.reset()
+        // A reset drops a program's OSC 10/11 colours: the card follows.
+        refreshDrawnColors()
+        _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
+        applyProgramStatusEvent(.restored(programStatusSnapshot()))
         core.markAllDamaged()
         currentSearchMatch = nil
         if let needle = searchState?.needle { runSearch(needle) }

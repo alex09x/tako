@@ -1,0 +1,31 @@
+/* Tako desktop prototype — every surface reads the theme tokens (set by chrome.js from the active theme) */
+.row{--sbg:var(--bg)}
+.row:hover{background:var(--hover);--sbg:var(--hover)}
+.row.on{background:var(--card);--sbg:var(--card)}
+.kid:hover,.kid.focus{background:var(--hover)}
+.sb-search,.sg,.ssh input,.fw-hd .ren,.row .t input,.ws .nm input,.ssh .recent b{background:var(--field)}
+.ctx,.ctx .sub,.pop,.toast,.confirm,.snaphint,.empty button{background:var(--card)}
+.ctx .it:hover{background:var(--hover2)}
+.pill{background:var(--pillbg);--sbg:var(--pillbg)}
+.pill:hover{background:var(--card)}
+.r-idle{border-color:var(--deep)}
+.legend{background:var(--bg)}
+.sg button.on,.tg{background:var(--line2)}
+.ib:hover,.fb:hover,.fb.on,.wb:hover{background:var(--card)}
+.fw.focus{box-shadow:0 0 0 1px var(--deep)}
+.fw-body .c{color:var(--claw)}
+[data-tone=light] .app{box-shadow:0 0 0 1px rgba(0,0,0,.12),0 24px 60px rgba(26,21,18,.18)}
+[data-tone=light] .fw.float,[data-tone=light] .pill,[data-tone=light] .ctx,[data-tone=light] .pop,[data-tone=light] .toast{box-shadow:0 0 0 1px var(--line2),0 12px 32px rgba(26,21,18,.16)}
+[data-tone=light] .r-done::after,[data-tone=light] .r-err::before,[data-tone=light] .r-err::after{border-color:#FAF7F2;background-color:transparent}
+[data-tone=light] .r-err::before,[data-tone=light] .r-err::after{background:#FAF7F2}
+/* theme picker */
+.thg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 2px}
+.th{display:flex;flex-direction:column;gap:5px;padding:4px;border-radius:8px;text-align:left;font:500 10.5px var(--mono);color:var(--sub)}
+.th:hover{background:var(--hover2)}
+.th.on{box-shadow:inset 0 0 0 1.5px var(--claw);color:var(--text)}
+.th i{display:block;height:38px;border-radius:5px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(127,127,127,.25)}
+.th i u{position:absolute;left:0;top:0;bottom:0;width:30%}
+.th i b{position:absolute;left:36%;width:5px;height:5px;border-radius:50%}
+.th i s{position:absolute;left:36%;right:8px;height:2px;border-radius:2px;opacity:.7;text-decoration:none}
+.th em{font-style:normal;color:var(--mute);font-size:9.5px;margin-left:4px}
+.set{max-height:calc(100vh - 80px);overflow:auto;width:300px}

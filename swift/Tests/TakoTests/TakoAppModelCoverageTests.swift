@@ -112,17 +112,16 @@ struct TakoAppCoverageTests {
         #expect(NSPasteboard.general.changeCount == before)
     }
 
-    @Test func completeClipboardRequestForASurfaceViewPastesOnMain() throws {
+    @Test func completeClipboardRequestForASurfaceViewPastesOnMain() {
         let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         defer { view.close() }
 
-        Tako.App.completeClipboardRequest(view, data: "clipboard-relay-text-marker", state: nil, confirmed: true)
+        let text = "clipboard-relay-text-marker"
+        view.selfTestCapturing = true
+        Tako.App.completeClipboardRequest(view, data: text, state: nil, confirmed: true)
 
-        // This dispatches `pasteText` onto `DispatchQueue.main` rather than
-        // calling it inline -- right after the call returns, synchronously,
-        // the paste has not happened yet. `pasteText`'s own body is covered
-        // directly by `pasteTextEncodesAndWritesDirectly`.
-        #expect(!view.visibleText.contains("clipboard-relay-text-marker"))
+        // The main-actor fast path emits the paste before returning.
+        #expect(view.selfTestBytes == Array(text.utf8))
     }
 }
 
@@ -146,7 +145,13 @@ struct TakoNamespaceHelperCoverageTests {
         defer { view.close() }
         let window = NSWindow(
             contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = view
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        #expect(window.isVisible)
+        #expect(window.makeFirstResponder(window))
+        #expect(window.firstResponder === window)
 
         Tako.moveFocus(to: view)
         #expect(window.firstResponder === view)

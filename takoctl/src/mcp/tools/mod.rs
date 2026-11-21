@@ -11,6 +11,7 @@
 pub mod control;
 pub mod overlay;
 pub mod review;
+pub mod window;
 
 use serde_json::Value;
 
@@ -29,5 +30,6 @@ pub fn all_tools() -> Vec<McpTool> {
     all.extend(control::tools());
     all.extend(overlay::tools());
     all.extend(review::tools());
+    all.extend(window::tools());
     all
 }

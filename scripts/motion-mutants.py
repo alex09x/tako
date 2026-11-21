@@ -147,18 +147,43 @@ MUTANTS = [
      "        reduceMotion || waiting == 0\n", "        reduceMotion\n"),
     ("pill-deaf-to-bursts", "the tab bar hands a pill's layer its bursts",
      "swift/Sources/TakoApp/_TakoShim/Tako+TabBarWorkspace.swift",
-     "pulses: liveActivity(for: window)?.pulses ?? 0", "pulses: 0"),
+     "pulses: animState.statusShown ? liveActivity(for: window)?.pulses ?? 0 : 0,", "pulses: 0,"),
     ("row-never-pauses", "a row stands still while the sidebar is hidden", ROW,
      "                        paused: motionPaused,\n                        pulses: item.live?.pulses ?? 0,",
      "                        paused: false,\n                        pulses: item.live?.pulses ?? 0,"),
-    ("question-dim", "a waiting row asks its question in Claw", ROW,
+    ("question-dim", "a waiting row asks its question in Claw", "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowDetails.swift",
      "return (prompt, Color(nsColor: T.claw), .tail)", "return (prompt, Color(nsColor: T.dim), .tail)"),
-    ("active-bar-inside", "the active row's bar is at the sidebar's edge", ROW,
-     ".offset(x: -8)", ".offset(x: 0)"),
+    ("active-bar-visible", "an active row has no orange edge", ROW,
+     # The session row's, not the pane row's: only it closes a "Session".
+     ".overlay(keyboardSelectionBorder(cornerRadius: radius))\n"
+     "        .contentShape(Rectangle())\n"
+     "        .onHover { isHovering = $0 }\n"
+     "        .onPress {\n"
+     "            onSelect()\n"
+     "            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)\n"
+     "        }\n"
+     "        .accessibilityAction(named: Text(\"Close Session\"))",
+     ".overlay(keyboardSelectionBorder(cornerRadius: radius))\n"
+     "        .overlay(alignment: .leading) {\n"
+     "            if isTabActive {\n"
+     "                RoundedRectangle(cornerRadius: 1)\n"
+     "                    .fill(Color(nsColor: T.ember))\n"
+     "                    .frame(width: 2)\n"
+     "                    .padding(.vertical, 8)\n"
+     "                    .offset(x: -8)\n"
+     "            }\n"
+     "        }\n"
+     "        .contentShape(Rectangle())\n"
+     "        .onHover { isHovering = $0 }\n"
+     "        .onPress {\n"
+     "            onSelect()\n"
+     "            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)\n"
+     "        }\n"
+     "        .accessibilityAction(named: Text(\"Close Session\"))"),
     ("row-progress-no-comet", "a row in progress runs the comet", ROW,
      "cometForProgress: true", "cometForProgress: false"),
     ("row-line-at-edge", "a row's progress line starts 8 pt in", ROW,
-     "progressInset: hasBorderBox1px ? 9 : 8", "progressInset: 0"),
+     "progressInset: 8,  // 4a `.pfill` left: 8px", "progressInset: 0,"),
     ("overview-sixty", "the Overview takes 30 frames a second at rest", "swift/Sources/TakoApp/Features/Overview/PaneOverviewMotion.swift",
      "oneOffRemaining == nil ? 1.0 / 30.0 : nil", "oneOffRemaining == nil ? 1.0 / 60.0 : nil"),
     ("done-moves-briefly", "done moves for its glint and pop, a second", "swift/Sources/TakoApp/_TakoShim/Tako+LivingMotion.swift",
@@ -326,8 +351,6 @@ MUTANTS = [
      "            CATransaction.setDisableActions(true)\n            linkHUDLayer.isHidden = true", "            CATransaction.setDisableActions(false)\n            linkHUDLayer.isHidden = true"),
     ("underline-fades-out", "the link underline goes at once", "swift/Sources/TakoCoreUI/TakoTerminalNSView+Links.swift",
      "        CATransaction.setDisableActions(true)\n        linkUnderlineLayer.isHidden = true", "        CATransaction.setDisableActions(false)\n        linkUnderlineLayer.isHidden = true"),
-    ("progress-bar-eases", "the pane progress bar moves at once", "swift/Sources/TakoCoreUI/TakoTerminalNSView+ProgressBar.swift",
-     "        CATransaction.setDisableActions(true)\n        defer { CATransaction.commit() }\n\n        guard paneProgressBarEnabled", "        CATransaction.setDisableActions(false)\n        defer { CATransaction.commit() }\n\n        guard paneProgressBarEnabled"),
     ("progress-line-eases", "the pill's progress line moves at once", EFFECTS_LAYER,
      "        CATransaction.setDisableActions(true)\n        progressLineLayer.frame", "        CATransaction.setDisableActions(false)\n        progressLineLayer.frame"),
     ("pose-eases", "a lean is set at once", "swift/Sources/TakoApp/_TakoShim/Tako+TabStatusLayer.swift",

@@ -22,6 +22,7 @@ extension Driver {
     /// A button with this title anywhere in Tako's visible windows or sheets.
     func button(titled title: String, depth: Int = 24) -> AXUIElement? {
         let onScreen = onScreenWindows()
+        var partialMatch: AXUIElement?
         for window in (onScreen.isEmpty ? windows() : onScreen) {
             let hidden: Bool? = attribute(window, "AXHidden")
             let minimized: Bool? = attribute(window, "AXMinimized")
@@ -31,14 +32,18 @@ extension Driver {
                 let axDesc: String? = attribute(btn, kAXDescriptionAttribute)
                 let axLabel: String? = attribute(btn, "AXLabel")
                 let axId: String? = attribute(btn, "AXIdentifier")
-                if axTitle == title || axDesc == title || axLabel == title || axId == title ||
-                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true || axId?.contains(title) == true ||
-                   elementContainsText(btn, target: title, depth: 3) {
+                if axTitle == title || axDesc == title || axLabel == title || axId == title {
                     return btn
+                }
+                // A pane's "Restore Terminal" must not steal a dialog's "Restore".
+                if partialMatch == nil && (axTitle?.contains(title) == true || axDesc?.contains(title) == true ||
+                    axLabel?.contains(title) == true || axId?.contains(title) == true ||
+                    elementContainsText(btn, target: title, depth: 3)) {
+                    partialMatch = btn
                 }
             }
         }
-        return nil
+        return partialMatch
     }
 
     func clickButton(titled title: String) throws {
@@ -76,7 +81,7 @@ extension Driver {
     }
 
     func textFields() -> [String] {
-        guard let window = windows().first else { return [] }
+        guard let window = activeWindow() else { return [] }
         return descendants(of: window, role: kAXTextFieldRole as String).compactMap {
             attribute($0, kAXValueAttribute) as String?
         }
@@ -146,9 +151,11 @@ extension Driver {
     }
 
     func openMenuItem(titled title: String) -> AXUIElement? {
+        let normTitle = title.replacingOccurrences(of: "…", with: "...")
         let matching = descendants(of: axApp, role: kAXMenuItemRole as String).filter {
-            let t: String? = attribute($0, kAXTitleAttribute)
-            guard t == title || t?.starts(with: title) == true else { return false }
+            guard let raw: String = attribute($0, kAXTitleAttribute) else { return false }
+            let t = raw.replacingOccurrences(of: "…", with: "...")
+            guard t == normTitle || t.starts(with: normTitle) else { return false }
             if let sizeVal: AXValue = attribute($0, kAXSizeAttribute) {
                 var s = CGSize.zero
                 AXValueGetValue(sizeVal, .cgSize, &s)
@@ -168,158 +175,186 @@ extension Driver {
         return matching.last ?? matching.first
     }
 
+    func axFrame(_ elem: AXUIElement) -> CGRect? {
+        guard let posVal: AXValue = attribute(elem, kAXPositionAttribute),
+              let sizeVal: AXValue = attribute(elem, kAXSizeAttribute) else { return nil }
+        var pos = CGPoint.zero, size = CGSize.zero
+        AXValueGetValue(posVal, .cgPoint, &pos)
+        AXValueGetValue(sizeVal, .cgSize, &size)
+        return CGRect(origin: pos, size: size)
+    }
+
     func clickOpenMenuItem(titled title: String) throws {
         guard wait(for: { self.openMenuItem(titled: title) != nil }, timeout: 5) else {
-            let allItems = descendants(of: axApp, role: kAXMenuItemRole as String).map { (elem: AXUIElement) -> String in
+            let allItems = descendants(of: axApp, role: kAXMenuItemRole as String).filter {
+                axFrame($0).map { $0.width > 10 && $0.height > 10 } == true
+            }.map { (elem: AXUIElement) -> String in
                 let t: String = self.attribute(elem, kAXTitleAttribute) ?? "nil"
-                var s = CGSize.zero
-                if let sizeVal: AXValue = self.attribute(elem, kAXSizeAttribute) {
-                    AXValueGetValue(sizeVal, .cgSize, &s)
-                }
-                var p = CGPoint.zero
-                if let posVal: AXValue = self.attribute(elem, kAXPositionAttribute) {
-                    AXValueGetValue(posVal, .cgPoint, &p)
-                }
-                return "\(t) (\(s.width)x\(s.height) at \(p.x),\(p.y))"
+                let r = self.axFrame(elem) ?? .zero
+                return "\(t) (\(r.width)x\(r.height) at \(r.origin.x),\(r.origin.y))"
             }
             throw Failure("open menu item '\(title)' not found (found menu items: \(allItems))")
         }
         guard let item = openMenuItem(titled: title) else {
             throw Failure("open menu item '\(title)' not found")
         }
-        press(item)
-        if let itemPos: AXValue = attribute(item, kAXPositionAttribute),
-           let itemSize: AXValue = attribute(item, kAXSizeAttribute) {
-            var pos = CGPoint.zero
-            var size = CGSize.zero
-            AXValueGetValue(itemPos, .cgPoint, &pos)
-            AXValueGetValue(itemSize, .cgSize, &size)
-            let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-            try? click(at: center)
+        if let f = axFrame(item) {
+            try click(at: CGPoint(x: f.midX, y: f.midY))
+        } else {
+            throw Failure("open menu item '\(title)' has no physical frame")
         }
         usleep(500_000)
     }
 
-    func clickWorkspacePill(in window: AXUIElement? = nil) throws {
-        let win = window ?? activeWindow()
-        let roots = win.map { [$0] } ?? onScreenWindows()
-        for root in roots {
-            let candidates = descendants(of: root, role: kAXButtonRole as String)
-                + descendants(of: root, role: kAXPopUpButtonRole as String)
-            for elem in candidates {
-                if let id: String = attribute(elem, "AXIdentifier"), id == "workspace-pill" {
-                    if let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
-                       let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
-                        var pos = CGPoint.zero
-                        var size = CGSize.zero
-                        AXValueGetValue(btnPos, .cgPoint, &pos)
-                        AXValueGetValue(btnSize, .cgSize, &size)
-                        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-                        try click(at: center)
-                        usleep(600_000)
-                        return
-                    }
-                }
-            }
-            if let elem = element(withIdentifier: "workspace-pill", root: root) {
-                if let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
-                   let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
-                    var pos = CGPoint.zero
-                    var size = CGSize.zero
-                    AXValueGetValue(btnPos, .cgPoint, &pos)
-                    AXValueGetValue(btnSize, .cgSize, &size)
-                    let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-                    try click(at: center)
-                    usleep(600_000)
-                    return
-                }
-            }
-        }
-        for root in windows() {
-            if let elem = element(withIdentifier: "workspace-pill", root: root) {
-                if let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
-                   let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
-                    var pos = CGPoint.zero
-                    var size = CGSize.zero
-                    AXValueGetValue(btnPos, .cgPoint, &pos)
-                    AXValueGetValue(btnSize, .cgSize, &size)
-                    let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-                    try click(at: center)
-                    usleep(600_000)
-                    return
-                }
-            }
-        }
-        throw Failure("workspace-pill button not found in window")
-    }
-
     func clickPlusButton(in window: AXUIElement? = nil) throws {
         let win = window ?? activeWindow()
-        let roots = win.map { [$0] } ?? onScreenWindows()
-        for root in roots {
-            for elem in descendants(of: root, role: kAXButtonRole as String) {
-                if let id: String = attribute(elem, "AXIdentifier"), id == "new-tab-button" {
-                    if let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
-                       let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
-                        var pos = CGPoint.zero
-                        var size = CGSize.zero
-                        AXValueGetValue(btnPos, .cgPoint, &pos)
-                        AXValueGetValue(btnSize, .cgSize, &size)
-                        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-                        try click(at: center)
-                        usleep(1_000_000)
-                        return
+        let roots = (win.map { [$0] } ?? onScreenWindows()) + windows()
+        for id in ["SessionSidebarNewSession", "SessionSidebarHeaderNewSession"] {
+            for root in roots {
+                if let elem = element(withIdentifier: id, root: root),
+                   let f = axFrame(elem), f.width > 4, f.height > 4 {
+                    try click(at: CGPoint(x: f.midX, y: f.midY))
+                    if id == "SessionSidebarHeaderNewSession" {
+                        try clickOpenMenuItem(titled: "New Session")
                     }
+                    usleep(1_000_000)
+                    return
                 }
             }
         }
-        throw Failure("new-tab-button not found in window")
+        throw Failure("SessionSidebarNewSession button not found in window")
+    }
+
+    static func filterActiveWorkspaceRows<T>(
+        headers: [(id: String, isActive: Bool, y: CGFloat)],
+        rows: [(id: String, elem: T, pos: CGPoint)],
+        allowedPaneIds: Set<String>? = nil
+    ) -> [T] {
+        let sortedHeaders = headers.sorted { $0.y < $1.y }
+        var scoped = rows.sorted { $0.pos.y == $1.pos.y ? $0.pos.x < $1.pos.x : $0.pos.y < $1.pos.y }
+        if let idx = sortedHeaders.firstIndex(where: \.isActive) {
+            let minY = sortedHeaders[idx].y
+            let maxY = (idx + 1 < sortedHeaders.count) ? sortedHeaders[idx + 1].y : .greatestFiniteMagnitude
+            scoped = scoped.filter { $0.pos.y > minY && $0.pos.y < maxY }
+        } else if let firstInactive = sortedHeaders.first {
+            scoped = scoped.filter { $0.pos.y < firstInactive.y }
+        }
+        if let allowed = allowedPaneIds {
+            scoped = scoped.filter {
+                allowed.contains(String($0.id.dropFirst("session-tab-".count)).lowercased())
+            }
+        }
+        return scoped.map(\.elem)
+    }
+
+    private func activeGroupPaneIds(selectedRowId: String?) -> Set<String>? {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        guard let js = try? exec("\(ctl) tree --json"), let data = js.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let wins = ((obj["result"] as? [String: Any]) ?? obj)["windows"] as? [[String: Any]] else { return nil }
+        let selectedKey = selectedRowId.map { String($0.dropFirst("session-tab-".count)).lowercased() }
+        for w in wins {
+            let tabs = (w["tabs"] as? [[String: Any]]) ?? []
+            let panes = tabs.flatMap { ($0["panes"] as? [[String: Any]]) ?? [] }
+            let tabIds = tabs.flatMap { [($0["stableTabId"] as? String), ($0["id"] as? String)].compactMap { $0?.lowercased() } }
+            let ids = Set(panes.compactMap { ($0["id"] as? String)?.lowercased() } + tabIds)
+            let hasFocused = panes.contains { ($0["focused"] as? Bool) == true }
+                || (panes.isEmpty && tabs.contains { ($0["selected"] as? Bool) == true })
+            if let sel = selectedKey, ids.contains(sel) { return ids }
+            if selectedKey == nil && hasFocused { return ids }
+        }
+        return []
+    }
+
+    private func sidebarSessionRows(in window: AXUIElement? = nil) -> [AXUIElement] {
+        let win = window ?? activeWindow()
+        let onScreen = onScreenWindows()
+        let roots = win.map { [$0] } ?? (onScreen.isEmpty ? windows() : onScreen)
+        for root in roots {
+            var headersById: [String: (isActive: Bool, y: CGFloat, area: CGFloat)] = [:]
+            var rowsById: [String: (elem: AXUIElement, pos: CGPoint, isSelected: Bool, area: CGFloat)] = [:]
+            func walk(_ node: AXUIElement, depth: Int) {
+                if let id: String = attribute(node, "AXIdentifier"),
+                   let posVal: AXValue = attribute(node, kAXPositionAttribute),
+                   let sizeVal: AXValue = attribute(node, kAXSizeAttribute) {
+                    var pos = CGPoint.zero, size = CGSize.zero
+                    AXValueGetValue(posVal, .cgPoint, &pos)
+                    AXValueGetValue(sizeVal, .cgSize, &size)
+                    let area = size.width * size.height
+                    if size.width > 10 && size.height > 10 {
+                        let val = (attribute(node, kAXValueAttribute) as String?) ?? ""
+                        if id.hasPrefix("SessionSidebarWorkspace-"), headersById[id].map({ area > $0.area }) ?? true {
+                            headersById[id] = (val == "active", pos.y, area)
+                        } else if id.hasPrefix("session-tab-"), rowsById[id].map({ area > $0.area }) ?? true {
+                            rowsById[id] = (node, pos, val == "selected", area)
+                        }
+                    }
+                }
+                guard depth > 0 else { return }
+                for child in (attribute(node, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+                    walk(child, depth: depth - 1)
+                }
+            }
+            walk(root, depth: 28)
+            if !rowsById.isEmpty {
+                let selectedId = rowsById.first(where: { $0.value.isSelected })?.key
+                let allowed = onScreen.count > 1 ? (activeGroupPaneIds(selectedRowId: selectedId) ?? []) : nil
+                return Self.filterActiveWorkspaceRows(
+                    headers: headersById.map { ($0.key, $0.value.isActive, $0.value.y) },
+                    rows: rowsById.map { ($0.key, $0.value.elem, $0.value.pos) },
+                    allowedPaneIds: allowed
+                )
+            }
+        }
+        return []
     }
 
     func tabElement(index: Int, in window: AXUIElement? = nil) -> AXUIElement? {
-        let win = window ?? activeWindow()
-        let targetId = "tab-\(index)"
-        let roots = win.map { [$0] } ?? onScreenWindows()
-        for root in roots {
-            for elem in descendants(of: root, role: kAXRadioButtonRole as String) {
-                if let id: String = attribute(elem, "AXIdentifier"), id == targetId {
-                    return elem
-                }
-            }
-        }
-        return nil
+        let rows = sidebarSessionRows(in: window)
+        return rows.indices.contains(index) ? rows[index] : nil
     }
 
     func tabClickPoint(index: Int, in window: AXUIElement? = nil) throws -> CGPoint {
-        guard let tab = tabElement(index: index, in: window) else {
-            throw Failure("tab-\(index) accessibility element not found")
+        let rows = sidebarSessionRows(in: window)
+        guard rows.indices.contains(index) else {
+            throw Failure("session-tab[\(index)] accessibility element not found in active workspace/group (matched \(rows.count) rows)")
         }
-        guard let tabPos: AXValue = attribute(tab, kAXPositionAttribute),
-              let tabSize: AXValue = attribute(tab, kAXSizeAttribute) else {
-            throw Failure("cannot get frame for tab-\(index)")
+        guard let f = axFrame(rows[index]) else {
+            throw Failure("cannot get frame for session-tab[\(index)]")
         }
-        var pos = CGPoint.zero
-        var size = CGSize.zero
-        AXValueGetValue(tabPos, .cgPoint, &pos)
-        AXValueGetValue(tabSize, .cgSize, &size)
-        return CGPoint(x: pos.x + min(25, size.width / 3), y: pos.y + size.height / 2)
+        return CGPoint(x: f.origin.x + min(40, f.width / 3), y: f.midY)
     }
 
     func clickTab(index: Int, in window: AXUIElement? = nil) throws {
         let clickPoint = try tabClickPoint(index: index, in: window)
+        if ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" {
+            let root = window ?? activeWindow()
+            let viewports = root.flatMap { element(withIdentifier: "SessionSidebar", root: $0) }.map {
+                descendants(of: $0, role: kAXScrollAreaRole as String).compactMap(axFrame)
+            } ?? []
+            print("tab click geometry: index=\(index), rows=\(sidebarSessionRows(in: window).map { String(describing: axFrame($0)) }), scroll viewports=\(viewports)")
+            traceClick(at: clickPoint, expected: window ?? activeWindow(),
+                       target: tabElement(index: index, in: window))
+        }
         try click(at: clickPoint)
         usleep(600_000)
     }
 
     func tabCount() -> Int {
-        guard let window = windows().first else { return 0 }
-        let groups = descendants(of: window, role: kAXTabGroupRole as String)
-        let tabs = groups.flatMap { descendants(of: $0, role: kAXRadioButtonRole as String, depth: 2) }
-        return max(tabs.count, 1)
+        guard !windows().isEmpty else { return 0 }
+        return max(sidebarSessionRows().count, 1)
     }
 
     func paintedTabDot(index: Int, in window: AXUIElement? = nil) -> String? {
         guard let tab = tabElement(index: index, in: window) else { return nil }
+        if let help: String = attribute(tab, kAXHelpAttribute), help.hasPrefix("dot:") {
+            return help
+        }
+        for child in (attribute(tab, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            if let help: String = attribute(child, kAXHelpAttribute), help.hasPrefix("dot:") {
+                return help
+            }
+        }
         return attribute(tab, kAXHelpAttribute)
     }
 

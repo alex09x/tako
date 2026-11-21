@@ -91,7 +91,38 @@ fn test_resume_report_rendering() {
 }
 
 #[test]
+fn test_input_rejects_unsupported_automation_permissions() {
+    for action in [
+        "allow-automation",
+        "disallow-automation",
+        "confirm-automation",
+    ] {
+        for target in [None, Some("pane-a")] {
+            let mut argv = vec!["input".into(), action.into()];
+            if let Some(target) = target {
+                argv.extend(["--target".into(), target.into()]);
+            }
+            let error = parse(&argv)
+                .err()
+                .expect("unsupported input action accepted");
+            assert_eq!(
+                error,
+                format!(
+                    "unknown input action \"{action}\"; use lock, unlock, takeover, handback, status, or log"
+                )
+            );
+        }
+    }
+}
+
+#[test]
 fn test_input_subcommands_and_options_parsed_and_rendered() {
+    for action in ["lock", "unlock", "takeover", "handback", "status", "log"] {
+        let opts = parse(&["input".into(), action.into()]).unwrap();
+        assert_eq!(opts.cmd, "input");
+        assert_eq!(opts.args["subcommand"], action);
+    }
+
     let opts_lock = parse(&[
         "input".into(),
         "lock".into(),

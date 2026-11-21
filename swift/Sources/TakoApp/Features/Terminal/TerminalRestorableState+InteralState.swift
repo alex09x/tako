@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 
 extension TerminalRestorableState {
@@ -16,6 +26,7 @@ extension TerminalRestorableState {
         let tabColor: TerminalTabColor?
         let titleOverride: String?
         let tabIdentifier: String?
+        let floatingCanvas: FloatingCanvasSnapshot?
 
         init(
             focusedSurface: String?,
@@ -23,7 +34,8 @@ extension TerminalRestorableState {
             effectiveFullscreenMode: FullscreenMode? = nil,
             tabColor: TerminalTabColor? = nil,
             titleOverride: String? = nil,
-            tabIdentifier: String? = nil
+            tabIdentifier: String? = nil,
+            floatingCanvas: FloatingCanvasSnapshot? = nil
         ) {
             self.focusedSurface = focusedSurface
             self.surfaceTree = surfaceTree
@@ -31,6 +43,7 @@ extension TerminalRestorableState {
             self.tabColor = tabColor
             self.titleOverride = titleOverride
             self.tabIdentifier = tabIdentifier
+            self.floatingCanvas = floatingCanvas
         }
     }
 }
@@ -44,7 +57,8 @@ extension TerminalRestorableState.InternalState where ViewType == Tako.SurfaceVi
             effectiveFullscreenMode: controller.fullscreenStyle?.fullscreenMode,
             tabColor: (controller.window as? TerminalWindow)?.tabColor,
             titleOverride: controller.titleOverride,
-            tabIdentifier: controller.window?.stableTabIdentifier
+            tabIdentifier: controller.window?.stableTabIdentifier,
+            floatingCanvas: controller.usesFloatingCanvas ? controller.floatingCanvas.snapshot() : nil
         )
     }
 }

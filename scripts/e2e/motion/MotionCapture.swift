@@ -50,7 +50,13 @@ final class RegionRecorder: NSObject, SCStreamOutput {
         self.scale = scale
     }
 
+    /// Every buffer the stream handed over, by its frame status: a recording
+    /// with no complete frames says why.
+    private(set) var statuses: [Int: Int] = [:]
+
     func stream(_ s: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
+        let raw = (CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first?[.status] as? Int ?? -1
+        lock.lock(); statuses[raw, default: 0] += 1; lock.unlock()
         guard type == .screen,
               let info = (CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first,
               let status = (info[.status] as? Int).flatMap(SCFrameStatus.init(rawValue:)), status == .complete,
@@ -92,6 +98,9 @@ func machMs(_ t: UInt64) -> Double { Double(t) * Double(timebase.numer) / Double
 /// are ms from the moment `action` started.
 func record(bundleID: String, area: CGRect, regions: [(String, CGRect)], seconds: Double,
             action: @escaping () -> Void) async throws -> [Frame] {
+    if ProcessInfo.processInfo.environment["MOTION_CAPTURE"] == "cg" {
+        return try await recordByPolling(area: area, regions: regions, seconds: seconds, action: action)
+    }
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     guard let display = content.displays.first(where: { $0.frame.contains(CGPoint(x: area.midX, y: area.midY)) }),
           let app = content.applications.first(where: { $0.bundleIdentifier == bundleID }) else {
@@ -109,12 +118,90 @@ func record(bundleID: String, area: CGRect, regions: [(String, CGRect)], seconds
     let stream = SCStream(filter: SCContentFilter(display: display, including: [app], exceptingWindows: []), configuration: config, delegate: nil)
     try stream.addStreamOutput(recorder, type: .screen, sampleHandlerQueue: DispatchQueue(label: "motion.frames", qos: .userInteractive))
     try await stream.startCapture()
-    try await Task.sleep(nanoseconds: 300_000_000)
+    // A baseline frame before the action, not a guess at when the stream is up.
+    let deadline = Date().addingTimeInterval(2)
+    while recorder.take(since: 0).isEmpty && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+    guard !recorder.take(since: 0).isEmpty else {
+        try? await stream.stopCapture()
+        throw MotionError("no frame from ScreenCaptureKit in 2 s (buffers by status \(recorder.statuses)): no baseline before the action")
+    }
+    try await Task.sleep(nanoseconds: 100_000_000)
     let mark = mach_absolute_time()
     action()
     try await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
     try await stream.stopCapture()
-    return recorder.take(since: mark)
+    let frames = recorder.take(since: mark)
+    if ProcessInfo.processInfo.environment["MOTION_DEBUG"] != nil {
+        print("capture: \(frames.count) complete frames, buffers by status \(recorder.statuses), area \(area), display \(display.frame)")
+    }
+    return frames
+}
+
+/// MOTION_CAPTURE=cg: the screen under `area`, every app's windows as
+/// composited, grabbed as fast as the window server answers (~190 a second
+/// for 800x760 points, at 1x). For when ScreenCaptureKit hands over no
+/// buffers at all and says nothing, as a stuck capture session leaves it.
+/// Frames are stamped when grabbed, so cadence is approximate.
+func recordByPolling(area: CGRect, regions: [(String, CGRect)], seconds: Double,
+                     action: @escaping () -> Void) async throws -> [Frame] {
+    typealias Grab = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+    guard let sym = dlsym(dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_NOW), "CGWindowListCreateImage")
+    else { throw MotionError("no CGWindowListCreateImage on this system") }
+    let grab = unsafeBitCast(sym, to: Grab.self)
+    let local = regions.map { ($0.0, $0.1.offsetBy(dx: -area.minX, dy: -area.minY)) }
+    func crops(_ image: CGImage) -> [String: Crop] {
+        let w = image.width, h = image.height
+        var data = Data(count: w * h * 4)
+        data.withUnsafeMutableBytes { raw in
+            let info = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            if let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: info) {
+                ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            }
+        }
+        let scale = CGFloat(w) / area.width
+        var out: [String: Crop] = [:]
+        for (name, r) in local {
+            let x0 = max(0, Int(r.minX * scale)), y0 = max(0, Int(r.minY * scale))
+            let x1 = min(w, Int(r.maxX * scale)), y1 = min(h, Int(r.maxY * scale))
+            guard x1 > x0, y1 > y0 else { continue }
+            var c = Data(capacity: (x1 - x0) * (y1 - y0) * 4)
+            for y in y0..<y1 { c.append(data[(y * w + x0) * 4 ..< (y * w + x1) * 4]) }
+            out[name] = Crop(width: x1 - x0, height: y1 - y0, scale: scale, bytes: c)
+        }
+        return out
+    }
+    // Grabbing starts first; the action waits for a frame grabbed before it
+    // (a baseline), and for 100 ms of them, so a flash right after it is seen.
+    final class Shared { let lock = NSLock(); var shots: [(t: UInt64, image: CGImage)] = []; var end = UInt64.max }
+    let shared = Shared()
+    let done = DispatchSemaphore(value: 0)
+    Thread {
+        while true {
+            shared.lock.lock(); let end = shared.end; shared.lock.unlock()
+            if mach_absolute_time() >= end { break }
+            if let image = grab(area, 1 /* on screen only */, 0, 0)?.takeRetainedValue() {
+                shared.lock.lock(); shared.shots.append((mach_absolute_time(), image)); shared.lock.unlock()
+            }
+        }
+        done.signal()
+    }.start()
+    func grabbed() -> Int { shared.lock.lock(); defer { shared.lock.unlock() }; return shared.shots.count }
+    let deadline = Date().addingTimeInterval(2)
+    while grabbed() == 0 && Date() < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+    guard grabbed() > 0 else {
+        shared.lock.lock(); shared.end = 0; shared.lock.unlock(); done.wait()
+        throw MotionError("no frame grabbed in 2 s: no baseline before the action")
+    }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let mark = mach_absolute_time()
+    shared.lock.lock(); shared.end = mark + UInt64(seconds * 1e9 * Double(timebase.denom) / Double(timebase.numer)); shared.lock.unlock()
+    action()
+    try await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
+    done.wait()
+    let shots = shared.shots
+    // Converted after, so grabbing is all the loop does.
+    return shots.map { Frame(ms: machMs($0.t) - machMs(mark), crops: crops($0.image)) }
 }
 
 struct MotionError: Error, CustomStringConvertible {

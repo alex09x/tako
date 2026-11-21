@@ -29,7 +29,8 @@ extension TakoTerminalNSView: NSTextInputClient {
         if let markedText {
             return NSRange(location: (markedText as NSString).length, length: 0)
         }
-        return NSRange(location: NSNotFound, length: 0)
+        let length = core.selectedText().map { ($0 as NSString).length } ?? 0
+        return NSRange(location: 0, length: length)
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -48,7 +49,7 @@ extension TakoTerminalNSView: NSTextInputClient {
     }
 
     public func validAttributesForMarkedText() -> [NSAttributedString.Key] {
-        [.underlineStyle, .markedClauseSegment]
+        []
     }
 
     public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
@@ -125,7 +126,7 @@ extension TakoTerminalNSView: NSTextInputClient {
     }
 
     public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        let viewRect = Self.inputMethodViewRect(
+        var viewRect = Self.inputMethodViewRect(
             cursorCol: Int(core.cursorCol()),
             cursorRow: Int(core.cursorRow()),
             cols: cols,
@@ -135,6 +136,8 @@ extension TakoTerminalNSView: NSTextInputClient {
             range: range,
             gridOrigin: CGPoint(x: gridLayout.left, y: gridLayout.top)
         )
+        // Candidate windows need a visible anchor even at an insertion point.
+        viewRect.size.width = max(viewRect.width, cellWidth)
         let winRect = convert(viewRect, to: nil)
         guard let window else { return winRect }
         return window.convertToScreen(winRect)

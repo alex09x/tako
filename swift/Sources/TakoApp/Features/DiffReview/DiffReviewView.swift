@@ -51,9 +51,19 @@ struct DiffReviewView: View {
     }
 
     var body: some View {
+        // Git's synchronous process wait can drain the run loop. Resolve the
+        // content before GeometryReader enters its layout graph update.
+        let detail = selectedFileDetail
+        // Negotiate the overlay's size independently of the split's intrinsic
+        // minimums, including on insertion and comment-driven identity changes.
+        return GeometryReader { geometry in
+            review(size: geometry.size, detail: detail)
+        }
+    }
+
+    private func review(size: CGSize, detail: DiffFileDetail?) -> some View {
         VStack(spacing: 0) {
-            // Header Bar
-            headerBar
+            headerBar(compact: size.width < 700)
 
             Divider()
                 .background(Color.white.opacity(0.15))
@@ -76,18 +86,25 @@ struct DiffReviewView: View {
                 .background(Color.green.opacity(0.15))
             }
 
-            // Split: Left File List, Right Diff Viewer
-            HSplitView {
-                // File List Sidebar
-                fileListSidebar
-                    .frame(minWidth: 180, idealWidth: 220, maxWidth: 320)
-
-                // Unified Diff Viewer
-                diffContentView
-                    .frame(minWidth: 350, maxWidth: .infinity)
+            if size.width >= 531 {
+                HSplitView {
+                    fileListSidebar
+                        .frame(minWidth: 180, idealWidth: 220, maxWidth: 320)
+                    diffContentView(detail: detail)
+                        .frame(minWidth: 350, maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    fileListSidebar
+                        .frame(height: min(120, size.height * 0.25))
+                    Divider()
+                    diffContentView(detail: detail)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(width: size.width, height: size.height, alignment: .top)
         .background(Color(nsColor: NSColor(cgColor: theme?.background ?? CGColor(gray: 0.1, alpha: 1.0)) ?? .windowBackgroundColor))
         .cornerRadius(6)
         .overlay(
@@ -102,103 +119,111 @@ struct DiffReviewView: View {
 
     // MARK: - Header Bar
 
-    private var headerBar: some View {
-        HStack(spacing: 8) {
-            // Type badge
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 11, weight: .bold))
-                Text("DIFF REVIEW")
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(Color.blue.opacity(0.2))
-            .foregroundColor(.blue)
-            .cornerRadius(4)
-
-            // Task / Branch info
-            Text(currentSession.taskName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.primary)
-
-            Text("(\(currentSession.baseBranch) ... HEAD)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
-
-            // Files count and stats
-            let totalAdds = currentSession.files.reduce(0) { $0 + $1.additions }
-            let totalDels = currentSession.files.reduce(0) { $0 + $1.deletions }
-            Text("\(currentSession.files.count) file(s)")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-
-            if totalAdds > 0 || totalDels > 0 {
+    private func headerBar(compact: Bool) -> some View {
+        let layout = compact
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            HStack(spacing: 8) {
                 HStack(spacing: 4) {
-                    Text("+\(totalAdds)").foregroundColor(.green)
-                    Text("-\(totalDels)").foregroundColor(.red)
-                }
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            }
-
-            Spacer()
-
-            // Comments badge
-            let commentCount = currentSession.comments.count
-            if commentCount > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "bubble.left.fill")
-                        .font(.system(size: 10))
-                    Text("\(commentCount)")
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("DIFF REVIEW")
                         .font(.system(size: 10, weight: .bold))
                 }
                 .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.25))
-                .foregroundColor(.orange)
-                .cornerRadius(10)
-            }
-
-            // Send Feedback Button
-            Button(action: {
-                sendFeedback()
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 10))
-                    Text("Send Feedback (\(commentCount))")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(commentCount > 0 ? Color.accentColor : Color.gray.opacity(0.3))
-                .foregroundColor(.white)
+                .background(Color.blue.opacity(0.2))
+                .foregroundColor(.blue)
                 .cornerRadius(4)
-            }
-            .buttonStyle(.plain)
-            .disabled(commentCount == 0)
-            .accessibilityIdentifier("SendFeedbackButton")
-            .accessibilityLabel("Send Feedback (\(commentCount))")
-            .accessibilityAction {
-                sendFeedback()
-            }
-            .help("Send batched comments to agent pane")
 
-            // Close button
-            Button(action: {
-                dismiss()
-            }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
+                Text(currentSession.taskName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text("(\(currentSession.baseBranch) ... HEAD)")
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("ReviewCloseButton")
-            .accessibilityLabel("Close Review")
-            .accessibilityAction {
-                dismiss()
+
+            HStack(spacing: 8) {
+                let totalAdds = currentSession.files.reduce(0) { $0 + $1.additions }
+                let totalDels = currentSession.files.reduce(0) { $0 + $1.deletions }
+                Text("\(currentSession.files.count) file(s)")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                if totalAdds > 0 || totalDels > 0 {
+                    HStack(spacing: 4) {
+                        Text("+\(totalAdds)").foregroundColor(.green)
+                        Text("-\(totalDels)").foregroundColor(.red)
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                }
+
+                Spacer()
+
+                // Comments badge
+                let commentCount = currentSession.comments.count
+                if commentCount > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "bubble.left.fill")
+                            .font(.system(size: 10))
+                        Text("\(commentCount)")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.25))
+                    .foregroundColor(.orange)
+                    .cornerRadius(10)
+                }
+
+                // Send Feedback Button
+                Button(action: {
+                    sendFeedback()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 10))
+                        Text("Send Feedback (\(commentCount))")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(commentCount > 0 ? Color.accentColor : Color.gray.opacity(0.3))
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .disabled(commentCount == 0)
+                .accessibilityIdentifier("SendFeedbackButton")
+                .accessibilityLabel("Send Feedback (\(commentCount))")
+                .accessibilityAction {
+                    sendFeedback()
+                }
+                .help("Send batched comments to agent pane")
+
+                // Close button
+                Button(action: {
+                    dismiss()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ReviewCloseButton")
+                .accessibilityLabel("Close Review")
+                .accessibilityAction {
+                    dismiss()
+                }
+                .help("Close Review (Esc)")
             }
-            .help("Close Review (Esc)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -273,9 +298,9 @@ struct DiffReviewView: View {
 
     // MARK: - Diff Content View
 
-    private var diffContentView: some View {
+    private func diffContentView(detail: DiffFileDetail?) -> some View {
         Group {
-            if let detail = selectedFileDetail {
+            if let detail {
                 ScrollView([.horizontal, .vertical], showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(detail.hunks) { hunk in

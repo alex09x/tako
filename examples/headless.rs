@@ -20,7 +20,7 @@
 //! this runs it — and vttest, and anything else — without a display, a
 //! window server, or a human.
 //!
-//!     cargo run --example headless -- [--rows N] [--cols N]
+//!     mitts run --example headless -- [--rows N] [--cols N]
 //!                                     [--dump FILE] [--quiet] -- PROGRAM ARGS...
 //!
 //! On exit the child's status is this process's status, so a test runner can

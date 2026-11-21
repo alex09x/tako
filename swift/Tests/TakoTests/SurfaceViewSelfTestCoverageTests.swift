@@ -110,38 +110,100 @@ struct SurfaceViewSelfTestCoverageTests {
         #expect(report.contains("shift+1"))
     }
 
-    /// The frame self-test's verdict: nil until the red block is drawn,
-    /// then ok when the grid starts inside the padding and FAIL when it was
-    /// drawn over it.
-    @Test func frameCheckFindsTheGridInsideItsPadding() {
+    /// A 100x60 BGRA frame: red in each of `reds`, a dark background elsewhere.
+    private func selfTestFrame(red reds: [CGRect]) -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: 100 * 60 * 4)
+        for y in 0..<60 {
+            for x in 0..<100 {
+                let i = (y * 100 + x) * 4
+                let inside = reds.contains { $0.contains(CGPoint(x: x, y: y)) }
+                pixels[i] = inside ? 0 : 14        // B
+                pixels[i + 1] = inside ? 0 : 16    // G
+                pixels[i + 2] = inside ? 220 : 20  // R
+                pixels[i + 3] = 255
+            }
+        }
+        return pixels
+    }
+
+    private func frameCheck(_ pixels: [UInt8], padding: CGFloat,
+                            _ color: TerminalTheme.WindowPaddingColor) -> String? {
         let cell = CGSize(width: 10, height: 20)
         let layout = TerminalGridLayout(
             viewSize: CGSize(width: 100, height: 60), cellSize: cell,
-            padding: TerminalPadding(uniform: 10), balance: false)
-        func frame(red: CGRect) -> [UInt8] {
-            var pixels = [UInt8](repeating: 0, count: 100 * 60 * 4)
-            for y in 0..<60 {
-                for x in 0..<100 {
-                    let i = (y * 100 + x) * 4
-                    let inside = red.contains(CGPoint(x: x, y: y))
-                    pixels[i] = inside ? 0 : 14        // B
-                    pixels[i + 1] = inside ? 0 : 16    // G
-                    pixels[i + 2] = inside ? 220 : 20  // R
-                    pixels[i + 3] = 255
-                }
-            }
-            return pixels
-        }
-        func check(_ pixels: [UInt8]) -> String? {
-            Tako.frameCheck(pixels: pixels, width: 100, height: 60, scale: 1, layout: layout, cell: cell)
-        }
-        #expect(check(frame(red: .zero)) == nil, "no red block yet: keep waiting")
-        let inside = check(frame(red: CGRect(x: 10, y: 10, width: 40, height: 20)))
+            padding: TerminalPadding(uniform: padding), balance: false)
+        return Tako.frameCheck(pixels: pixels, width: 100, height: 60, scale: 1, layout: layout,
+                               cell: cell, paddingColor: color)
+    }
+
+    /// The frame self-test's verdict: nil until the red block is drawn, then
+    /// ok when the four red cells start at the grid's edge and the margins are
+    /// filled as `window-padding-color` says, FAIL when the block is drawn
+    /// over the margin or a margin shows the wrong colour.
+    @Test func frameCheckFindsTheGridInsideItsPaddingWithABackgroundMargin() {
+        #expect(frameCheck(selfTestFrame(red: []), padding: 10, .background) == nil, "no red block yet: keep waiting")
+        let inside = frameCheck(selfTestFrame(red: [CGRect(x: 10, y: 10, width: 40, height: 20)]),
+                                padding: 10, .background)
         #expect(inside?.contains("FAIL") == false)
-        let overPadding = check(frame(red: CGRect(x: 0, y: 0, width: 60, height: 40)))
-        #expect(overPadding?.contains("FAIL left padding") == true)
-        #expect(overPadding?.contains("FAIL top padding") == true)
-        #expect(check([1, 2, 3]) == nil, "a short buffer is not a frame")
+        let overPadding = frameCheck(selfTestFrame(red: [CGRect(x: 0, y: 0, width: 60, height: 40)]),
+                                     padding: 10, .background)
+        #expect(overPadding?.contains("FAIL left margin is the background") == true)
+        #expect(overPadding?.contains("FAIL top margin is the background") == true)
+        #expect(overPadding?.contains("FAIL the block ends four cells in") == true)
+        #expect(Tako.frameCheck(pixels: [1, 2, 3], width: 100, height: 60, scale: 1,
+                                layout: TerminalGridLayout(viewSize: .zero, cellSize: .zero,
+                                                           padding: TerminalPadding(uniform: 0), balance: false),
+                                cell: .zero) == nil, "a short buffer is not a frame")
+    }
+
+    /// `extend`, the default: the margin beside the grid repeats the edge
+    /// cell, the margin above it stays the background (the block's row has
+    /// default-background cells), and the block's end still places the grid.
+    @Test func frameCheckAcceptsTheExtendedMarginAndStillPlacesTheGrid() {
+        let block = CGRect(x: 10, y: 10, width: 40, height: 20)
+        let extended = CGRect(x: 0, y: 10, width: 10, height: 20)
+        let ok = frameCheck(selfTestFrame(red: [block, extended]), padding: 10, .extend)
+        #expect(ok?.contains("FAIL") == false, "\(ok ?? "nil")")
+        #expect(ok?.contains("ok   left margin repeats the edge cell") == true)
+        // A margin left as the background where `extend` should have repeated the cell.
+        let unextended = frameCheck(selfTestFrame(red: [block]), padding: 10, .extend)
+        #expect(unextended?.contains("FAIL left margin repeats the edge cell") == true)
+        // The grid drawn 6 pt into the margin: the margin is red either way,
+        // but red now stops 6 pt early.
+        let shifted = frameCheck(selfTestFrame(red: [CGRect(x: 4, y: 10, width: 40, height: 20),
+                                                     CGRect(x: 0, y: 10, width: 4, height: 20)]),
+                                 padding: 10, .extend)
+        #expect(shifted?.contains("FAIL the block ends four cells in") == true)
+        // extend-always repeats the edge row above the grid too.
+        let always = frameCheck(selfTestFrame(red: [block, extended, CGRect(x: 10, y: 0, width: 40, height: 10)]),
+                                padding: 10, .extendAlways)
+        #expect(always?.contains("FAIL") == false, "\(always ?? "nil")")
+    }
+
+    /// The hosted CI's frame (run 43781688685): the 6 pt command-mark gutter
+    /// and no top padding, 8x18 cells, the default `extend`. The gutter
+    /// repeats the red edge cell, as the renderer's own tests require.
+    @Test func frameCheckPassesTheHostedCIGutterFrame() {
+        let cell = CGSize(width: 8, height: 18)
+        let layout = TerminalGridLayout(
+            viewSize: CGSize(width: 100, height: 60), cellSize: cell,
+            padding: TerminalPadding(left: 6, right: 0, top: 0, bottom: 0), balance: false)
+        #expect(layout.left == 6 && layout.top == 0)
+        let pixels = selfTestFrame(red: [CGRect(x: 0, y: 0, width: 6 + 32, height: 18)])
+        let report = Tako.frameCheck(pixels: pixels, width: 100, height: 60, scale: 1, layout: layout,
+                                     cell: cell, paddingColor: .extend)
+        #expect(report?.contains("FAIL") == false, "\(report ?? "nil")")
+        #expect(report?.contains("ok   left margin repeats the edge cell") == true)
+        #expect(report?.contains("--   no top margin (0 pt)") == true)
+    }
+
+    /// No padding: the hosted CI's real case had no top margin at all, and
+    /// a check of the pixels above the grid would sample the grid itself.
+    @Test func frameCheckSaysWhenThereIsNoMarginToCheck() {
+        let report = frameCheck(selfTestFrame(red: [CGRect(x: 0, y: 0, width: 40, height: 20)]), padding: 0, .extend)
+        #expect(report?.contains("FAIL") == false, "\(report ?? "nil")")
+        #expect(report?.contains("--   no left margin (0 pt)") == true)
+        #expect(report?.contains("--   no top margin (0 pt)") == true)
     }
 
     @Test func writePNGSavesTheFrameAsAnImage() throws {

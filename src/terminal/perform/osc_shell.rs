@@ -31,6 +31,7 @@ impl Terminal {
                 if action == b'A' {
                     if !continuation {
                         self.command_prompt_started();
+                        self.on_program_status_prompt_mark();
                         self.events.push(TerminalEvent::PromptMark);
                     } else if self.last_prompt_line.is_none()
                         && self.active == ScreenBuffer::Primary
@@ -54,6 +55,7 @@ impl Terminal {
                     .any(|p| p.windows(3).any(|w| w == b"k=s"));
                 if !secondary && !continuation {
                     self.command_prompt_started();
+                    self.on_program_status_prompt_mark();
                     self.events.push(TerminalEvent::PromptMark);
                 } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
                     self.last_prompt_line = Some(self.cursor_absolute_line());

@@ -282,6 +282,16 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
             "--window" => {
                 args.insert("window".into(), Value::String(value("--window")?));
             }
+            "--into" => {
+                args.insert("into".into(), Value::String(value("--into")?));
+            }
+            "--state" => {
+                let state = super::window::pane_state(&value("--state")?)?;
+                args.insert("state".into(), Value::String(state));
+            }
+            "--frame" => {
+                args.insert("frame".into(), super::window::frame(&value("--frame")?)?);
+            }
             "--styled" => {
                 args.insert("styled".into(), Value::Bool(true));
             }
@@ -325,12 +335,10 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
         args.insert("target".into(), pane);
     }
 
-    if !bundle_id_explicit && socket.is_none() {
-        if client.is_none() {
-            client = std::env::var("TAKO_CLIENT_ID")
-                .or_else(|_| std::env::var("TAKO_CLIENT"))
-                .ok();
-        }
+    if !bundle_id_explicit && socket.is_none() && client.is_none() {
+        client = std::env::var("TAKO_CLIENT_ID")
+            .or_else(|_| std::env::var("TAKO_CLIENT"))
+            .ok();
     }
 
     dispatch_and_validate(&cmd, &mut args, &mut positional, dashdash)?;

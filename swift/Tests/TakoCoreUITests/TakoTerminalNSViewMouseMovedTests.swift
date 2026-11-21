@@ -32,8 +32,9 @@ final class MouseMovedSpyView: NSView {
 
 /// Tests for TakoTerminalNSView.mouseMoved(with:) event routing.
 ///
-/// The expected reports name cells counted from the view's corner, so these
-/// views have no padding; where the grid sits is TerminalGridLayoutTests'.
+/// These views have no theme padding, but command marks are on by default and
+/// keep a 6 pt gutter left of the grid (CommandMarkGutterTests), so the
+/// expected column is counted from where the grid really starts.
 ///
 /// Verifies that mouseMoved dispatches report bytes to the delegate when mouse reporting
 /// is enabled and suppresses forwarding to super.mouseMoved when the motion is consumed,
@@ -51,6 +52,15 @@ final class TakoTerminalNSViewMouseMovedTests: XCTestCase {
             reports.append("\u{1b}" + comp)
         }
         return reports
+    }
+
+    /// The 1-based SGR column of a point `x` points from the view's left edge:
+    /// the grid starts after the default command-mark gutter, which this
+    /// requires to be in effect so the expectation cannot silently lose it.
+    @MainActor func sgrColumn(_ x: CGFloat, in view: TakoTerminalNSView,
+                              file: StaticString = #filePath, line: UInt = #line) -> Int {
+        XCTAssertEqual(view.gridLayout.left, TakoTerminalNSView.commandMarkGutter, "the default gutter", file: file, line: line)
+        return Int(((x - view.gridLayout.left) / view.cellWidth).rounded(.down)) + 1
     }
 
     // MARK: - (a) Mouse Reporting OFF
@@ -129,8 +139,9 @@ final class TakoTerminalNSViewMouseMovedTests: XCTestCase {
             let reports = parseSGRReports(delegate.inputDataReceived)
             XCTAssertEqual(reports.count, 1)
             guard reports.count == 1 else { return }
-            // Cell (col 6, row 3) 0-based -> 1-based col 7, row 4. Button code: 3 (none) + 32 (motion) = 35.
-            XCTAssertEqual(reports[0], "\u{1b}[<35;7;4M")
+            // Row 3 0-based -> 4; the column counts from the grid, after the gutter.
+            // Button code: 3 (none) + 32 (motion) = 35.
+            XCTAssertEqual(reports[0], "\u{1b}[<35;\(sgrColumn(50, in: view));4M")
 
             // Assert spy superview received zero events because motion was consumed
             XCTAssertEqual(spy.receivedEvents.count, 0)

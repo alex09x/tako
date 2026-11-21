@@ -11,13 +11,21 @@
 # pinned Zig, and prints the path of the result.
 #
 #   scripts/build-zmx.sh
+#   scripts/build-zmx.sh --legacy-test-runtime  # compatibility fixture only
 #
-# Only packaging calls this (scripts/build-macapp.py with TAKO_WITH_ZMX=1, and
-# release builds): ordinary checks never fetch Zig or zmx. The result is
+# Packaging and explicit protocol-compatibility checks call this; ordinary
+# checks never fetch Zig or zmx. The result is
 # cached under target/ by commit, Zig version and build options, so a second
 # call does nothing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+legacy_test_runtime=0
+if [ "${1:-}" = --legacy-test-runtime ] && [ "$#" -eq 1 ]; then
+    legacy_test_runtime=1
+elif [ "$#" -ne 0 ]; then
+    echo 'usage: build-zmx.sh [--legacy-test-runtime]' >&2
+    exit 2
+fi
 [ -s patches/zmx/0003-guarded-attach-and-kill.patch ] &&
     grep -q -- '--create-only' patches/zmx/0003-guarded-attach-and-kill.patch || {
     echo "[build-zmx] guarded session protocol patch is required" >&2
@@ -31,23 +39,35 @@ ZIG_VERSION=0.16.0
 ZIG_TARBALL=zig-aarch64-macos-$ZIG_VERSION.tar.xz
 ZIG_SHA256=b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489
 OPTIMIZE=ReleaseSafe
+GUARDED_PROTOCOL=3
+runtime_cache=target/zmx
+source_suffix=""
+selected_patches=(patches/zmx/*.patch)
+if [ "$legacy_test_runtime" -eq 1 ]; then
+    # The previously shipped two-patch runtime cannot acknowledge guarded
+    # operations. Keep its binary and mutable source outside production caches.
+    GUARDED_PROTOCOL=0
+    runtime_cache=target/zmx-legacy-test
+    source_suffix=-legacy-test
+    selected_patches=(patches/zmx/0001-kill-foreground-pgrp.patch patches/zmx/0002-unwrap-vt-formatter.patch)
+fi
 
 PATCH_KEY=""
 if [ -d "patches/zmx" ]; then
     patches=$(ls patches/zmx/*.patch 2>/dev/null || true)
     if [ -n "$patches" ]; then
-        PATCH_HASH=$(cat patches/zmx/*.patch | shasum -a 256 | cut -c1-16)
+        PATCH_HASH=$(cat "${selected_patches[@]}" | shasum -a 256 | cut -c1-16)
         PATCH_KEY="-patch$PATCH_HASH"
     fi
 fi
 
 KEY="$ZMX_COMMIT$PATCH_KEY-zig$ZIG_VERSION-$OPTIMIZE-aarch64-macos"
-OUT="target/zmx/$KEY"
+OUT="$runtime_cache/$KEY"
 # A cache entry is the executable, the record of where it came from and the
 # notices that must ship with it -- all of them or it is not used.
 complete() {
     [ -x "$1/zmx" ] && [ -s "$1/source.json" ] && [ -s "$1/LICENSE-zmx" ] && [ -s "$1/LICENSE-ghostty" ] &&
-        grep -q '"guardedProtocol":3' "$1/source.json"
+        grep -q "\"guardedProtocol\":$GUARDED_PROTOCOL}" "$1/source.json"
 }
 if complete "$OUT"; then
     echo "$OUT/zmx"
@@ -77,7 +97,7 @@ if [ ! -x "$ZIG_DIR/zig" ]; then
 fi
 
 # The source at exactly the pinned commit.
-SRC="target/zmx-src/$ZMX_COMMIT"
+SRC="target/zmx-src/$ZMX_COMMIT$source_suffix"
 if [ ! -d "$SRC/.git" ]; then
     log "fetching zmx $ZMX_VERSION ($ZMX_COMMIT)"
     rm -rf "$SRC"
@@ -96,7 +116,7 @@ git -C "$SRC" checkout -f FETCH_HEAD -q
 git -C "$SRC" clean -fd -q
 root="$(pwd)"
 if [ -d "patches/zmx" ]; then
-    for patch in patches/zmx/*.patch; do
+    for patch in "${selected_patches[@]}"; do
         [ -f "$patch" ] || continue
         log "applying patch $(basename "$patch")"
         git -C "$SRC" apply "$root/$patch"
@@ -118,15 +138,15 @@ ghostty_license="$SRC/zig-pkg/$ghostty_hash/LICENSE"
 
 # The whole entry is assembled aside and renamed into place in one step: a
 # run interrupted half way never leaves something the cache check accepts.
-stage="target/zmx/.$KEY.$$"
+stage="$runtime_cache/.$KEY.$$"
 rm -rf "$stage"
 mkdir -p "$stage"
 cp "$prefix/bin/zmx" "$stage/zmx"
 chmod 0755 "$stage/zmx"
 cp "$SRC/LICENSE" "$stage/LICENSE-zmx"
 cp "$ghostty_license" "$stage/LICENSE-ghostty"
-printf '{"name":"zmx","version":"%s","commit":"%s","zig":"%s","optimize":"%s","ghostty":"%s","guardedProtocol":3}\n' \
-    "$ZMX_VERSION" "$ZMX_COMMIT" "$ZIG_VERSION" "$OPTIMIZE" "$ghostty_hash" > "$stage/source.json"
+printf '{"name":"zmx","version":"%s","commit":"%s","zig":"%s","optimize":"%s","ghostty":"%s","guardedProtocol":%s}\n' \
+    "$ZMX_VERSION" "$ZMX_COMMIT" "$ZIG_VERSION" "$OPTIMIZE" "$ghostty_hash" "$GUARDED_PROTOCOL" > "$stage/source.json"
 complete "$stage" || { log "incomplete runtime entry"; exit 1; }
 rm -rf "$OUT"
 mv "$stage" "$OUT"

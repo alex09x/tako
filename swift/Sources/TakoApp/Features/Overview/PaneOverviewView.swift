@@ -167,27 +167,8 @@ struct PaneOverviewView: View {
 
             PaneOverviewSearchField(filterText: $store.filterText, isInteractive: nowOverride == nil)
 
-            // Summary chips on right (gap 6): "N need you" (attn), "N working" (work), "N panes" (idle)
-            HStack(spacing: 6) {
-                if waitingCount > 0 {
-                    Button(action: { toggleStatusFilter(.needsYou) }) {
-                        LivingStatusChipView(status: .needsApproval, customLabel: "\(waitingCount) need you")
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if workingCount > 0 {
-                    Button(action: { toggleStatusFilter(.working) }) {
-                        LivingStatusChipView(status: .working, customLabel: "\(workingCount) working")
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Button(action: { store.statusFilter = nil; store.filterText = "" }) {
-                    LivingStatusChipView(status: .idle, customLabel: "\(store.items.count) panes")
-                }
-                .buttonStyle(.plain)
-            }
+            PaneOverviewSummaryChips(store: store, waitingCount: waitingCount,
+                                     workingCount: workingCount, toggleStatusFilter: toggleStatusFilter)
         }
         .frame(height: 30)
         .padding(.horizontal, 18)

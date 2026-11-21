@@ -226,14 +226,18 @@ final class TerminalFontConfigNSViewTests: XCTestCase {
         let plainWidth = view.cellWidth
         view.setFrameSize(NSSize(width: 600, height: 200))
         try await settle()
+        // No theme padding, but the default command-mark gutter keeps 6 pt
+        // left of the grid: the columns fill what is left of the 600 pt.
+        XCTAssertEqual(view.effectivePadding.left, TakoTerminalNSView.commandMarkGutter)
+        let gridWidth = 600 - view.effectivePadding.left - view.effectivePadding.right
         let plainCols = view.cols
-        XCTAssertEqual(plainCols, Int(600 / plainWidth))
+        XCTAssertEqual(plainCols, Int(gridWidth / plainWidth))
 
         view.theme = wider
         view.setFrameSize(NSSize(width: 600, height: 200))
         try await settle()
         XCTAssertEqual(view.cellWidth, (plainWidth * 1.5).rounded())
-        XCTAssertEqual(view.cols, Int(600 / view.cellWidth))
+        XCTAssertEqual(view.cols, Int(gridWidth / view.cellWidth))
         XCTAssertLessThan(view.cols, plainCols)
         if let metal = view.metalRenderer {
             XCTAssertEqual(metal.planner.metrics.cellWidth, view.cellWidth)

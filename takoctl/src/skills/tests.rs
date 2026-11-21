@@ -14,7 +14,9 @@ use std::fs;
 #[test]
 fn test_adapters_list_and_match() {
     let adapters = all_adapters();
-    assert_eq!(adapters.len(), 4);
+    assert_eq!(adapters.len(), 6);
+    assert!(find_adapter("qwen").is_some());
+    assert!(find_adapter("muse").is_some());
     assert!(find_adapter("claude").is_some());
     assert!(find_adapter("claude-code").is_some());
     assert!(find_adapter("gemini").is_some());
@@ -52,7 +54,8 @@ fn test_skill_install_and_uninstall_lifecycle() {
 
 #[test]
 fn test_skill_install_preserves_backup_on_overwrite() {
-    let temp_dir = std::env::temp_dir().join(format!("tako-skills-bak-test-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("tako-skills-bak-test-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let skill_file = temp_dir.join("SKILL.md");
     let skill_str = skill_file.to_string_lossy().to_string();
@@ -81,7 +84,8 @@ fn test_skill_install_preserves_backup_on_overwrite() {
 #[test]
 #[cfg(unix)]
 fn test_uninstall_rejects_symlink_and_preserves_target() {
-    let temp_dir = std::env::temp_dir().join(format!("tako-skills-symlink-test-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("tako-skills-symlink-test-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let target_file = temp_dir.join("critical-secret.txt");
     let initial_secret = "TOP SECRET CONFIG DO NOT OVERWRITE\n";
@@ -98,10 +102,16 @@ fn test_uninstall_rejects_symlink_and_preserves_target() {
 
     assert!(res.is_err(), "uninstall must return Err on symlink");
     let err_msg = res.unwrap_err();
-    assert!(err_msg.contains("symlink"), "error message must mention symlink: {err_msg}");
+    assert!(
+        err_msg.contains("symlink"),
+        "error message must mention symlink: {err_msg}"
+    );
 
     let content = fs::read_to_string(&target_file).expect("read target");
-    assert_eq!(content, initial_secret, "target file must not be modified or truncated");
+    assert_eq!(
+        content, initial_secret,
+        "target file must not be modified or truncated"
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
@@ -109,7 +119,10 @@ fn test_uninstall_rejects_symlink_and_preserves_target() {
 #[test]
 #[cfg(unix)]
 fn test_install_rejects_symlink_and_preserves_target() {
-    let temp_dir = std::env::temp_dir().join(format!("tako-skills-inst-symlink-test-{}", std::process::id()));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "tako-skills-inst-symlink-test-{}",
+        std::process::id()
+    ));
     let _ = fs::create_dir_all(&temp_dir);
     let target_file = temp_dir.join("system-target.txt");
     let initial_data = "SYSTEM DATA\n";
@@ -123,10 +136,16 @@ fn test_install_rejects_symlink_and_preserves_target() {
 
     assert!(res.is_err(), "install must return Err on symlink");
     let err_msg = res.unwrap_err();
-    assert!(err_msg.contains("symlink"), "error message must mention symlink: {err_msg}");
+    assert!(
+        err_msg.contains("symlink"),
+        "error message must mention symlink: {err_msg}"
+    );
 
     let content = fs::read_to_string(&target_file).expect("read target");
-    assert_eq!(content, initial_data, "target file must not be modified or truncated");
+    assert_eq!(
+        content, initial_data,
+        "target file must not be modified or truncated"
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
@@ -149,7 +168,13 @@ fn an_agent_is_present_when_its_directory_is() {
 #[test]
 fn skills_install_all_parses_without_an_agent() {
     use crate::cli::parse;
-    let opts = parse(&["skills".into(), "install".into(), "--all".into(), "--yes".into()]).unwrap();
+    let opts = parse(&[
+        "skills".into(),
+        "install".into(),
+        "--all".into(),
+        "--yes".into(),
+    ])
+    .unwrap();
     assert_eq!(opts.args["all"], true);
     assert!(opts.args.get("agent").is_none());
     assert!(parse(&["skills".into(), "install".into()]).is_err());

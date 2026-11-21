@@ -319,4 +319,21 @@ extension TerminalRendererCoverageTests {
         // extend-always: above and below regardless.
         assertColorApprox(render(.extendAlways, row: mixed).pixel(atX: top.x, logicalY: top.y), red)
     }
+
+    func testZeroInsetSoftwareRenderingFillsFractionalCellEdges() {
+        let size = CGSize(width: 24, height: 28)
+        let metrics = TerminalRenderer.Metrics(fontSize: 13, fontName: "Menlo", cellWidth: 10, cellHeight: 20)
+        let renderer = TerminalRenderer(metrics: metrics, defaultBackground: srgb(r: 20, g: 16, b: 14))
+        let layout = TerminalGridLayout(viewSize: size, cellSize: CGSize(width: 10, height: 20),
+                                        padding: TerminalPadding(uniform: 0), balance: false)
+        let ctx = BitmapContext(width: 24, height: 28)
+        let red: (UInt8, UInt8, UInt8) = (200, 0, 0)
+        renderer.drawWindow(in: ctx.context, windowSize: size, layout: layout, paddingColor: .extend,
+            cols: 2, rows: 1, rowProvider: { _ in [self.makeCell(bg: red), self.makeCell(bg: red)] },
+            cursorRow: 0, cursorCol: 0, cursorVisible: false,
+            cursorStyle: FfiCursorStyle(shape: .block, blinking: false))
+        assertColorApprox(ctx.pixel(atX: 23, logicalY: 0), red)
+        assertColorApprox(ctx.pixel(atX: 23, logicalY: 14), red)
+        assertColorApprox(ctx.pixel(atX: 0, logicalY: 0), red)
+    }
 }

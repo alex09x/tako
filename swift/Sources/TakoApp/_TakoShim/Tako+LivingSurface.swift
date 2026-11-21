@@ -13,23 +13,52 @@ import Combine
 import CoreText
 import SwiftUI
 
+extension Notification.Name {
+    /// The shell switched between its light and dark scheme (`app-appearance`).
+    static let takoShellSchemeDidChange = Notification.Name("TakoShellSchemeDidChange")
+}
+
 extension Tako {
     /// Canonical shared design tokens for Style 1b ("Living Surface") across Pill Tabs, Session Sidebar, and Pane Overview (§0).
     enum LivingTokens {
-        static let body = NSColor(srgbRed: 0x14 / 255, green: 0x10 / 255, blue: 0x0E / 255, alpha: 1)
-        static let chrome = NSColor(srgbRed: 0x1A / 255, green: 0x15 / 255, blue: 0x12 / 255, alpha: 1)
-        static let surfaceActive = NSColor(srgbRed: 0x24 / 255, green: 0x1C / 255, blue: 0x16 / 255, alpha: 1)
-        static let surfaceHover = NSColor(srgbRed: 0x1F / 255, green: 0x19 / 255, blue: 0x15 / 255, alpha: 1)
-        static let hairline = NSColor(srgbRed: 0x2A / 255, green: 0x21 / 255, blue: 0x1B / 255, alpha: 1)
-        static let badge = NSColor(srgbRed: 0x35 / 255, green: 0x2B / 255, blue: 0x23 / 255, alpha: 1)
-        static let ghostBorder = NSColor(srgbRed: 0x3A / 255, green: 0x2F / 255, blue: 0x27 / 255, alpha: 1)
+        /// The shell scheme (`app-appearance`), set by DesktopPresentation.
+        /// Shell roles below resolve against it whenever they are drawn; the
+        /// terminal theme and NSApplication.appearance are never involved.
+        nonisolated(unsafe) static var isLight = false
+
+        /// A shell role, both values from the frozen reference's shell
+        /// (docs/design/desktop-reference tokens-dark / tokens-light):
+        /// body --bg, chrome --field, surfaceActive --card, surfaceHover
+        /// --hover, hairline --line, badge --line2, ghostBorder
+        /// --deep, text/textActive --text, textInactive --sub, faint --mute.
+        private static func shell(_ dark: UInt32, _ light: UInt32) -> NSColor {
+            let d = rgb(dark), l = rgb(light)
+            return NSColor(name: nil) { _ in isLight ? l : d }
+        }
+
+        private static func rgb(_ v: UInt32) -> NSColor {
+            NSColor(srgbRed: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255,
+                    blue: CGFloat(v & 255) / 255, alpha: 1)
+        }
+
+        static let body = shell(0x100D0B, 0xEFEDE7)
+        static let chrome = shell(0x120F0D, 0xF6F4EE)
+        static let surfaceActive = shell(0x231F1D, 0xEAE7E2)
+        static let surfaceHover = shell(0x1A1715, 0xE5E3DD)
+        static let hairline = shell(0x24211E, 0xD9D7D1)
+        static let badge = shell(0x312E2B, 0xCDCBC5)
+        static let ghostBorder = shell(0x4E4A46, 0xB7B4AF)
+        /// Status colours are the same in every scheme.
         static let ringIdle = NSColor(srgbRed: 0x5A / 255, green: 0x4D / 255, blue: 0x43 / 255, alpha: 1)
+        /// Part of the status ring, not the shell: the reference's `.r-prog`
+        /// track is a literal #3A2E26 in every scheme (status.css).
         static let progressTrack = NSColor(srgbRed: 0x3A / 255, green: 0x2E / 255, blue: 0x26 / 255, alpha: 1)
-        static let textActive = NSColor(srgbRed: 0xFA / 255, green: 0xF7 / 255, blue: 0xF2 / 255, alpha: 1)
-        static let text = NSColor(srgbRed: 0xED / 255, green: 0xE6 / 255, blue: 0xDF / 255, alpha: 1)
-        static let textInactive = NSColor(srgbRed: 0xB7 / 255, green: 0xAC / 255, blue: 0xA1 / 255, alpha: 1)
+        static let textActive = shell(0xEDE6DF, 0x262320)
+        static let text = shell(0xEDE6DF, 0x262320)
+        static let textInactive = shell(0xB1ABA6, 0x5C5A56)
+        /// Also the idle status colour (tab-status-color-idle default): constant.
         static let dim = NSColor(srgbRed: 0x8A / 255, green: 0x7F / 255, blue: 0x76 / 255, alpha: 1)
-        static let faint = NSColor(srgbRed: 0x6B / 255, green: 0x62 / 255, blue: 0x59 / 255, alpha: 1)
+        static let faint = shell(0x686460, 0x9F9C97)
         static let ember = NSColor(srgbRed: 0xF4 / 255, green: 0x58 / 255, blue: 0x1C / 255, alpha: 1)
         static let claw = NSColor(srgbRed: 0xFF / 255, green: 0x7A / 255, blue: 0x3D / 255, alpha: 1)
         static let rust = NSColor(srgbRed: 0xC2 / 255, green: 0x3E / 255, blue: 0x0E / 255, alpha: 1)
@@ -41,6 +70,8 @@ extension Tako {
         static let wsPurple = NSColor(srgbRed: 0xB2 / 255, green: 0x94 / 255, blue: 0xBB / 255, alpha: 1)
         static let wsYellow = NSColor(srgbRed: 0xF0 / 255, green: 0xC6 / 255, blue: 0x74 / 255, alpha: 1)
         static let wsTeal = NSColor(srgbRed: 0x8A / 255, green: 0xBE / 255, blue: 0xB7 / 255, alpha: 1)
+        /// The reference's seventh workspace colour (sidebar.js WS_COLORS).
+        static let wsBlue = NSColor(srgbRed: 0x81 / 255, green: 0xA2 / 255, blue: 0xBE / 255, alpha: 1)
 
         static func workspaceColor(for name: String?) -> NSColor {
             switch name?.lowercased() {
@@ -49,49 +80,11 @@ extension Tako {
             case "orange": return claw
             case "purple": return wsPurple
             case "yellow": return wsYellow
+            // «blue» is the stored default and has always been drawn teal (Spec 1b: no
+            // systemBlue); the reference's blue is its own key.
+            case "steel": return wsBlue
             default: return wsTeal
             }
-        }
-
-        private static let didRegisterFonts: Bool = {
-            var fontDirs: [URL] = []
-            if let resURL = Bundle.main.resourceURL {
-                fontDirs.append(resURL.appendingPathComponent("fonts"))
-                fontDirs.append(resURL)
-            }
-            let srcFontsURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/fonts")
-            fontDirs.append(srcFontsURL)
-            for dir in fontDirs {
-                guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-                for item in items where ["ttf", "otf"].contains(item.pathExtension.lowercased()) {
-                    CTFontManagerRegisterFontsForURL(item as CFURL, .process, nil)
-                }
-            }
-            return true
-        }()
-
-        nonisolated(unsafe) private static var monoCache: [Int: NSFont] = [:]
-
-        static func monoFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-            _ = didRegisterFonts
-            let key = Int(size * 10) * 100 + Int((weight.rawValue + 1.0) * 10)
-            if let cached = monoCache[key] { return cached }
-            let candidates: [String]
-            switch weight {
-            case .bold, .heavy, .black: candidates = ["JetBrainsMonoNF-Bold", "JetBrainsMono-SemiBold"]
-            case .semibold: candidates = ["JetBrainsMono-SemiBold", "JetBrainsMono-Medium"]
-            case .medium: candidates = ["JetBrainsMono-Medium", "JetBrainsMonoNF-Regular"]
-            default: candidates = ["JetBrainsMonoNF-Regular"]
-            }
-            let font = candidates.lazy.compactMap { NSFont(name: $0, size: size) }.first ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-            monoCache[key] = font
-            return font
-        }
-
-        static func headerFont(size: CGFloat, weight: Font.Weight = .bold) -> Font {
-            _ = didRegisterFonts
-            let name = (weight == .medium || weight == .regular) ? "SpaceGrotesk-Medium" : "SpaceGrotesk-Bold"
-            return NSFont(name: name, size: size) != nil ? .custom(name, fixedSize: size) : .system(size: size, weight: weight)
         }
     }
 }
@@ -103,6 +96,11 @@ final class LivingAnimationState: ObservableObject {
 
     @Published private(set) var reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @Published private(set) var isOccludedOrIdle: Bool = false
+    /// `status-show`: false draws every status indicator calm (idle). Tracking,
+    /// unread and counters are not touched; only what is drawn changes.
+    @Published private(set) var statusShown = true
+    /// `status-animate`: false draws the same colours without motion.
+    @Published private(set) var statusAnimates = true
 
     private var entries: [String: (state: Tako.SurfaceState, enteredAt: Date)] = [:]
 
@@ -140,6 +138,25 @@ final class LivingAnimationState: ObservableObject {
 
     var isTimelinePaused: Bool {
         reduceMotion || isOccludedOrIdle
+    }
+
+    /// The state an indicator draws for a tracked `state`.
+    func displayedStatus(_ state: Tako.SurfaceState) -> Tako.SurfaceState {
+        statusShown ? state : .idle
+    }
+
+    /// Whether status layers use their static variant: Reduce Motion, or
+    /// `status-animate = false`.
+    func statusRests(reduceMotion: Bool) -> Bool {
+        reduceMotion || !statusAnimates
+    }
+
+    /// Applies the desktop status settings; the tab rings learn of it on a redraw.
+    func applyStatusPreferences(_ preferences: DesktopPreferences) {
+        guard statusShown != preferences.showsStatus || statusAnimates != preferences.animatesStatus else { return }
+        statusShown = preferences.showsStatus
+        statusAnimates = preferences.animatesStatus
+        Tako.TabBarController.refreshAll()
     }
 
     /// Where the windows and the Reduce Motion setting are read from: the
@@ -373,27 +390,4 @@ struct StatusRingView: View {
         .scaleEffect(popScale)
         .offset(x: shakeX)
     }
-
-    private func checkmarkShape(in d: CGFloat) -> Path {
-        let s = d / 14.0
-        var path = Path()
-        path.move(to: CGPoint(x: 4.0 * s, y: 7.2 * s))
-        path.addLine(to: CGPoint(x: 6.1 * s, y: 9.3 * s))
-        path.addLine(to: CGPoint(x: 10.0 * s, y: 5.0 * s))
-        return path
-    }
-
-    private func exclamationShape(in d: CGFloat) -> Path {
-        var path = Path()
-        if d >= 18 {
-            path.addRoundedRect(in: CGRect(x: 8, y: 4, width: 2, height: 6), cornerSize: CGSize(width: 1, height: 1))
-            path.addRoundedRect(in: CGRect(x: 8, y: 12.5, width: 2, height: 2), cornerSize: CGSize(width: 1, height: 1))
-        } else {
-            let s = d / 14.0
-            path.addRoundedRect(in: CGRect(x: 6 * s, y: 3 * s, width: 2 * s, height: 5 * s), cornerSize: CGSize(width: 1, height: 1))
-            path.addRoundedRect(in: CGRect(x: 6 * s, y: 9.5 * s, width: 2 * s, height: 2 * s), cornerSize: CGSize(width: 1, height: 1))
-        }
-        return path
-    }
 }
-

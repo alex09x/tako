@@ -23,10 +23,13 @@ struct MotionSidebarLookTests {
         let row = SessionSidebarRowView(item: item, index: 0, selectedIndex: -1, targetWindow: nil,
                                         editingItemId: .constant(nil), editingDescriptionText: .constant(""),
                                         isPresented: .constant(true), now: nil, reduceMotion: true, onSelect: {})
-        return WindowSnapshot(ZStack(alignment: .topLeading) {
-            Color.black
-            row.frame(width: Self.size.width)
-        }, size: Self.size)
+        // The active fill (#241C16 here) is a shell colour: held in the dark scheme.
+        return withDarkShell {
+            WindowSnapshot(ZStack(alignment: .topLeading) {
+                Color.black
+                row.frame(width: Self.size.width)
+            }, size: Self.size)
+        }
     }
 
     private func item(status: Tako.PaneStatus = .idle, selected: Bool = false, unread: Int = 0,

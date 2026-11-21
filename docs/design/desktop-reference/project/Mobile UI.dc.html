@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#EDE8E2; font-family:'Space Grotesk',sans-serif; color:#1A1512; }
+  a { color:#C23E0E; } a:hover { color:#F4581C; }
+  @keyframes cursor-blink { 0%,60% { opacity:1; } 61%,100% { opacity:0; } }
+  @keyframes crab-scuttle { 0%,100% { transform: translateX(-2px) rotate(-8deg); } 25% { transform: translateX(1px) rotate(5deg); } 50% { transform: translateX(3px) rotate(-5deg); } 75% { transform: translateX(1px) rotate(8deg); } }
+  @keyframes crab-hop { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-4px); } 55% { transform: translateY(0); } 70% { transform: translateY(-2px); } 85% { transform: translateY(0); } }
+  @keyframes crab-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+</style>
+</helmet>
+<section data-screen-label="iOS — экраны" style="padding:48px 48px 8px">
+  <div style="margin-bottom:28px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">TAKOCORE / iOS — ЭКРАНЫ</div>
+    <div style="font-size:30px;font-weight:700;margin-top:6px">Мобильный TakoCore: все экраны</div>
+    <div style="font-size:14px;color:#6B6259;margin-top:6px">Сессия · список · шит новой сессии · форма SSH. Ниже — SSH-ключи (все шаги) и спека с размерами. Desktop — в <a href="Terminal UI.dc.html">Terminal UI</a>.</div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:48px;align-items:flex-start">
+    <div style="display:flex;gap:48px;align-items:flex-start">
+      <div id="ios-session" style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+        <div style="font-weight:700;font-size:16px">iOS · сессия</div>
+        <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" keyboard="{{ true }}" hint-size="430px,880px">
+          <div style="height:100%;box-sizing:border-box;padding-top:62px;background:#1A1512;display:flex;flex-direction:column">
+            <div style="height:48px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid #2A211B;flex-shrink:0">
+              <svg viewBox="0 0 120 120" width="18" height="18"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g></svg>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FAF7F2">prod-1 · ssh</span>
+              <span style="width:7px;height:7px;border-radius:50%;background:#7BD88F"></span>
+              <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:18px;color:#8A7F76">＋</span>
+            </div>
+            <div style="flex:1;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.55;color:#EDE6DF;overflow:hidden">
+              <div><span style="color:#F4581C;font-weight:700">❯</span> tail -f api.log</div>
+              <div style="color:#8A7F76">12:41:02 GET /health <span style="color:#B5BD68">200</span> 3ms</div>
+              <div style="color:#8A7F76">12:41:09 POST /v1/sync <span style="color:#B5BD68">200</span> 41ms</div>
+              <div style="color:#8A7F76">12:41:11 GET /v1/user <span style="color:#F0C674">304</span> 2ms</div>
+              <div style="color:#8A7F76">12:41:15 POST /v1/push <span style="color:#D54E53">500</span> 88ms</div>
+              <div style="margin-top:8px"><span style="color:#F4581C;font-weight:700">❯</span> <span style="display:inline-block;width:8px;height:15px;background:#F4581C;vertical-align:-3px;animation:cursor-blink 1.2s linear infinite"></span></div>
+            </div>
+            <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #2A211B;flex-shrink:0">
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">esc</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">⌃</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">⇥</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">-</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">|</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">↑</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#2E251E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">↓</span>
+              <span style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;background:#3A2A1E;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D">paste</span>
+            </div>
+          </div>
+        </x-import>
+      </div>
+
+      <div id="ios-sessions" style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+        <div style="font-weight:700;font-size:16px">iOS · список сессий</div>
+        <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="430px,880px">
+          <div style="height:100%;box-sizing:border-box;padding-top:62px;background:#14100E;display:flex;flex-direction:column">
+            <div style="padding:18px 20px 14px;display:flex;align-items:center;gap:12px">
+              <svg viewBox="0 0 120 120" width="26" height="26"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g></svg>
+              <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;color:#FAF7F2;letter-spacing:0.03em">TAKO<span style="color:#F4581C">CORE</span></span>
+            </div>
+            <div style="padding:0 16px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #2A211B;border-radius:14px;padding:16px;min-height:44px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#7BD88F"></span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">local · zsh</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">~/tako-core · 2 splits</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #2A211B;border-radius:14px;padding:16px;min-height:44px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#7BD88F"></span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">prod-1 · ssh</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">tail -f api.log · подключено</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #2A211B;border-radius:14px;padding:16px;min-height:44px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#8A7F76"></span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#B7ACA1">pi@home</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">отключено · 2 дня назад</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+            </div>
+            <div style="margin-top:auto;padding:16px 16px 24px">
+              <div style="height:52px;background:linear-gradient(160deg,#F4581C,#C23E0E);border-radius:14px;display:flex;align-items:center;justify-content:center;gap:10px;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;color:#FAF7F2;box-shadow:0 8px 20px rgba(194,62,14,0.35)">＋ новая сессия</div>
+            </div>
+          </div>
+        </x-import>
+      </div>
+    </div>
+</div>
+    <div style="display:flex;gap:48px;align-items:flex-start;flex-wrap:wrap">
+    <div id="new-ios-sheet" style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+      <div style="font-weight:700;font-size:16px">iOS · шит выбора</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="430px,880px">
+        <div style="height:100%;box-sizing:border-box;background:#14100E;position:relative;display:flex;flex-direction:column">
+          <div style="position:absolute;inset:0;box-sizing:border-box;padding-top:62px;display:flex;flex-direction:column">
+            <div style="padding:18px 20px 14px;display:flex;align-items:center;gap:12px">
+              <svg viewBox="0 0 120 120" width="26" height="26"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g></svg>
+              <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;color:#FAF7F2;letter-spacing:0.03em">TAKO<span style="color:#F4581C">CORE</span></span>
+            </div>
+            <div style="padding:0 16px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #2A211B;border-radius:14px;padding:16px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#7BD88F"></span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">local · zsh</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">~/tako-core · 2 splits</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #2A211B;border-radius:14px;padding:16px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#7BD88F"></span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">prod-1 · ssh</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">tail -f api.log · подключено</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #2A211B;border-radius:14px;padding:16px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#8A7F76"></span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#B7ACA1">pi@home</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">отключено · 2 дня назад</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+            </div>
+          </div>
+          <div style="position:absolute;inset:0;background:rgba(10,8,7,0.6)"></div>
+          <div style="margin-top:auto;position:relative;background:#1A1512;border:1px solid #352B23;border-bottom:none;border-radius:22px 22px 0 0;padding:10px 16px 30px">
+            <div style="width:40px;height:5px;border-radius:99px;background:#352B23;margin:0 auto 14px"></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:#FAF7F2;margin-bottom:14px">Новая сессия</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:14px;background:#241C16;border-radius:14px;padding:16px;min-height:44px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:16px;color:#F4581C;font-weight:700">❯_</span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">Локальный шелл</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">zsh · песочница на устройстве</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#241C16;border-radius:14px;padding:16px;min-height:44px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:16px;color:#FF7A3D;font-weight:700">ssh</span>
+                <div style="flex:1">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">SSH-хост</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:3px">ключ или пароль · mosh later</div>
+                </div>
+                <span style="color:#8A7F76">›</span>
+              </div>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin:16px 0 8px">НЕДАВНИЕ</div>
+            <div style="display:flex;flex-direction:column">
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;min-height:44px;border-bottom:1px solid #2A211B">
+                <span style="width:7px;height:7px;border-radius:50%;background:#7BD88F"></span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#EDE6DF">prod-1</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">alex@prod-1.internal</span>
+                <span style="margin-left:auto;color:#8A7F76">›</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;min-height:44px">
+                <span style="width:7px;height:7px;border-radius:50%;background:#8A7F76"></span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#EDE6DF">pi@home</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">:2222</span>
+                <span style="margin-left:auto;color:#8A7F76">›</span>
+              </div>
+            </div>
+            <div style="height:48px;margin-top:12px;display:flex;align-items:center;justify-content:center;border:1px solid #352B23;border-radius:14px;font-family:'JetBrains Mono',monospace;font-size:14px;color:#B7ACA1">Отмена</div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div id="new-ios-form" style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+      <div style="font-weight:700;font-size:16px">iOS · форма SSH</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="430px,880px">
+        <div style="height:100%;box-sizing:border-box;padding-top:62px;background:#14100E;display:flex;flex-direction:column">
+          <div style="height:48px;display:flex;align-items:center;gap:12px;padding:0 16px;flex-shrink:0">
+            <span style="color:#FF7A3D;font-size:20px">‹</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:#FAF7F2">SSH-хост</span>
+            <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:13px;color:#FF7A3D">Сохранить</span>
+          </div>
+          <div style="padding:8px 16px;display:flex;flex-direction:column;gap:14px">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ХОСТ</div>
+              <div style="display:flex;align-items:center;height:48px;background:#1F1915;border:1.5px solid #F4581C;border-radius:12px;padding:0 14px;box-shadow:0 0 0 3px rgba(244,88,28,0.15)">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">prod-2.internal</span>
+                <span style="display:inline-block;width:2px;height:18px;background:#F4581C;margin-left:2px;animation:cursor-blink 1.2s linear infinite"></span>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px">
+              <div style="flex:1.4">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ПОЛЬЗОВАТЕЛЬ</div>
+                <div style="display:flex;align-items:center;height:48px;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:14px;color:#EDE6DF">alex</div>
+              </div>
+              <div style="flex:1">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ПОРТ</div>
+                <div style="display:flex;align-items:center;height:48px;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:14px;color:#8A7F76">22</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">АУТЕНТИФИКАЦИЯ</div>
+              <div style="display:flex;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:4px;gap:4px">
+                <span style="flex:1;height:38px;display:flex;align-items:center;justify-content:center;background:#241C16;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#FF7A3D;font-weight:700">ключ</span>
+                <span style="flex:1;height:38px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76">пароль</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:14px;min-height:44px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">id_ed25519</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">SHA256:kX9…f2</span>
+              <span style="margin-left:auto;color:#8A7F76">›</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:0 2px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">Держать соединение</span>
+              <span style="width:50px;height:30px;border-radius:99px;background:#F4581C;position:relative;display:inline-block"><span style="position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:50%;background:#FAF7F2"></span></span>
+            </div>
+          </div>
+          <div style="margin-top:auto;padding:16px 16px 24px;display:flex;flex-direction:column;gap:10px">
+            <div style="height:52px;background:linear-gradient(160deg,#F4581C,#C23E0E);border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;color:#FAF7F2;box-shadow:0 8px 20px rgba(194,62,14,0.35)">Подключиться</div>
+            <div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">сохранится в «Недавние»</div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+</div>
+  </div>
+</section>
+<section data-screen-label="SSH-ключи — все шаги" style="padding:48px 48px 8px">
+  <div style="margin-bottom:28px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">TAKOCORE / iOS — SSH-КЛЮЧИ, ВСЕ ШАГИ И КЕЙСЫ</div>
+    <div style="font-size:26px;font-weight:700;margin-top:6px">Ключ живёт в Secure Enclave — приватная часть не покидает телефон</div>
+  </div>
+  <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
+
+    <div id="k1" style="width:390px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700;font-size:15px">1 · Ключи</div>
+      <div style="background:#14100E;border:1px solid #2A211B;border-radius:20px;overflow:hidden">
+        <div style="height:48px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid #2A211B">
+          <span style="color:#FF7A3D;font-size:20px">‹</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:#FAF7F2">Ключи</span>
+          <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:18px;color:#FF7A3D">＋</span>
+        </div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:12px;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:14px;min-height:44px">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">id_ed25519</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#7BD88F;background:rgba(123,216,143,0.1);border:1px solid rgba(123,216,143,0.25);border-radius:99px;padding:2px 8px">Secure Enclave · Face ID</span></div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:4px">SHA256:kX9dRw…f2 · 3 хоста</div>
+            </div>
+            <span style="color:#8A7F76">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:14px;min-height:44px">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2">id_rsa_work</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7ACA1;background:rgba(183,172,161,0.08);border:1px solid rgba(183,172,161,0.2);border-radius:99px;padding:2px 8px">импортирован · Keychain</span></div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:4px">SHA256:mQ21vC…9a · 1 хост</div>
+            </div>
+            <span style="color:#8A7F76">›</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+            <div style="height:44px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid #352B23;border-radius:12px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#FF7A3D">＋ создать в Secure Enclave</div>
+            <div style="height:44px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid #352B23;border-radius:12px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#B7ACA1">импортировать: вставить · Files · iCloud</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="k2" style="width:390px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700;font-size:15px">2 · Создание</div>
+      <div style="background:#14100E;border:1px solid #2A211B;border-radius:20px;overflow:hidden">
+        <div style="height:48px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid #2A211B">
+          <span style="color:#FF7A3D;font-size:20px">‹</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:#FAF7F2">Новый ключ</span>
+        </div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ИМЯ</div>
+            <div style="display:flex;align-items:center;height:46px;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:14px;color:#EDE6DF">id_ed25519_iphone</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ТИП</div>
+            <div style="display:flex;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:4px;gap:4px">
+              <span style="flex:1;height:36px;display:flex;align-items:center;justify-content:center;background:#241C16;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#FF7A3D;font-weight:700">ed25519</span>
+              <span style="flex:1;height:36px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76">ecdsa-p256</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;min-height:44px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">Face ID при каждом использовании</span>
+            <span style="width:50px;height:30px;border-radius:99px;background:#F4581C;position:relative;display:inline-block;flex-shrink:0"><span style="position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:50%;background:#FAF7F2"></span></span>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;line-height:1.6;background:#1F1915;border:1px solid #352B23;border-radius:10px;padding:10px 12px">приватный ключ генерируется в Secure Enclave и физически не может покинуть устройство. Наружу отдаётся только публичная часть.</div>
+          <div style="height:50px;background:linear-gradient(160deg,#F4581C,#C23E0E);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:#FAF7F2">Сгенерировать</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="k3" style="width:390px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700;font-size:15px">3 · На сервер</div>
+      <div style="background:#14100E;border:1px solid #2A211B;border-radius:20px;overflow:hidden">
+        <div style="height:48px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid #2A211B">
+          <span style="color:#FF7A3D;font-size:20px">‹</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:#FAF7F2">id_ed25519_iphone</span>
+        </div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em">ПУБЛИЧНЫЙ КЛЮЧ</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;background:#1F1915;border:1px solid #352B23;border-radius:12px;padding:12px;line-height:1.6;word-break:break-all">ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF8…Jk2v alex@iphone</div>
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;height:46px;display:flex;align-items:center;justify-content:center;border:1px solid #352B23;border-radius:12px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF">Скопировать</div>
+            <div style="flex:1.4;height:46px;background:linear-gradient(160deg,#F4581C,#C23E0E);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:#FAF7F2">На сервер →</div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;line-height:1.6;background:#1F1915;border:1px solid #352B23;border-radius:10px;padding:10px 12px">«На сервер» = ssh-copy-id: один раз входишь по паролю, ключ добавляется в ~/.ssh/authorized_keys — дальше только Face ID.</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-top:2px">ИСПОЛЬЗУЕТСЯ НА</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;border:1px solid #352B23;border-radius:99px;padding:5px 12px">prod-1</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;border:1px solid #352B23;border-radius:99px;padding:5px 12px">prod-2</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;border:1px solid #352B23;border-radius:99px;padding:5px 12px">pi@home</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="k4" style="width:390px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700;font-size:15px">4 · Первое подключение</div>
+      <div style="background:#14100E;border:1px solid #2A211B;border-radius:20px;overflow:hidden;position:relative;min-height:420px;display:flex;flex-direction:column">
+        <div style="padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;color:#8A7F76;opacity:0.5">
+          <div>connecting to prod-2.internal:22…</div>
+        </div>
+        <div style="position:absolute;inset:0;background:rgba(10,8,7,0.6);display:flex;align-items:center;justify-content:center;padding:20px">
+          <div style="background:#1A1512;border:1px solid #352B23;border-radius:16px;padding:18px;width:100%">
+            <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:#FAF7F2">Неизвестный хост</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-top:6px;line-height:1.6">prod-2.internal видим впервые. Отпечаток ключа хоста:</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#F0C674;background:#1F1915;border:1px solid #352B23;border-radius:10px;padding:10px 12px;margin-top:10px;word-break:break-all">SHA256:Zt4wNq8rV…dL0 (ED25519)</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:8px">сохраним в known_hosts; при смене отпечатка — красное предупреждение</div>
+            <div style="display:flex;gap:10px;margin-top:14px">
+              <div style="flex:1;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid #352B23;border-radius:11px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#B7ACA1">Отмена</div>
+              <div style="flex:1.4;height:44px;background:linear-gradient(160deg,#F4581C,#C23E0E);border-radius:11px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:#FAF7F2">Доверять</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="k5" style="width:390px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700;font-size:15px">5 · Кейсы ошибок</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="background:#14100E;border:1px solid rgba(213,78,83,0.4);border-radius:16px;padding:16px">
+          <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:#D54E53">Ключ отклонён сервером</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:5px;line-height:1.6">publickey отказан для alex@prod-2. Ключа нет в authorized_keys?</div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <span style="height:38px;display:inline-flex;align-items:center;padding:0 14px;border:1px solid #352B23;border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#EDE6DF">другой ключ</span>
+            <span style="height:38px;display:inline-flex;align-items:center;padding:0 14px;background:#241C16;border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D">войти по паролю</span>
+          </div>
+        </div>
+        <div style="background:#14100E;border:1px solid #2A211B;border-radius:16px;padding:16px">
+          <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:#FAF7F2">2FA / keyboard-interactive</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:5px">Verification code:</div>
+          <div style="display:flex;align-items:center;height:44px;background:#1F1915;border:1.5px solid #F4581C;border-radius:10px;padding:0 14px;margin-top:8px;box-shadow:0 0 0 3px rgba(244,88,28,0.15)">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#FAF7F2;letter-spacing:0.3em">482</span>
+            <span style="display:inline-block;width:2px;height:16px;background:#F4581C;margin-left:2px;animation:cursor-blink 1.2s linear infinite"></span>
+          </div>
+        </div>
+        <div style="background:#14100E;border:1px solid #2A211B;border-radius:16px;padding:16px;display:flex;align-items:center;gap:12px">
+          <div style="flex:1">
+            <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:#F0C674">Тайм-аут соединения</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:4px">prod-2:22 не ответил за 10s · VPN?</div>
+          </div>
+          <span style="height:38px;display:inline-flex;align-items:center;padding:0 14px;background:#241C16;border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D">повторить ⟳</span>
+        </div>
+        <div style="background:#14100E;border:1px solid #2A211B;border-radius:16px;padding:16px;display:flex;align-items:center;gap:12px">
+          <div style="flex:1">
+            <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:#D54E53">Отпечаток хоста изменился</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;margin-top:4px">возможен MITM — подключение заблокировано, только ручное подтверждение</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="k6" style="width:390px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700;font-size:15px">Кнопки в шапках — что делают</div>
+      <div style="background:#FAF7F2;border:1px solid #DDD5CB;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#4A4238;line-height:1.6">
+        <div style="display:flex;gap:12px"><span style="color:#C23E0E;font-weight:700;flex-shrink:0">＋ (сессия)</span><span>новая сессия — открывает шит выбора поверх текущей, текущая не прерывается</span></div>
+        <div style="display:flex;gap:12px"><span style="color:#C23E0E;font-weight:700;flex-shrink:0">＋ (ключи)</span><span>создать / импортировать ключ</span></div>
+        <div style="display:flex;gap:12px"><span style="color:#C23E0E;font-weight:700;flex-shrink:0">‹</span><span>назад без сохранения черновика</span></div>
+        <div style="display:flex;gap:12px"><span style="color:#C23E0E;font-weight:700;flex-shrink:0">Сохранить</span><span>в форме SSH (верх-право): сохранить хост в «Недавние» без подключения</span></div>
+        <div style="display:flex;gap:12px"><span style="color:#C23E0E;font-weight:700;flex-shrink:0">● / ○</span><span>точка у имени сессии — статус: зелёная подключено, серая нет, оранжевая реконнект</span></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+<section data-screen-label="iOS — спека для программиста" style="padding:48px 48px 8px">
+  <div style="margin-bottom:28px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">TAKOCORE / iOS — СПЕКА ДЛЯ ПРОГРАММИСТА</div>
+    <div style="font-size:26px;font-weight:700;margin-top:6px">Размеры, состояния, жесты — всё в pt (@1x)</div>
+  </div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+    <div style="background:#14100E;border-radius:14px;padding:22px;width:560px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ЭКРАН СЕССИИ</div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">шапка</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">высота 48, низ 1px #2A211B; слева направо: «‹» ember 20pt (хит 44) → краб 18×18 → имя 13pt #FAF7F2 → gap 8 → точка статуса 7×7 → справа «＋» 18pt #8A7F76 (хит 44). Заголовок = имя сессии, обязан совпадать с реальной</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">терминал</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">фон #1A1512, паддинг 12/14, JetBrains Mono 13pt, line-height 1.55; промпт мобильный: только ❯ ember + ввод (контекст в шапке)</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">курсор</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">блок #F4581C размером в ячейку, мигание 1.2s (60% on / 40% off)</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">ряд клавиш</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">высота клавиш 44, gap 6, паддинг ряда 8/10, верх 1px #2A211B; фон клавиши #2E251E r9, глиф 13pt #EDE6DF; esc ⌃ ⇥ - | ↑ ↓ paste; paste: 12pt #FF7A3D на #3A2A1E; глифы U+2303 и U+21E5</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">модификаторы</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">⌃ и ⇥ липкие: активный — глиф ember + фон #241C16 + внутренняя тень; сброс после следующего символа; haptic на каждую клавишу</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">жесты</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">тап — клавиатура; свайп вниз — спрятать; long-press — выделение с лупой; пинч — шрифт 10–20pt шаг 1; скролл — история, тап по статус-бару — к низу; удержание ↑/↓ — автоповтор</span></div></div>
+    <div style="background:#14100E;border-radius:14px;padding:22px;width:560px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">СПИСОК СЕССИЙ</div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">вордмарка</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">краб 26×26 (целые px, квадрат) + TAKO#FAF7F2/CORE ember одной строкой, mono 800 20pt, ls 0.6; отступ от статус-бара 18, слева 20</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">карточка</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">фон #1F1915, рамка 1px #2A211B, r14, паддинг 16, gap между 10, от краёв 16; заголовок 14pt #FAF7F2, подпись 12pt #8A7F76 (gap 3), «›» #8A7F76 справа; вся карточка — хит-зона</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">статус</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">точка 8×8 слева: живая #7BD88F · offline #8A7F76 · реконнект #FF7A3D; после интеграции краба — краб-индикатор 15×15 вместо точки (те же состояния, что на desktop)</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">кнопка</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">«＋ новая сессия»: высота 52, градиент 160° #F4581C→#C23E0E, r14, текст 15pt 700 #FAF7F2, тень 0 8 20 rgba(194,62,14,0.35); прижата к низу, отступ 16 над home indicator</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">свайпы</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">влево — disconnect / удалить (красная зона #D54E53); long-press — меню: переименовать · reconnect · удалить</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">обрыв ssh</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">карточка: краб-призрак (alpha 0.45) + подпись «reconnect» ember; экран сессии сохранён; OSC 9/777 в фоне — локальный push с именем сессии</span></div></div>
+    <div style="background:#14100E;border-radius:14px;padding:22px;width:560px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ШИТ «НОВАЯ СЕССИЯ»</div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">контейнер</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">снизу, фон #1A1512, рамка 1px #352B23 (без низа), r22 22 0 0, паддинг 10/16/30; ручка 40×5 r99 #352B23 по центру, отступ снизу 14; подложка rgba(10,8,7,0.6)</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">заголовок</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">mono 700 16pt #FAF7F2, отступ снизу 14</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">пункты</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">карточки #241C16 r14 паддинг 16 (мин 44): «Локальный шелл» (❯_ ember) и «SSH-хост» (ssh #FF7A3D); секция НЕДАВНИЕ: label 11pt ls 0.08em, строки 44 с точкой статуса и разделителями 1px #2A211B</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">отмена</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">кнопка-контур: высота 48, рамка 1px #352B23 r14, текст 14pt #B7ACA1</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">появление</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">300ms spring (damping 0.85); закрытие — свайп вниз по ручке или «Отмена»</span></div></div>
+    <div style="background:#14100E;border-radius:14px;padding:22px;width:560px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A7F76;letter-spacing:0.08em;margin-bottom:6px">ФОРМА SSH</div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">шапка</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">48: «‹» назад, заголовок 700 16pt, «Сохранить» 13pt #FF7A3D справа (активна при валидном хосте)</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">поля</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">высота 48, фон #1F1915, рамка 1px #352B23 r12, паддинг 0 14, текст 14pt; label над полем 11pt #8A7F76 ls 0.08em, отступ 6; фокус: рамка 1.5px #F4581C + свечение 0 0 0 3 rgba(244,88,28,0.15); каретка 2×18 ember</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">аутентификация</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">сегмент: контейнер #1F1915 рамка #352B23 r12 паддинг 4 gap 4; активный сегмент 38pt #241C16 r9 текст #FF7A3D 700; ключ — строка выбора id_ed25519 + отпечаток SHA256 12pt #8A7F76</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">тумблер</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">50×30 r99, включён #F4581C, ручка 24×24 #FAF7F2 отступ 3</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">сабмит</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">«Подключиться» 52 ember-градиент r14 внизу; подпись «сохранится в Недавние» 12pt #8A7F76 по центру</span></div><div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;font-weight:700;width:170px;flex-shrink:0">клавиатура</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7ACA1;line-height:1.65">host/user — обычная; порт — цифровая; автокоррекция выключена везде</span></div></div>
+  </div>
+</section>
+
+</x-dc>
+</body>
+</html>

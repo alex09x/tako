@@ -222,9 +222,11 @@ extension Tako {
         /// observable and must stay ordered with later PTY batches.
         static func requiresSynchronousMainApplication(
             output: Data,
-            events: [FfiEvent]
+            events: [FfiEvent],
+            replyOverflowCount: UInt32 = 0,
+            statusOverflowCoalesced: Bool = false
         ) -> Bool {
-            !output.isEmpty || !events.isEmpty
+            !output.isEmpty || !events.isEmpty || replyOverflowCount > 0 || statusOverflowCoalesced
         }
 
         /// Cap damage-driven drawing at the fastest display rate we support.

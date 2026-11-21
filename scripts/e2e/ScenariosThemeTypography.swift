@@ -43,7 +43,9 @@ func runThemeTypographyScenario(_ d: Driver) throws {
     var created: [String] = []
     for (index, source) in names.enumerated() {
         let name = "CLI " + source
-        let weight = 400 + index * 50
+        // The built-in inventory can grow; every positive template still gets
+        // a valid numeric weight. The explicit 950 refusal below stays invalid.
+        let weight = 400 + (index % 11) * 50
         _ = try response("create \(q(name)) --from \(q(source))")
         _ = try response("set \(q(name)) 'font-family=Fira Code' font-size=24 font-weight=\(weight) font-weight-bold=700 font-weight-italic=450 font-weight-bold-italic=650 cursor-style-blink=false")
         _ = try response("apply \(q(name)) --session \(id)")

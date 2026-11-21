@@ -66,7 +66,9 @@ extension SessionSidebarStore {
         if workspaceStore.workspace(forTab: tabID)?.id == workspaceID { return true }
         let source = workspaceStore.workspace(forTab: tabID)?.id ?? workspaceStore.activeWorkspaceId
         let panes = (target.windowController as? BaseTerminalController).map { Array($0.surfaceTree) } ?? Tako.surfaces(in: target)
-        do { try appearanceStore.preserveWorkspaceStyle(from: source, for: panes.map(\.id)) }
+        // The session keeps its stable tab identity; the source workspace
+        // style is carried into that session record, not copied per pane.
+        do { try appearanceStore.preserveWorkspaceStyle(from: source, session: target.stableTabIdentifier) }
         catch {
             if !Tako.CustomTabGroup.suppressWindowOrderingForTesting, let window {
                 Task { @MainActor in
@@ -119,14 +121,14 @@ struct SidebarWorkspaceDropTarget: View {
     let onToggleCollapse: () -> Void
     let onSelectWorkspace: () -> Void
     let onMove: (String, UUID) -> Bool
+    let actions: SidebarWorkspaceActions
     @State private var targeted = false
 
     var body: some View {
         SessionSidebarWorkspaceHeaderView(group: group, onToggleCollapse: onToggleCollapse,
-                                          onSelectWorkspace: onSelectWorkspace)
-            .contextMenu {
-                Button("Workspace Appearance…") { ScopedAppearanceContext.showWorkspace(group.id) }
-            }
+                                          onSelectWorkspace: onSelectWorkspace, actions: actions)
+            .contextMenu { actions.contextMenu }
+            .background(SidebarWorkspaceAXElement(name: group.name, isActive: group.isActive))
             .background {
                 if targeted {
                     RoundedRectangle(cornerRadius: 6)
@@ -143,13 +145,55 @@ struct SidebarWorkspaceDropTarget: View {
 }
 
 struct SidebarWorkspaceMoveModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     let item: SessionSidebarItem
     let workspaces: [Workspace]
     let onMove: (String, UUID) -> Bool
     let canMoveToWindow: () -> Bool
     let onMoveToWindow: () -> Void
+    var onNewSession: (() -> Void)? = nil
+    var onRename: (() -> Void)? = nil
+    /// «Use Automatic Name», offered while the row has a name someone gave.
+    var hasOwnName: () -> Bool = { false }
+    var onAutomaticName: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
+    /// Reference session menu: «New Terminal in Session», «Mark as Read»
+    /// (off while nothing is unread), «Reconnect» (only for a lost session).
+    var onNewTerminal: (() -> Void)? = nil
+    var hasUnread: () -> Bool = { false }
+    var onMarkRead: (() -> Void)? = nil
+    var canReconnect: () -> Bool = { false }
+    var onReconnect: (() -> Void)? = nil
 
-    @ViewBuilder func body(content: Content) -> some View {
+    private var appearanceLevel: DesktopScopeLevel {
+        if item.isChild, let id = item.surfaceId {
+            return .init(kind: .pane(id), kindTitle: "terminal", name: item.title)
+        }
+        return .init(kind: .session(item.tabId), kindTitle: "session", name: item.title)
+    }
+
+    private var rowIdentifier: String {
+        (item.isChild ? "session-pane-" : "session-tab-")
+            + (item.surfaceId?.uuidString.lowercased() ?? item.tabId)
+    }
+
+    func body(content: Content) -> some View {
+        SidebarRowAXContainer(
+            identifier: rowIdentifier,
+            label: item.title,
+            value: item.isSelected ? "selected" : "unselected",
+            help: Self.statusDotHint(for: item),
+            closeActionName: onClose != nil ? (item.isChild ? FloatingPaneCopy.close : "Close Session") : nil,
+            onClose: onClose
+        ) {
+            rowBody(content)
+                .ignoresSafeArea()
+                .environment(\.colorScheme, colorScheme)
+        }
+    }
+
+    @ViewBuilder
+    private func rowBody(_ content: Content) -> some View {
         if item.isChild {
             menu(content)
         } else {
@@ -158,13 +202,45 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
         }
     }
 
-    private func menu<Content: View>(_ content: Content) -> some View {
+    private func menu<RowContent: View>(_ content: RowContent) -> some View {
         content.contextMenu {
-            Button(item.isChild ? "Pane Appearance…" : "Terminal Appearance…") {
-                if let id = item.surfaceId { ScopedAppearanceContext.showPane(id) }
+            if let onNewSession {
+                Button("New Session", action: onNewSession)
             }
-            .disabled(item.surfaceId == nil)
-            Divider()
+            if let onRename {
+                // Renamed in place, in the row itself.
+                Button(item.isChild ? "Rename Terminal" : "Rename Session", action: onRename)
+                    .accessibilityIdentifier("SidebarRowRename")
+            }
+            if let onAutomaticName, hasOwnName() {
+                Button("Use Automatic Name", action: onAutomaticName)
+                    .accessibilityIdentifier("SidebarRowAutomaticName")
+            }
+            if !item.isChild, let onNewTerminal {
+                Button("New Terminal in Session", action: onNewTerminal)
+                    .accessibilityIdentifier("SidebarRowNewTerminal")
+            }
+            if let onMarkRead {
+                Button("Mark as Read", action: onMarkRead)
+                    .disabled(!hasUnread())
+                    .accessibilityIdentifier("SidebarRowMarkRead")
+            }
+            if let onReconnect, canReconnect() {
+                Button("Reconnect", action: onReconnect)
+                    .accessibilityIdentifier("SidebarRowReconnect")
+            }
+            if let onClose {
+                Button(item.isChild ? FloatingPaneCopy.close : "Close Session", action: onClose)
+            }
+            if onNewSession != nil || onRename != nil || onClose != nil {
+                Divider()
+            }
+            // A session row edits the session (its stable tab identity), a pane row the pane.
+            if let menu = DesktopAppearanceMenu.make(for: appearanceLevel, app: (NSApp.delegate as? AppDelegate)?.tako,
+                                                     window: NSApp.keyWindow) {
+                DesktopAppearanceSubmenu(menu: menu)
+                Divider()
+            }
             if canMoveToWindow() {
                 Button(item.isChild ? "Move Tab to This Window" : "Move to This Window", action: onMoveToWindow)
             }
@@ -174,8 +250,23 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
                         .disabled(workspace.id == item.workspaceId)
                 }
             }
+            SidebarMoveToTabMenu(item: item)
         }
-        .accessibilityIdentifier((item.isChild ? "session-pane-" : "session-tab-")
-            + (item.surfaceId?.uuidString.lowercased() ?? item.tabId))
+    }
+
+    @MainActor
+    private static func statusDotHint(for item: SessionSidebarItem) -> String {
+        let dot: String
+        switch item.status {
+        case .working, .running: dot = "ember"
+        case .waitingForInput, .needsApproval: dot = "claw"
+        case .done: dot = "ok"
+        case .error, .disconnected: dot = "error"
+        case .idle, .unknown: dot = item.needsAttention ? "claw" : "dim"
+        }
+        let surface = item.surfaceId.flatMap { id in
+            TerminalController.all.flatMap { $0.surfaceTree.map { $0 } }.first { $0.id == id }
+        }
+        return "dot:\(Tako.tabStatusHex(for: dot, surface: surface))"
     }
 }

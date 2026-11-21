@@ -19,6 +19,7 @@ mod session;
 pub(crate) mod theme;
 mod types;
 mod usage;
+pub(crate) mod window;
 
 pub use helpers::{answer_limit, parse_duration, request};
 pub use inspect::resolve;

@@ -23,6 +23,8 @@ extension TerminalController {
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window else { return }
+        if let restoredTabIdentifier { window.stableTabIdentifier = restoredTabIdentifier }
+        didApplyInitialWindowSize = false
 
         // I copy this because we may change the source in the future but also because
         // I regularly audit our codebase for "tako.config" access because generally
@@ -46,8 +48,9 @@ extension TerminalController {
         // we should resize to that default size.
         if case let .leaf(view) = surfaceTree.root {
             // If this is our first surface then our focused surface will be nil
-            // so we force the focused surface to the leaf.
-            focusedSurface = view
+            // so we force the focused surface to the leaf. Only logically:
+            // loading a window is not the user looking at it.
+            setFocusedSurfaceUnseen(view)
 
             // `window-width`/`window-height`: only a single-surface window
             // (no splits) has a terminal area to size, and only when this
@@ -55,9 +58,10 @@ extension TerminalController {
             if appliesConfiguredWindowSize, let grid = config.windowSizeInCells {
                 let cell = view.cellSize
                 if cell.width > 0, cell.height > 0 {
-                    // The cells plus the padding around them, so the grid
-                    // that fits is exactly the one asked for.
-                    let padding = view.theme.padding
+                    // The cells plus the padding around them (with the
+                    // command-mark gutter), so the grid that fits is
+                    // exactly the one asked for.
+                    let padding = view.effectivePadding
                     view.initialSize = NSSize(
                         width: cell.width * CGFloat(grid.columns) + padding.left + padding.right,
                         height: cell.height * CGFloat(grid.rows) + padding.top + padding.bottom)
@@ -74,13 +78,24 @@ extension TerminalController {
         // intrinsicContentSize returns the correct value immediately,
         // without waiting for @FocusedValue to propagate through the
         // SwiftUI focus chain.
-        container.initialContentSize = focusedSurface?.initialSize
+        // On the canvas the terminal sits in a card: its header and margin
+        // (`FloatingPaneGeometry.bodyInsets`), and the pane gap all round
+        // (`FloatingPaneGeometry.gridArea`), which a maximized pane has too.
+        let sidebarWidth = sessionSidebarIsShowing ? SessionSidebarWidth.current() : 0
+        let inset = FloatingPaneGeometry.bodyInsets
+        let chromeWidth = usesFloatingCanvas ? 2 * DesktopCanvasMetrics.paneGap + inset.left + inset.right : 0
+        let chromeHeight = usesFloatingCanvas
+            ? 2 * DesktopCanvasMetrics.paneGap + FloatingPaneGeometry.headerHeight + inset.top + inset.bottom : 0
+        container.initialContentSize = focusedSurface?.initialSize.map {
+            NSSize(width: $0.width + sidebarWidth + chromeWidth, height: $0.height + chromeHeight)
+        }
 
         window.contentView = container
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
             defaultSize.apply(to: window)
+            didApplyInitialWindowSize = true
 
             if case .contentIntrinsicSize = defaultSize {
                 if let screen = window.screen ?? NSScreen.main {
@@ -133,8 +148,8 @@ extension TerminalController {
         )
         let restored = LastWindowPosition.shared.restore(
             terminalWindow,
-            origin: !originChanged,
-            size: defaultSize == nil,
+            origin: !originChanged && !derivedConfig.maximize,
+            size: !didApplyInitialWindowSize,
         )
 
         // If nothing is changed for the frame,
@@ -235,6 +250,42 @@ extension TerminalController {
 
     func reflowSurfaces(forcePtyResize: Bool = true) {
         guard let window, let contentView = window.contentView else { return }
+        let mounted = surfaceTree.compactMap { surface -> (Tako.SurfaceView, SurfaceHostingView)? in
+            guard let host = surface.superview as? SurfaceHostingView, host.window === window else { return nil }
+            return (surface, host)
+        }
+        if usesFloatingCanvas {
+            var mountedIds = Set<UUID>()
+            for (surface, host) in mounted where !isMinimizedInFloatingCanvas(surface.id) {
+                mountedIds.insert(surface.id)
+                if host.bounds.width > 0 && host.bounds.height > 0 {
+                    surface.reflow(to: host.bounds.size, forcePtyResize: forcePtyResize)
+                }
+            }
+            let contentBounds = contentView.bounds
+            guard contentBounds.width > 0, contentBounds.height > 0 else { return }
+            var terminalWidth = contentBounds.width
+            if sessionSidebarIsShowing {
+                terminalWidth = max(terminalWidth - SessionSidebarWidth.current(), 100)
+            }
+            let terminalAreaSize = CGSize(width: terminalWidth, height: contentBounds.height)
+            for surface in surfaceTree where !mountedIds.contains(surface.id) && !isMinimizedInFloatingCanvas(surface.id) {
+                if let bodySize = floatingCanvas.presentedBodySize(for: surface.id, in: terminalAreaSize),
+                   bodySize.width > 0, bodySize.height > 0 {
+                    surface.reflow(to: bodySize, forcePtyResize: forcePtyResize)
+                }
+            }
+            return
+        }
+        if !mounted.isEmpty {
+            // SwiftUI has already allocated room for the strip, sidebar and
+            // pane handles. Recomputing slots from the whole window fights
+            // those constraints and can create an AppKit layout feedback loop.
+            for (surface, host) in mounted {
+                surface.reflow(to: host.bounds.size, forcePtyResize: forcePtyResize)
+            }
+            return
+        }
         let contentBounds = contentView.bounds
         guard contentBounds.width > 0, contentBounds.height > 0 else { return }
 
@@ -243,15 +294,7 @@ extension TerminalController {
             terminalWidth = max(terminalWidth - SessionSidebarWidth.current(), 100)
         }
 
-        var terminalHeight = contentBounds.height
-        if tako.config.macosTitlebarStyle != .hidden {
-            let topInset = contentView.safeAreaInsets.top
-            if topInset > 0 {
-                terminalHeight = max(terminalHeight - topInset, 50)
-            } else if window.contentLayoutRect.height > 0 && window.contentLayoutRect.height < contentBounds.height {
-                terminalHeight = window.contentLayoutRect.height
-            }
-        }
+        let terminalHeight = contentBounds.height
         let terminalAreaSize = CGSize(width: terminalWidth, height: terminalHeight)
 
         let activeRoot = surfaceTree.zoomed ?? surfaceTree.root
@@ -290,6 +333,7 @@ extension TerminalController {
 
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let window else { return }
+        Tako.CustomTabGroup.group(for: window).syncFrame(from: window)
         window.contentView?.layoutSubtreeIfNeeded()
         reflowSurfaces(forcePtyResize: true)
         LastWindowPosition.shared.save(window)

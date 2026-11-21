@@ -157,16 +157,19 @@ extension ControlCommands {
 
     /// `takoctl tab-new`: open a new tab beside a targeted pane.
     static func tabNewCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
+        _ = try ControlPaneState.requested(request.args)
         let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args, client: request.client)
         recordActivity(for: request, on: pane.id, action: "tab-new")
-        return ["id": .string(pane.id.uuidString.lowercased())]
+        return try ControlPaneState.applyRequested(request.args, to: pane)
     }
 
-    /// `takoctl split`: split a targeted pane.
+    /// `takoctl split`: split a targeted pane, `--state` putting the new one
+    /// straight into floating, maximized or minimized.
     static func splitCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
+        _ = try ControlPaneState.requested(request.args)
         let pane = try ControlLayout.split(try target(request, all), args: request.args, client: request.client)
         recordActivity(for: request, on: pane.id, action: "split")
-        return ["id": .string(pane.id.uuidString.lowercased())]
+        return try ControlPaneState.applyRequested(request.args, to: pane)
     }
 
     /// `takoctl collapse`: collapse subagent hierarchy for a pane.

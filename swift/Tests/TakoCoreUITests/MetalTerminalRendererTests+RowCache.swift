@@ -32,19 +32,24 @@ extension MetalTerminalRendererTests {
         XCTAssertEqual(cached.backgroundInstances, initial.backgroundInstances)
 
         // One damaged row
-        f = frame(cols: 4, rows: 4, damagedRows: [2])
+        var cells = Array(repeating: CellSpec(), count: 16)
+        cells[8].ch = 0x41
+        f = frame(cols: 4, rows: 4, cells: cells, damagedRows: [2])
         let oneDamaged = planner.plan(frame: f, viewport: viewport)
         XCTAssertEqual(oneDamaged.replannedRows, 1)
         XCTAssertEqual(oneDamaged.replannedCells, 4)
 
         // Multiple damaged rows
-        f = frame(cols: 4, rows: 4, damagedRows: [0, 3])
+        cells[0].ch = 0x42
+        cells[12].ch = 0x43
+        f = frame(cols: 4, rows: 4, cells: cells, damagedRows: [0, 3])
         let multipleDamaged = planner.plan(frame: f, viewport: viewport)
         XCTAssertEqual(multipleDamaged.replannedRows, 2)
         XCTAssertEqual(multipleDamaged.replannedCells, 8)
 
         // Full damaged rows
-        f = frame(cols: 4, rows: 4, damagedRows: [0, 1, 2, 3])
+        for row in 0..<4 { cells[row * 4].ch = UInt32(0x50 + row) }
+        f = frame(cols: 4, rows: 4, cells: cells, damagedRows: [0, 1, 2, 3])
         let fullDamaged = planner.plan(frame: f, viewport: viewport)
         XCTAssertEqual(fullDamaged.replannedRows, 4)
         XCTAssertEqual(fullDamaged.replannedCells, 16)
@@ -94,6 +99,7 @@ extension MetalTerminalRendererTests {
         XCTAssertEqual(initial.colorGlyphInstances, 1)
         XCTAssertGreaterThan(initial.decorationInstances, 0)
 
+        cells[8].ch = 0x41
         let f2 = frame(cols: 4, rows: 4, cells: cells, damagedRows: [2])
         let cached = planner.plan(frame: f2, viewport: viewport)
 

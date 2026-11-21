@@ -180,6 +180,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         setupSearchField()
         setupButtons()
         setupPresetControls()
+        setupFirstRunControl()
         updateButtonsForActiveTab()
         filterItems("")
         updateAccessibilityState()
@@ -384,6 +385,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             field.frame = NSRect(x: origin.x, y: origin.y, width: CGFloat(columns - 6) * cellWidth, height: cellHeight)
         }
         layoutPresetControls()
+        layoutFirstRunControl()
 
         var col = columns - 3
         for button in buttons.reversed() {

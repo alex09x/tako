@@ -111,16 +111,21 @@ pub fn dispatch_and_validate(
     positional: &mut Vec<String>,
     dashdash: bool,
 ) -> Result<(), String> {
-    let handled = super::control::parse(
-        cmd,
-        args,
-        positional,
-    )?
-    .or(super::session::parse(cmd, args, positional)?)
-    .or(super::layout::parse(cmd, args, positional)?)
-    .or(super::inspect::parse(cmd, args, positional, dashdash)?)
-    .or(super::review::parse(cmd, args, positional)?)
-    .or(super::diagnose::parse(cmd, args, positional)?);
+    let handled = super::control::parse(cmd, args, positional)?
+        .or(super::session::parse(cmd, args, positional)?)
+        .or(super::layout::parse(cmd, args, positional)?)
+        .or(super::inspect::parse(cmd, args, positional, dashdash)?)
+        .or(super::review::parse(cmd, args, positional)?)
+        .or(super::diagnose::parse(cmd, args, positional)?)
+        .or(super::window::parse(cmd, args, positional)?);
+    // Only commands that create a pane put it in a state; the rest would drop it.
+    if args.contains_key("state") && !matches!(cmd, "tab-new" | "split" | "run" | "pane" | "window")
+    {
+        return Err(format!("{cmd} does not take --state"));
+    }
+    if args.contains_key("frame") && !matches!(cmd, "window" | "pane") {
+        return Err(format!("{cmd} does not take --frame"));
+    }
 
     let wants = if handled.is_some() {
         None

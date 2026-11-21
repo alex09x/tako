@@ -39,13 +39,18 @@ extension Tako {
             }
         }
 
+        // Readiness can become ready more than once before the delayed launch.
+        // An asynchronous self-test must have just one owner of its surface.
+        private var selfTestScheduled = false
+
         public func scheduleSelfTestIfNeeded() {
             let args = CommandLine.arguments
-            guard readiness == .ready,
+            guard !selfTestScheduled, readiness == .ready,
                   args.contains("--selftest-keys")
                     || args.contains("--selftest-input")
                     || args.contains("--selftest-scroll")
                     || args.contains("--selftest-frame") else { return }
+            selfTestScheduled = true
             func tryRun(attemptsLeft: Int) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     MainActor.assumeIsolated {
@@ -117,6 +122,16 @@ extension Tako {
         }
 
         public func reloadConfig(soft: Bool = false) {
+            // Both @Published config and the window notification have UI
+            // subscribers. A file watcher or worker may request a reload, but
+            // may not run those subscribers on its own thread. Main-thread
+            // callers stay synchronous; worker calls enqueue the whole reload.
+            guard Thread.isMainThread else {
+                DispatchQueue.main.async(execute: DispatchWorkItem {
+                    self.reloadConfig(soft: soft)
+                })
+                return
+            }
             // Reload the file we actually loaded. Passing nil here sent every
             // reload back to the default search path, so an app started
             // against a specific config -- a UI test, or anyone using

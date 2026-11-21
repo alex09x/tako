@@ -23,17 +23,20 @@ struct TabBarControllerCoverageTests {
         #expect(Tako.TabBarController.contentTopInset(for: window) == 0)
     }
 
-    @Test func installAddsTheBarAndInsetsContent() {
+    @Test func installSuppressesTopBarAndKeepsZeroContentTopInset() {
         let window = makeWindow(title: "installed")
         Tako.TabBarController.install(in: window)
-        #expect(Tako.TabBarController.contentTopInset(for: window) == Tako.TabBarController.barHeight)
-        #expect(window.contentView?.subviews.contains { $0 is Tako.TabBarView } == true)
+        #expect(Tako.TabBarController.isInstalled(in: window))
+        #expect(Tako.TabBarController.contentTopInset(for: window) == 0)
+        #expect(window.contentView?.subviews.contains { $0 is Tako.TabBarView } == false)
+        #expect(window.tabbingMode == .disallowed)
 
-        // Installing twice on the same window is a no-op past the first call.
+        // Installing twice on the same window is idempotent.
         Tako.TabBarController.install(in: window)
-        #expect(window.contentView?.subviews.filter { $0 is Tako.TabBarView }.count == 1)
+        #expect(window.contentView?.subviews.filter { $0 is Tako.TabBarView }.isEmpty == true)
 
         window.close()
+        #expect(!Tako.TabBarController.isInstalled(in: window))
         #expect(Tako.TabBarController.contentTopInset(for: window) == 0)
     }
 
@@ -44,10 +47,8 @@ struct TabBarControllerCoverageTests {
         Tako.TabBarController.install(in: window)
         Tako.TabBarController.refreshAll()
 
-        // The bar survives refreshAll intact -- installed exactly once, not
-        // duplicated or torn down.
-        #expect(Tako.TabBarController.contentTopInset(for: window) == Tako.TabBarController.barHeight)
-        #expect(window.contentView?.subviews.filter { $0 is Tako.TabBarView }.count == 1)
+        #expect(Tako.TabBarController.contentTopInset(for: window) == 0)
+        #expect(window.contentView?.subviews.filter { $0 is Tako.TabBarView }.isEmpty == true)
         window.close()
     }
 
@@ -134,8 +135,8 @@ struct TabBarControllerCoverageTests {
             Tako.CustomTabGroup.leave(second)
         }
 
-        Tako.TabBarController.install(in: first)
-        Tako.TabBarController.install(in: second)
+        Tako.TabBarController.installTabBarForTesting(in: first)
+        Tako.TabBarController.installTabBarForTesting(in: second)
         Tako.CustomTabGroup.join(second, to: first, select: true)
 
         let bar = try #require(first.contentView?.subviews.compactMap { $0 as? Tako.TabBarView }.first)

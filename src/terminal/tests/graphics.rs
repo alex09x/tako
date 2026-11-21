@@ -179,6 +179,11 @@ fn test_iterm2_inline_image_placement_and_cursor_advancement() {
     assert_eq!(placements.len(), 1);
     assert_eq!(placements[0].row, 2);
     assert_eq!(placements[0].col, 0);
+    // The 3 rows asked for are the placement's box; the image keeps its size.
+    assert_eq!(
+        (placements[0].options.columns, placements[0].options.rows),
+        (0, 3)
+    );
 
     let img = term
         .graphics_image(placements[0].image_id)

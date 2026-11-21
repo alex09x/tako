@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# tako — headless terminal conformance runner
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # Run esctest against the engine, headlessly.
 #
 # esctest is George Nachman's conformance suite -- roughly a thousand tests
@@ -32,7 +39,7 @@ if [[ ! -d "$CHECKOUT" ]]; then
 fi
 
 echo "==> building headless host"
-cargo build -q --example headless --features pty
+mitts build -q --example headless --features pty
 
 echo "==> running esctest"
 set +e
@@ -44,7 +51,7 @@ set +e
 # run measures the gap between two checksum conventions: DEC's negated,
 # trimmed sum answers 0000 for a blank rectangle, esctest computes
 # 0x10000 - 0 for it, and every test that checks an empty region fails.
-cargo run -q --example headless --features pty -- \
+mitts run -q --example headless --features pty -- \
     --quiet --rows 25 --cols 80 --init '\e[13#y' -- \
     python3 "$CHECKOUT/esctest/esctest.py" \
         --expected-terminal=xterm \

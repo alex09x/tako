@@ -14,6 +14,49 @@ import Foundation
 
 // MARK: - PTY and Command Execution
 
+func makeDriverWorkDirectory() throws -> URL {
+    var template = Array("/private/tmp/tkw.XXXXXX".utf8CString)
+    guard mkdtemp(&template) != nil else { throw Failure("no private driver work directory: errno \(errno)") }
+    return URL(fileURLWithPath: String(cString: template), isDirectory: true)
+}
+
+struct DriverLaunchClock {
+    private let started = ProcessInfo.processInfo.systemUptime
+    private var previous = ProcessInfo.processInfo.systemUptime
+
+    mutating func mark(_ phase: String) {
+        let now = ProcessInfo.processInfo.systemUptime
+        print(String(format: "[timing] launch %@=%.3fs total=%.3fs", phase, now - previous, now - started))
+        previous = now
+    }
+}
+
+/// A launch owns a fresh file and a completion suffix; an old or partial
+/// write must never stand in for this launch's first shell command.
+struct ShellBootstrapWitness {
+    let token = UUID().uuidString
+    var fileName: String { "bootstrap-env-\(token)" }
+    var suffix: String { "|\(token)" }
+
+    func receipt(from contents: String) -> String? {
+        guard contents.hasSuffix(suffix) else { return nil }
+        return String(contents.dropLast(suffix.count))
+    }
+
+    /// Source the same printf in the actual shell, through a short HID
+    /// command. A fresh 0600 script avoids typing its long variable list.
+    func writeCommand(in work: URL) throws -> URL {
+        var template = Array(work.appendingPathComponent("b.XXXXXX").path.utf8CString)
+        let descriptor = mkstemp(&template)
+        guard descriptor >= 0 else { throw Failure("no private bootstrap script: errno \(errno)") }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        let command = "printf '%s|%s|%s|%s|%s|%s' \"$HOME\" \"$XDG_DATA_HOME\" \"$HISTFILE\" \"$TAKO_SESSIONS_HOME\" \"$ZDOTDIR\" '\(token)' > '\(work.appendingPathComponent(fileName).path)'\n"
+        try file.write(contentsOf: Data(command.utf8))
+        try file.close()
+        return URL(fileURLWithPath: String(cString: template))
+    }
+}
+
 extension Driver {
     /// Type a command line and press Return.
     func run(_ command: String) throws {
@@ -27,6 +70,10 @@ extension Driver {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "TAKO_SURFACE_ID")
+        environment.removeValue(forKey: "TAKO_SOCKET")
+        process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -65,7 +112,7 @@ extension Driver {
 
     /// Every static text in the front window, through accessibility.
     func staticTexts() -> [String] {
-        guard let window = windows().first else { return [] }
+        guard let window = activeWindow() else { return [] }
         return descendants(of: window, role: kAXStaticTextRole as String).compactMap {
             attribute($0, kAXValueAttribute) as String?
         }
@@ -73,7 +120,7 @@ extension Driver {
 
     /// The terminal's selected text, through accessibility.
     func selectedText() -> String {
-        guard let window = windows().first,
+        guard let window = activeWindow(),
               let area = descendants(of: window, role: kAXTextAreaRole as String).first,
               let text: String = attribute(area, kAXSelectedTextAttribute)
         else { return "" }
@@ -121,7 +168,8 @@ extension Driver {
 
     /// List all pane IDs discovered in the app tree via takoctl.
     func paneIds() throws -> [String] {
-        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        // Quoted: the build folder can have a space in it ("/Volumes/Volume 1/...").
+        let ctl = "'\(appURL.path)/Contents/MacOS/takoctl' --bundle-id \(bundleID)"
         let treeJson = try exec("\(ctl) tree --json")
         if let data = treeJson.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -148,7 +196,8 @@ extension Driver {
 
     /// Discover currently focused pane ID from tree via takoctl.
     func focusedPaneId() throws -> String? {
-        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        // Quoted: the build folder can have a space in it ("/Volumes/Volume 1/...").
+        let ctl = "'\(appURL.path)/Contents/MacOS/takoctl' --bundle-id \(bundleID)"
         let treeJson = try exec("\(ctl) tree --json")
         if let data = treeJson.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

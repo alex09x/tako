@@ -55,6 +55,17 @@ struct LayoutPane: Codable, Equatable, Sendable {
     var command: [String]?
     var argv: [String]?
     var shell: Bool?
+    /// Where the pane sits on its tab's canvas: `tiled` (absent), `floating`,
+    /// `maximized` or `minimized`.
+    var state: String?
+    /// Whether the pane belongs to the grid -- where it returns from
+    /// maximized or the shelf. Absent: on the grid unless `state` is
+    /// `floating` (as files with only `state` mean it).
+    var grid: Bool?
+    /// A minimized pane that comes back maximized.
+    var restoresMaximized: Bool?
+    /// The pane's own rectangle when it floats, in points from the tab's top left.
+    var rect: LayoutFrame?
 
     init(
         title: String? = nil,
@@ -62,7 +73,11 @@ struct LayoutPane: Codable, Equatable, Sendable {
         env: [String: String]? = nil,
         command: [String]? = nil,
         argv: [String]? = nil,
-        shell: Bool? = nil
+        shell: Bool? = nil,
+        state: String? = nil,
+        grid: Bool? = nil,
+        restoresMaximized: Bool? = nil,
+        rect: LayoutFrame? = nil
     ) {
         self.title = title
         self.cwd = cwd
@@ -70,6 +85,10 @@ struct LayoutPane: Codable, Equatable, Sendable {
         self.command = command
         self.argv = argv
         self.shell = shell
+        self.state = state
+        self.grid = grid
+        self.restoresMaximized = restoresMaximized
+        self.rect = rect
     }
 
     /// The effective argument vector for program execution (command or argv).
@@ -93,6 +112,10 @@ struct LayoutPane: Codable, Equatable, Sendable {
         case command
         case argv
         case shell
+        case state
+        case grid
+        case restoresMaximized
+        case rect
     }
 
     init(from decoder: Decoder) throws {
@@ -101,6 +124,10 @@ struct LayoutPane: Codable, Equatable, Sendable {
         self.cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
         self.env = try container.decodeIfPresent([String: String].self, forKey: .env)
         self.shell = try container.decodeIfPresent(Bool.self, forKey: .shell)
+        self.state = try container.decodeIfPresent(String.self, forKey: .state)
+        self.grid = try container.decodeIfPresent(Bool.self, forKey: .grid)
+        self.restoresMaximized = try container.decodeIfPresent(Bool.self, forKey: .restoresMaximized)
+        self.rect = try container.decodeIfPresent(LayoutFrame.self, forKey: .rect)
 
         // Support command as [String] or single String
         if let arr = try? container.decode([String].self, forKey: .command) {
@@ -128,6 +155,10 @@ struct LayoutPane: Codable, Equatable, Sendable {
         try container.encodeIfPresent(env, forKey: .env)
         try container.encodeIfPresent(effectiveCommand, forKey: .command)
         try container.encodeIfPresent(shell, forKey: .shell)
+        try container.encodeIfPresent(state, forKey: .state)
+        try container.encodeIfPresent(grid, forKey: .grid)
+        try container.encodeIfPresent(restoresMaximized, forKey: .restoresMaximized)
+        try container.encodeIfPresent(rect, forKey: .rect)
     }
 }
 
@@ -259,12 +290,18 @@ struct LayoutWindow: Codable, Equatable, Sendable {
     var frame: LayoutFrame?
     var selectedTab: Int?
     var tabs: [LayoutTab]
+    /// `normal` (absent), `minimized` (in the Dock) or `fullscreen`.
+    var state: String?
 
-    init(title: String? = nil, frame: LayoutFrame? = nil, selectedTab: Int? = nil, tabs: [LayoutTab] = []) {
+    static let states = ["normal", "minimized", "fullscreen"]
+
+    init(title: String? = nil, frame: LayoutFrame? = nil, selectedTab: Int? = nil, tabs: [LayoutTab] = [],
+         state: String? = nil) {
         self.title = title
         self.frame = frame
         self.selectedTab = selectedTab
         self.tabs = tabs
+        self.state = state
     }
 
     var allPanes: [LayoutPane] { tabs.flatMap(\.allPanes) }

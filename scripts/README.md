@@ -49,6 +49,7 @@ An ordinary targeted change does not require running the full CI command.
 | `build-macos-testlib.sh`, `bindings.sh` | Lower-level test library and binding generation |
 | `build-zmx.sh` | Pinned, patched session runtime and its notices |
 | `release-macapp.py` | Developer ID verification, notarization and distributable macOS packaging |
+| `sign-macapp.py` | Sign and optionally notarize a downloaded candidate without rebuilding it |
 | `package-xcframework.sh vX.Y.Z` | Framework release archive and Swift package URL/checksum update |
 | `generate-sbom.py`, `verify-reproducible-build.sh` | Supply-chain metadata and reproducible engine verification |
 | `verify-ios-xcframework.sh` | Manual inspection of the complete macOS/iOS framework artifact |
@@ -57,6 +58,9 @@ An ordinary targeted change does not require running the full CI command.
 Use signed, notarized release artifacts for installation. A local development
 bundle is a separate workflow; these entry points do not provide a production
 app replacement shortcut.
+
+Hosted Mac checks, unsigned draft downloads and optional fully signed
+publication are described in [CI and release delivery](../docs/ci-and-releases.md).
 
 ## Diagnostics and manual tools
 

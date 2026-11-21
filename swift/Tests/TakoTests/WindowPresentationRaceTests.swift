@@ -15,6 +15,78 @@ import Testing
 
 @Suite(.serialized) @MainActor
 struct WindowPresentationRaceTests {
+    @Test func obsoleteTabOrderOutCannotHideTheReselectedTab() throws {
+        let (first, firstWindow) = TerminalTestSupport.loaded()
+        let (second, secondWindow) = TerminalTestSupport.loaded()
+        defer {
+            TerminalTestSupport.tearDown(first, firstWindow)
+            TerminalTestSupport.tearDown(second, secondWindow)
+        }
+        Tako.CustomTabGroup.join(secondWindow, to: firstWindow, select: false)
+        let group = Tako.CustomTabGroup.group(for: firstWindow)
+        firstWindow.orderFrontRegardless()
+        group.recordSelection(firstWindow, for: WorkspaceStore.shared.activeWorkspaceId)
+
+        var pending: [() -> Void] = []
+        group.deferPresentationWork = { pending.append($0) }
+        group.select(secondWindow)
+        try #require(group.pendingOrderOutWindow === firstWindow)
+        try #require(!pending.isEmpty)
+        let obsoleteOrderOut = pending.removeFirst()
+        group.select(firstWindow)
+        try #require(group.pendingOrderOutWindow === secondWindow)
+
+        obsoleteOrderOut()
+        #expect(group.selectedWindow === firstWindow)
+        #expect(firstWindow.isVisible)
+        #expect(group.pendingOrderOutWindow === secondWindow)
+        for work in pending { work() }
+        #expect(group.selectedWindow === firstWindow)
+        #expect(firstWindow.isVisible)
+        #expect(!secondWindow.isVisible)
+        #expect(group.pendingOrderOutWindow == nil)
+    }
+
+    @Test func obsoleteWorkspaceReflowCannotRestoreFocusAfterARoundTrip() throws {
+        let store = WorkspaceStore.shared
+        store.resetForTesting()
+        let (first, firstWindow) = TerminalTestSupport.loaded()
+        let (second, secondWindow) = TerminalTestSupport.loaded()
+        defer {
+            TerminalTestSupport.tearDown(first, firstWindow)
+            TerminalTestSupport.tearDown(second, secondWindow)
+            store.resetForTesting()
+        }
+        Tako.CustomTabGroup.join(secondWindow, to: firstWindow, select: false)
+        let group = Tako.CustomTabGroup.group(for: firstWindow)
+        let other = store.createWorkspace(name: "Other")
+        store.assignTab(tabIdentifier: secondWindow.stableTabIdentifier, to: other.id)
+        var pending: [() -> Void] = []
+        group.deferPresentationWork = { pending.append($0) }
+
+        try #require(store.switchWorkspace(to: other.id))
+        let obsoleteReflow = try #require(pending.last)
+        pending.removeAll()
+        try #require(store.switchWorkspace(to: WorkspaceStore.defaultWorkspaceId))
+        pending.removeAll()
+        try #require(store.switchWorkspace(to: other.id))
+        let currentReflow = try #require(pending.last)
+        try #require(group.selectedWindow === secondWindow)
+        secondWindow.orderFrontRegardless()
+        try #require(secondWindow.isVisible)
+        let pane = try #require(second.surfaceTree.first)
+        second.focusedSurface = nil
+
+        // The stale callback now has the same selected, visible window as the current one.
+        obsoleteReflow()
+        #expect(second.focusedSurface == nil)
+        #expect(!firstWindow.isVisible)
+        currentReflow()
+        #expect(second.focusedSurface === pane)
+        #expect(group.selectedWindow === secondWindow)
+        #expect(!firstWindow.isVisible)
+    }
+
     @Test func hidingAnInactiveWorkspaceCancelsItsPendingPresentation() {
         let store = WorkspaceStore.shared
         store.resetForTesting()

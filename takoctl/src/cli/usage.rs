@@ -34,6 +34,41 @@ commands:
   tab-new                 a new tab in the pane's window (--cwd DIR, --no-select); prints its pane id
   split [DIRECTION]       split the pane: right, left, down or up (--cwd DIR, --child-of PANE,
                           --label NAME); defaults to right; prints the new pane id
+                          tab-new, split, run and window new take --state STATE to open
+                          the pane floating, maximized or minimized
+  pane [state]            the pane's state: tiled, floating, maximized or minimized
+  pane float|dock         float the pane over the grid, or put it back on the grid
+  pane maximize|unmaximize  fill the tab with the pane, or put it back
+  pane minimize|restore   put the pane on the shelf, or bring it back as it was
+  pane set STATE          any of the four states in one step (--no-select: keep the
+                          keyboard where it is)
+  pane frame [X Y W H]    print or set the pane's frame in points from the tab's top
+                          left; setting one floats the pane there, as dragging does
+  pane move --window new  move the pane out of its tab into a new window
+  pane move --into PANE   move the pane into PANE's tab beside it (--split right|left|
+                          down|up, default right); a tab it leaves empty closes
+  window [list]           every window: id, tabs, frame, minimized, fullscreen
+  window new              a new window (--cwd DIR, --state STATE, --frame X,Y,W,H);
+                          prints its pane id
+  window state            the window of the pane (or --window ID)
+  window minimize|restore minimize the window to the Dock, or bring it back
+  window fullscreen [on|off|toggle]  enter or leave full screen
+  window focus            bring the window forward
+  window frame [X Y W H]  print or set its frame, in points from the bottom left
+                          (--frame X,Y,W,H says the same)
+  window close            close the window and its tabs, asking first as closing by
+                          hand would; the last window needs --force (it quits Tako)
+  config [list]           every setting: set ones as KEY = VALUE, the rest commented
+                          with their default (--filter TEXT)
+  config get KEY...       a setting's value (every value of a repeatable one)
+  config set KEY=VALUE... write settings to the config file and reload
+  config add KEY=VALUE... add one more line of a repeatable setting (keybind, palette, ...)
+  config unset KEY...     remove settings, back to their defaults
+  config shortcut [list]  every action and its key chord (* = chosen by you)
+  config shortcut set ACTION TRIGGER  bind a chord, e.g. new_tab cmd+t; one already in
+                          use is refused unless --force
+  config shortcut unset ACTION|reset  back to Tako's chord for one action, or for all
+  config path|reload      the config file's path; reload it
   collapse [TARGET]       collapse a parent pane's subagents in tree and sidebar
   expand [TARGET]         expand a parent pane's subagents in tree and sidebar
   focus                   bring the pane forward and give it the keyboard
@@ -136,7 +171,12 @@ commands:
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one);
                           --pane ID says the same, except for events
-  --window ID             session export: target specific window ID
+  --window ID             window, session export: the window (ids from window list)
+  --state STATE           tab-new, split, run, window new: tiled, floating, maximized, minimized
+  --frame X,Y,W,H         window new, window frame, pane frame: the frame
+  --force                 window close: close the last window too (quits Tako);
+                          config shortcut set: take a chord another action has
+  --filter TEXT           config list: only settings whose name contains TEXT
   --panes P1,P2,...       broadcast: comma-separated list of target panes
   --client NAME           client name for identity and attribution (send, type, key; default: takoctl)
   --owner NAME            agent name for input lock / handback (default: agent)
@@ -172,7 +212,8 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
-  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay; default: read,layout,signal,input)
+  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,config;
+                          default: all but config; all: every scope)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer

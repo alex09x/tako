@@ -22,6 +22,14 @@ extension WalkthroughTests {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            for owner in [app!, springboard] {
+                let continueButton = owner.buttons["Continue"]
+                if continueButton.exists,
+                   owner.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "sliding your finger")).firstMatch.exists {
+                    continueButton.tap()
+                    _ = continueButton.waitForNonExistence(timeout: 3)
+                }
+            }
             // CredentialUI is a separate process, but XCTest grafts its
             // accessibility tree onto the application it is covering. On
             // current iOS the button is therefore found through `app`; older
@@ -30,9 +38,12 @@ extension WalkthroughTests {
             for owner in [app!, springboard] {
                 for label in ["Not Now", "Not now"] {
                     let button = owner.buttons[label]
-                    if button.exists {
-                        button.tap()
-                        _ = button.waitForNonExistence(timeout: 5)
+                    guard button.exists else { continue }
+                    button.tap()
+                    let remaining = max(0.5, deadline.timeIntervalSinceNow)
+                    if button.waitForNonExistence(timeout: min(5, remaining)) &&
+                        !app.sheets["Save Password?"].exists &&
+                        !springboard.sheets["Save Password?"].exists {
                         return true
                     }
                 }
@@ -155,7 +166,11 @@ extension WalkthroughTests {
         tapSoftwareReturn()
     }
 
-    func dropFaultProxyConnections() {
+    @discardableResult
+    func dropFaultProxyConnections(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Int {
         let dropped = expectation(description: "fault proxy dropped the active TCP stream")
         let connection = NWConnection(
             host: NWEndpoint.Host("127.0.0.1"),
@@ -180,7 +195,11 @@ extension WalkthroughTests {
         connection.start(queue: DispatchQueue(label: "tako.ui-test.fault-proxy"))
         wait(for: [dropped], timeout: 5)
         connection.cancel()
-        XCTAssertTrue(reply.hasPrefix("OK "), "fault proxy rejected the drop command: \(reply)")
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertTrue(trimmed.hasPrefix("OK "), "fault proxy rejected the drop command: \(reply)", file: file, line: line)
+        let droppedCount = Int(trimmed.dropFirst(3)) ?? 0
+        XCTAssertGreaterThan(droppedCount, 0, "fault proxy reported no active connection to sever: \(trimmed)", file: file, line: line)
+        return droppedCount
     }
 
     /// Press a character on the system software keyboard. Keyboard labels
@@ -191,6 +210,11 @@ extension WalkthroughTests {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        if app.buttons["Continue"].exists,
+           app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "sliding your finger")).firstMatch.exists {
+            app.buttons["Continue"].tap()
+            _ = app.buttons["Continue"].waitForNonExistence(timeout: 3)
+        }
         for label in [character, character.uppercased()] {
             let key = app.keys[label]
             if key.exists {

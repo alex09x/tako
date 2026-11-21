@@ -10,10 +10,22 @@
 
 import Foundation
 
-/// Scope targeted by an appearance override: an entire workspace or a single pane.
+/// Scope targeted by an appearance override. Resolution order is
+/// global -> workspace -> session -> pane.
+///
+/// A session is one native tab window, identified by its persisted
+/// `NSWindow.stableTabIdentifier` (restored with the window), never by its
+/// title or by whichever pane happens to be focused.
 public enum AppearanceScope: Equatable, Hashable, Sendable {
     case workspace(UUID)
+    case session(String)
     case pane(UUID)
+
+    /// Canonical storage key: UUID-shaped identifiers are uppercased so a
+    /// restored lowercase copy addresses the same record.
+    public static func sessionKey(_ id: String) -> String {
+        UUID(uuidString: id).map { $0.uuidString.uppercased() } ?? id
+    }
 }
 
 /// Permitted appearance keys.

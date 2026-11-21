@@ -72,50 +72,22 @@ struct ProgressTests {
         #expect(tracker.progress == nil)
     }
 
-    @Test func paneProgressBarRenderingAndStyles() {
+    /// Progress is shown in the tab, the dock and the window, never as a line
+    /// over the terminal: no state shows a layer that was not there before.
+    @Test func progressDrawsNothingOverTheTerminal() {
         let view = TakoTerminalNSView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
         view.layout()
-
-        #expect(view.paneProgressBarLayer.isHidden == true)
-
-        // Normal state (green)
-        view.updateProgressBar(state: .normal, progress: 50)
-        #expect(view.paneProgressBarLayer.isHidden == false)
-        #expect(view.activeProgressState == .normal)
-        #expect(view.activeProgressValue == 50)
-        #expect(view.paneProgressBarLayer.frame.width == 200.0) // 50% of 400
-
-        // Error state (red)
-        view.updateProgressBar(state: .error, progress: 25)
-        #expect(view.paneProgressBarLayer.isHidden == false)
-        #expect(view.activeProgressState == .error)
-        #expect(view.paneProgressBarLayer.frame.width == 100.0) // 25% of 400
-
-        // Paused state (orange)
-        view.updateProgressBar(state: .paused, progress: 75)
-        #expect(view.paneProgressBarLayer.isHidden == false)
-        #expect(view.activeProgressState == .paused)
-        #expect(view.paneProgressBarLayer.frame.width == 300.0) // 75% of 400
-
-        // Indeterminate state (centered, 35% width)
-        view.updateProgressBar(state: .indeterminate, progress: nil)
-        #expect(view.paneProgressBarLayer.isHidden == false)
-        #expect(view.activeProgressState == .indeterminate)
-        let expectedWidth: CGFloat = 400.0 * 0.35 // 140
-        #expect(view.paneProgressBarLayer.frame.width == expectedWidth)
-        #expect(view.paneProgressBarLayer.frame.minX == (400.0 - expectedWidth) / 2)
-
-        // None state (hidden)
-        view.updateProgressBar(state: .none, progress: nil)
-        #expect(view.paneProgressBarLayer.isHidden == true)
-
-        // Disabling paneProgressBarEnabled hides the bar even if state != .none
-        view.updateProgressBar(state: .normal, progress: 60)
-        #expect(view.paneProgressBarLayer.isHidden == false)
-        view.paneProgressBarEnabled = false
-        #expect(view.paneProgressBarLayer.isHidden == true)
-        view.paneProgressBarEnabled = true
-        #expect(view.paneProgressBarLayer.isHidden == false)
+        func shown(_ layer: CALayer) -> [ObjectIdentifier] {
+            (layer.sublayers ?? []).filter { !$0.isHidden }.flatMap { [ObjectIdentifier($0)] + shown($0) }
+        }
+        let before = shown(view.layer!)
+        let states: [(TakoTerminalNSView.ProgressState, Int?)] = [(.normal, 50), (.error, 25), (.paused, 75), (.indeterminate, nil), (.none, nil)]
+        for (state, value) in states {
+            view.updateProgressBar(state: state, progress: value)
+            #expect(view.activeProgressState == state)
+            #expect(view.activeProgressValue == value)
+            #expect(shown(view.layer!) == before, "\(state) drew a layer over the terminal")
+        }
     }
 
     @Test func aggregateProgressCalculationsAcrossPanes() {
@@ -164,7 +136,6 @@ struct ProgressTests {
         #expect(emptyConfig.progressStyle == .all)
         #expect(emptyConfig.progressStyle.showsInDock == true)
         #expect(emptyConfig.progressStyle.showsInTab == true)
-        #expect(emptyConfig.progressStyle.showsInHeader == true)
         #expect(emptyConfig.progressStyle.showsInWindow == true)
         #expect(emptyConfig.progressStyle == true)
 
@@ -173,7 +144,6 @@ struct ProgressTests {
         #expect(offConfig.progressStyle == .none)
         #expect(offConfig.progressStyle.showsInDock == false)
         #expect(offConfig.progressStyle.showsInTab == false)
-        #expect(offConfig.progressStyle.showsInHeader == false)
         #expect(offConfig.progressStyle.showsInWindow == false)
         #expect(offConfig.progressStyle == false)
 
@@ -181,16 +151,14 @@ struct ProgressTests {
         let falseConfig = try TemporaryConfig("progress-style = false")
         #expect(falseConfig.progressStyle == .none)
 
-        // Specific surfaces
+        // Specific surfaces; `header` from an old config reads and adds nothing
         let partialConfig = try TemporaryConfig("progress-style = dock, header")
-        #expect(partialConfig.progressStyle.showsInDock == true)
-        #expect(partialConfig.progressStyle.showsInHeader == true)
+        #expect(partialConfig.progressStyle == .dock)
         #expect(partialConfig.progressStyle.showsInTab == false)
         #expect(partialConfig.progressStyle.showsInWindow == false)
 
         let tabWindowConfig = try TemporaryConfig("progress-style = tab, window")
         #expect(tabWindowConfig.progressStyle.showsInDock == false)
-        #expect(tabWindowConfig.progressStyle.showsInHeader == false)
         #expect(tabWindowConfig.progressStyle.showsInTab == true)
         #expect(tabWindowConfig.progressStyle.showsInWindow == true)
     }

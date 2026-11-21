@@ -11,4 +11,6 @@
 mod cells_and_styles;
 mod common;
 mod encode_and_modes;
+mod host_queries;
+mod program_status;
 mod viewport_and_text;

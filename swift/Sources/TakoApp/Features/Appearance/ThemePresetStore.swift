@@ -60,6 +60,8 @@ public final class ThemePresetStore {
             }
         }
 
+        let canonical = TerminalTheme.canonicalThemeName(name)
+        if canonical != name { return try load(named: canonical) }
         throw ThemePresetError.notFound("Theme preset '\(name)' not found")
     }
 
@@ -198,6 +200,7 @@ public final class ThemePresetStore {
     }
 
     private func isBuiltinFile(named name: String) -> Bool {
+        let builtinName = TerminalTheme.canonicalThemeName(name)
         // A legacy profile can alias the same directory through a parent
         // symlink. It remains the user directory, not a built-in source.
         let standardizedDir = directory.resolvingSymlinksInPath().standardizedFileURL.path
@@ -205,7 +208,7 @@ public final class ThemePresetStore {
             let expandedDir = (searchDir as NSString).expandingTildeInPath
             let searchURL = URL(fileURLWithPath: expandedDir).resolvingSymlinksInPath().standardizedFileURL
             guard searchURL.path != standardizedDir else { continue }
-            let candidateURL = searchURL.appendingPathComponent(name)
+            let candidateURL = searchURL.appendingPathComponent(builtinName)
             if FileManager.default.fileExists(atPath: candidateURL.path) {
                 return true
             }

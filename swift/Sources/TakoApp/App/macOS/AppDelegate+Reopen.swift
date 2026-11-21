@@ -156,13 +156,27 @@ extension AppDelegate {
         // run before the process exits.
         signal(SIGTERM, SIG_IGN)
         let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        sigterm.setEventHandler {
-            Tako.logger.info("terminating in response to SIGTERM")
-            NSApp.terminate(nil)
-        }
+        sigterm.setEventHandler { Self.handleTerminationSignal() }
         sigterm.resume()
         signals.append(sigterm)
     }
 
+    /// The quit SIGTERM asks for; a test stands in for it.
+    @MainActor static var terminateForSignal: () -> Void = { NSApp.terminate(nil) }
+
+    /// SIGTERM's source fires on the main dispatch queue. A quit that must ask
+    /// first (a terminal still running a program) answers `.terminateLater`
+    /// and AppKit waits for the reply in a nested loop -- which cannot drain
+    /// the main queue it was called from, so the question, a main-actor task,
+    /// never came and the app hung. The quit runs on the main run loop
+    /// instead, once the source's callout has returned; asking, cancelling
+    /// and everything a quit saves are as before.
+    nonisolated static func handleTerminationSignal() {
+        Tako.logger.info("terminating in response to SIGTERM")
+        CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+            MainActor.assumeIsolated { terminateForSignal() }
+        }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
 }
 

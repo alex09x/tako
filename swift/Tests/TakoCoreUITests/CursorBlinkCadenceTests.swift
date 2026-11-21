@@ -21,23 +21,41 @@ final class CursorBlinkCadenceTests: XCTestCase {
     func testTheCursorIsLitFor720msThenOutFor480ms() async throws {
         var blinking = TerminalTheme.takoDefault
         blinking.cursorBlink = true
+        let began = Date()
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300), theme: blinking)
+        let mounted = Date()
         XCTAssertTrue(view.isBlinkStateVisibleForTesting)
 
         let lit = try XCTUnwrap(view.blinkTimer)
-        XCTAssertEqual(lit.fireDate.timeIntervalSinceNow, 0.72, accuracy: 0.05, "lit for")
+        assertDeadline(lit, duration: 0.72, scheduledBetween: began, and: mounted)
 
+        let firstFire = Date()
         lit.fire()
         try await waitFor { !view.isBlinkStateVisibleForTesting }
+        let firstObserved = Date()
         let out = try XCTUnwrap(view.blinkTimer)
         XCTAssertFalse(out === lit, "the next phase has a timer of its own")
-        XCTAssertEqual(out.fireDate.timeIntervalSinceNow, 0.48, accuracy: 0.05, "out for")
+        assertDeadline(out, duration: 0.48, scheduledBetween: firstFire, and: firstObserved)
 
+        let secondFire = Date()
         out.fire()
         try await waitFor { view.isBlinkStateVisibleForTesting }
+        let secondObserved = Date()
         let again = try XCTUnwrap(view.blinkTimer)
-        XCTAssertEqual(again.fireDate.timeIntervalSinceNow, 0.72, accuracy: 0.05, "lit again for")
+        assertDeadline(again, duration: 0.72, scheduledBetween: secondFire, and: secondObserved)
+        XCTAssertEqual(CursorBlink.phaseDuration(lit: true), 0.72, accuracy: 1e-9)
+        XCTAssertEqual(CursorBlink.phaseDuration(lit: false), 0.48, accuracy: 1e-9)
         XCTAssertEqual(CursorBlink.phaseDuration(lit: true) + CursorBlink.phaseDuration(lit: false), 1.2, accuracy: 1e-9)
+    }
+
+    /// The phase is scheduled between firing and observing its main-actor
+    /// callback. Time spent waiting to observe it is not part of its duration.
+    /// Keep the original 50 ms tolerance, measured from that scheduling window.
+    private func assertDeadline(_ timer: Timer, duration: TimeInterval,
+                                scheduledBetween start: Date, and end: Date,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertGreaterThanOrEqual(timer.fireDate.timeIntervalSince(start), duration - 0.05, file: file, line: line)
+        XCTAssertLessThanOrEqual(timer.fireDate.timeIntervalSince(end), duration + 0.05, file: file, line: line)
     }
 
     @MainActor

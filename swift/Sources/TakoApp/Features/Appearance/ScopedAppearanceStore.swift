@@ -10,7 +10,7 @@
 
 import Foundation
 
-/// Main actor store for versioned scoped appearance overrides (workspace and pane).
+/// Main actor store for versioned scoped appearance overrides (workspace, session and pane).
 ///
 /// Ensures atomic disk writes before updating in-memory state or publishing notifications.
 /// Protects corrupt or unknown-version persistence files against being overwritten.
@@ -56,6 +56,7 @@ public final class ScopedAppearanceStore {
         if let value {
             try AppearanceValidator.validate(value: value, for: appearanceKey)
         }
+        try Self.validateIdentity(scope)
 
         var draft = document
         draft.setOverride(value, for: key, scope: scope)
@@ -90,6 +91,7 @@ public final class ScopedAppearanceStore {
     func applyPreset(_ name: String, scope: AppearanceScope) throws {
         if let loadError { throw loadError }
         try AppearanceValidator.validate(value: name, for: .theme)
+        try Self.validateIdentity(scope)
         var draft = document
         draft.reset(scope)
         draft.setOverride(name, for: "theme", scope: scope)
@@ -104,12 +106,8 @@ public final class ScopedAppearanceStore {
         workspaceID: UUID?,
         paneID: UUID?
     ) -> TerminalTheme {
-        effectiveTheme(
-            global: global,
-            workspaceID: workspaceID,
-            paneID: paneID,
-            themeSearchPaths: themeSearchPaths
-        )
+        effectiveTheme(global: global, workspaceID: workspaceID, sessionID: nil, paneID: paneID,
+                       themeSearchPaths: themeSearchPaths)
     }
 
     /// Resolve the effective theme with explicit theme search paths.
@@ -119,27 +117,48 @@ public final class ScopedAppearanceStore {
         paneID: UUID?,
         themeSearchPaths: [String]?
     ) -> TerminalTheme {
-        let paths = themeSearchPaths ?? self.themeSearchPaths ?? TerminalTheme.themeSearchPaths
-        let wsOverrides = workspaceID.flatMap { document.overrides(for: .workspace($0)) }
-        let paneOverrides = paneID.flatMap { document.overrides(for: .pane($0)) }
+        effectiveTheme(global: global, workspaceID: workspaceID, sessionID: nil, paneID: paneID,
+                       themeSearchPaths: themeSearchPaths)
+    }
 
-        return ScopedAppearanceResolver.resolve(
-            global: global,
-            workspaceOverrides: wsOverrides,
-            paneOverrides: paneOverrides,
-            themeSearchPaths: paths
-        )
+    /// Resolve global -> workspace -> session -> pane. `sessionID` is the
+    /// native tab's stable identifier; nil skips the session layer.
+    public func effectiveTheme(
+        global: TerminalTheme,
+        workspaceID: UUID?,
+        sessionID: String?,
+        paneID: UUID?,
+        themeSearchPaths: [String]? = nil
+    ) -> TerminalTheme {
+        Self.resolve(document, global: global, workspaceID: workspaceID, sessionID: sessionID, paneID: paneID,
+                     themeSearchPaths: themeSearchPaths ?? self.themeSearchPaths ?? TerminalTheme.themeSearchPaths)
     }
 
     /// Preview resetting one field without touching disk or notifying surfaces.
     func previewRemoving(_ key: String, scope: AppearanceScope, global: TerminalTheme,
-                         workspaceID: UUID?, paneID: UUID?) -> TerminalTheme {
+                         workspaceID: UUID?, sessionID: String? = nil, paneID: UUID?) -> TerminalTheme {
         var draft = document
         draft.setOverride(nil, for: key, scope: scope)
-        return ScopedAppearanceResolver.resolve(global: global,
-            workspaceOverrides: workspaceID.flatMap { draft.overrides(for: .workspace($0)) },
-            paneOverrides: paneID.flatMap { draft.overrides(for: .pane($0)) },
-            themeSearchPaths: themeSearchPaths ?? TerminalTheme.themeSearchPaths)
+        return Self.resolve(draft, global: global, workspaceID: workspaceID, sessionID: sessionID, paneID: paneID,
+                            themeSearchPaths: themeSearchPaths ?? TerminalTheme.themeSearchPaths)
+    }
+
+    private static func resolve(_ doc: AppearanceDocument, global: TerminalTheme, workspaceID: UUID?,
+                                sessionID: String?, paneID: UUID?, themeSearchPaths: [String]) -> TerminalTheme {
+        ScopedAppearanceResolver.resolve(global: global,
+            workspaceOverrides: workspaceID.flatMap { doc.overrides(for: .workspace($0)) },
+            sessionOverrides: sessionID.flatMap { doc.overrides(for: .session($0)) },
+            paneOverrides: paneID.flatMap { doc.overrides(for: .pane($0)) },
+            themeSearchPaths: themeSearchPaths)
+    }
+
+    /// A session record must stay loadable: its identity is validated like
+    /// a name so a corrupt key can never be persisted.
+    static func validateIdentity(_ scope: AppearanceScope) throws {
+        guard case .session(let id) = scope else { return }
+        guard AppearanceValidator.isValidName(id) else {
+            throw AppearanceStoreError.invalidValue(key: "session", value: id, reason: "Session identity must be non-empty and control-free")
+        }
     }
 
     // MARK: - Persistence
@@ -187,7 +206,7 @@ public final class ScopedAppearanceStore {
                 return
             }
 
-            guard version == AppearanceDocument.currentVersion else {
+            guard AppearanceDocument.supportedVersions.contains(version) else {
                 self.loadError = .unsupportedVersion(version, fileURL)
                 return
             }
@@ -195,7 +214,13 @@ public final class ScopedAppearanceStore {
             let decoder = JSONDecoder()
             let loaded = try decoder.decode(AppearanceDocument.self, from: data)
             try loaded.validateEntries(fileURL: fileURL)
-            self.document = loaded
+            // A legacy file stays byte-identical on disk until the next
+            // successful write, which then stores the migrated version.
+            guard let migrated = AppearanceDocument.migrated(from: loaded) else {
+                self.loadError = .unsupportedVersion(version, fileURL)
+                return
+            }
+            self.document = migrated
         } catch let err as AppearanceStoreError {
             self.loadError = err
         } catch {

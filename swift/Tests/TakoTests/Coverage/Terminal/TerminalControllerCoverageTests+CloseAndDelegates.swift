@@ -27,7 +27,7 @@ struct TerminalControllerCloseTests {
         #expect(!controller.surfaceTree.contains(created))
     }
 
-    @Test func closeSurfaceOnTheRootWithASingleWindowClosesTheWindow() throws {
+    @Test func closeSurfaceOnTheRootWithASingleWindowRetainsEmptySessionUntilClosed() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { TerminalTestSupport.tearDown(controller, window) }
         controller.showWindow(nil)
@@ -35,6 +35,10 @@ struct TerminalControllerCloseTests {
 
         controller.closeSurface(node, withConfirmation: false)
 
+        #expect(controller.surfaceTree.isEmpty)
+        #expect(window.isVisible)
+
+        controller.close(window)
         #expect(!window.isVisible)
     }
 

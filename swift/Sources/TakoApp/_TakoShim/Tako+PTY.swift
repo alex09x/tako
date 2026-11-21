@@ -89,17 +89,17 @@ final class PTY {
         // rules out setenv/unsetenv/strdup.
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let shellPathString = PTY.loginShell
-        let extraEnv = PTY.shellIntegrationEnvironment(config: config, loginShell: shellPathString)
-            + TakoPTYEnvironment.terminalIdentity(appVersion: appVersion)
-
         var envMap = ProcessInfo.processInfo.environment
         for key in TakoPTYEnvironment.variablesRemovedFromChild { envMap.removeValue(forKey: key) }
         envMap["TERM"] = "xterm-256color"
         envMap["COLORTERM"] = "truecolor"
         envMap["SHELL"] = shellPathString
-        for (key, value) in extraEnv { envMap[key] = value }
+        for (key, value) in TakoPTYEnvironment.terminalIdentity(appVersion: appVersion) { envMap[key] = value }
         for key in removing { envMap.removeValue(forKey: key) }
         for (key, value) in environment { envMap[key] = value }
+        let plan = PTY.shellLaunchPlan(config: config, loginShell: shellPathString,
+                                      environment: envMap, program: program)
+        for (key, value) in plan.environment { envMap[key] = value }
 
         // Plain C arrays, allocated here: passing a Swift array with `&` in
         // the child would go through Swift's array bridging, which is not
@@ -109,9 +109,8 @@ final class PTY {
         for (i, s) in envStrings.enumerated() { envp[i] = s }
         envp[envStrings.count] = nil
 
-        let shellPath = strdup(program?.first ?? shellPathString)
-        let argvStrings: [UnsafeMutablePointer<CChar>?] = program.map { $0.map { strdup($0) } }
-            ?? [strdup(shellPathString), strdup("-l")]
+        let shellPath = strdup(plan.arguments.first ?? shellPathString)
+        let argvStrings: [UnsafeMutablePointer<CChar>?] = plan.arguments.map { strdup($0) }
         let argv = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: argvStrings.count + 1)
         for (i, s) in argvStrings.enumerated() { argv[i] = s }
         argv[argvStrings.count] = nil
@@ -168,6 +167,8 @@ final class PTY {
             if haveErrorPipe { _ = Darwin.write(errorPipe[1], &failure, MemoryLayout<Int32>.size) }
             _exit(127)
         }
+        // A new shell must not keep other terminals' masters alive after exec.
+        _ = fcntl(masterFD, F_SETFD, FD_CLOEXEC)
         var startFailure: Int32?
         if haveErrorPipe {
             close(errorPipe[1])
@@ -228,7 +229,10 @@ final class PTY {
 
     func readLoop(targetQueue: DispatchQueue = .main, onData: @escaping (Data) -> Void, onExit: @escaping () -> Void) {
         let fd = master
-        DispatchQueue.global(qos: .userInitiated).async {
+        // read() and delivery backpressure may block for the terminal's whole
+        // lifetime. Keep them off libdispatch's shared worker pool, and do not
+        // retain the owner while waiting for its child to produce output.
+        let reader = Thread { [weak self] in
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             let readChunk: () -> Data? = {
                 let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
@@ -255,6 +259,9 @@ final class PTY {
                 targetQueue: targetQueue
             )
         }
+        reader.name = "tako.pty.reader.\(fd)"
+        reader.qualityOfService = .userInitiated
+        reader.start()
     }
 
     /// Set once the master is handed off to be closed. A second terminate
@@ -262,9 +269,10 @@ final class PTY {
     /// number again: by then it may belong to another file.
     private var masterClosed = false
 
-    func terminate() {
+    @discardableResult
+    func terminate() -> DispatchWorkItem? {
         markEnded()
-        guard !masterClosed else { return }
+        guard !masterClosed else { return nil }
         masterClosed = true
         let target = child
         var foregroundPgrp: pid_t = 0
@@ -286,7 +294,7 @@ final class PTY {
         // Escalating to SIGKILL after a grace period prevents background
         // processes like top, htop, or loopers from remaining orphaned.
         let fd = master
-        DispatchQueue.global(qos: .utility).async {
+        let closeMaster = DispatchWorkItem {
             usleep(150_000)
             if foregroundPgrp > 1 && foregroundPgrp != target {
                 kill(-foregroundPgrp, SIGKILL)
@@ -300,6 +308,12 @@ final class PTY {
             }
             close(fd)
         }
+        // A blocking close needs its own thread, like the blocking reader.
+        let closer = Thread { closeMaster.perform() }
+        closer.name = "tako.pty.close.\(fd)"
+        closer.qualityOfService = .utility
+        closer.start()
+        return closeMaster
     }
 
     deinit {

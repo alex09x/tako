@@ -95,17 +95,13 @@ extension Tako.SurfaceView {
         /// Reflow the terminal grid to match target size and notify the PTY.
         public func reflow(to targetSize: CGSize, forcePtyResize: Bool = false) {
             guard targetSize.width > 0, targetSize.height > 0 else { return }
-            if let superview = superview, superview.bounds.size != targetSize {
+            if let superview = superview, !(superview is SurfaceHostingView), superview.bounds.size != targetSize {
                 superview.setFrameSize(targetSize)
             }
             if bounds.size != targetSize {
                 setFrameSize(targetSize)
             }
-            let fitted = TerminalGridLayout(
-                viewSize: targetSize,
-                cellSize: CGSize(width: cellWidth, height: cellHeight),
-                theme: theme
-            )
+            let fitted = fittedGridLayout(for: targetSize)
             guard fitted.cols > 0, fitted.rows > 0 else { return }
             if forcePtyResize {
                 updatePtyPixelSize(cols: fitted.cols, rows: fitted.rows)
@@ -136,11 +132,15 @@ extension Tako.SurfaceView {
         public func terminalView(_ view: TakoTerminalNSView, didRestoreCheckpoint restore: TerminalCheckpointRestore) {
             reflowToCurrentBounds(forcePtyResize: true)
             scheduleSearchHitRefresh()
+            refreshDrawnColors()
         }
 
-        /// Screen content changed or checkpoint restored: refresh search hit marks if active (debounced).
+        /// Screen content changed or checkpoint restored: refresh search hit
+        /// marks if active (debounced), and the colours the screen is drawn in
+        /// (a program's OSC 10/11 arrives as content).
         public func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
             scheduleSearchHitRefresh()
+            refreshDrawnColors()
         }
 
         /// A command action requested sending text to another pane.

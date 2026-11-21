@@ -203,18 +203,33 @@ struct TerminalControllerMultiTabGroupTests {
         #expect(!b.validateMenuItem(item))
     }
 
-    @Test func closeSurfaceOnTheRootWithMultipleTabsClosesJustTheTab() throws {
+    @Test func closeSurfaceOnTheRootWithMultipleTabsRetainsEmptyCanvasUntilTabClosed() throws {
         let (a, aWindow, b, bWindow) = makeJoinedPair()
         defer {
             TerminalTestSupport.tearDown(a, aWindow)
             TerminalTestSupport.tearDown(b, bWindow)
         }
+        let group = Tako.CustomTabGroup.group(for: aWindow)
+        group.select(aWindow)
         aWindow.makeKeyAndOrderFront(nil)
         let node = try #require(a.surfaceTree.root)
 
         a.closeSurface(node, withConfirmation: false)
 
+        #expect(a.surfaceTree.isEmpty)
+        #expect(aWindow.isVisible)
+        // An inactive tab need not be onscreen; it must remain open and intact.
+        #expect(group.selectedWindow === aWindow)
+        #expect(group.windows.contains(bWindow))
+        #expect(!b.surfaceTree.isEmpty)
+
+        a.close(aWindow)
         #expect(!aWindow.isVisible)
+        #expect(group.selectedWindow === bWindow)
+        let deadline = Date().addingTimeInterval(1)
+        while !bWindow.isVisible && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
         #expect(bWindow.isVisible)
     }
 }

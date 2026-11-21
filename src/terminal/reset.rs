@@ -237,6 +237,7 @@ impl Terminal {
         self.last_prompt_line = None;
         self.context_stack.clear();
         self.evicted_elevated = 0;
+        self.on_program_status_hard_reset();
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset scroll region, home cursor.

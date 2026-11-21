@@ -78,6 +78,7 @@ extension Tako {
         ]
 
         static func kind(of program: String, arguments args: [String]) -> CommandKind {
+            if let kind = AgentProgramIdentity.kind(program: program, arguments: args) { return kind }
             if program == "ssh" { return sshRunsCommand(args) ? .batch : .connection }
             if shells.contains(program) { return args.contains(where: { !$0.hasPrefix("-") }) ? .batch : .shell }
             if sessions.contains(program) { return .shell }

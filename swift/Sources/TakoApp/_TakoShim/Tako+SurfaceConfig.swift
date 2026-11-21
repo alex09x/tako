@@ -54,7 +54,6 @@ extension Tako.SurfaceView {
             commandDurationsEnabled = config.commandDurations
             commandTimestampsEnabled = config.commandTimestamps
             stickyCommandHeaderEnabled = config.stickyCommandHeader
-            paneProgressBarEnabled = config.progressStyle.showsInHeader
             configuredEditorCommand = config.editor
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
             core.setClipboardReadAllowed(allowed: config.clipboardRead)

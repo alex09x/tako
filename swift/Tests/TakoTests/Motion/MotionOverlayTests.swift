@@ -11,6 +11,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import WebKit
 @testable import Tako
 
 /// A pane's overlays, watched as they move: the broadcast banner and the
@@ -27,7 +28,9 @@ struct MotionOverlayTests {
         let between = frames.filter { abs($0.value - start) > span * 0.1 && abs($0.value - end) > span * 0.1 }
         let first = frames.prefix(8).map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
         #expect(!between.isEmpty, "\(what) happened at once: \(first)")
-        #expect(frames.filter { $0.t > 0.3 }.allSatisfy { abs($0.value - end) < span * 0.05 }, "\(what) still moving after 0.3 s")
+        let late = frames.filter { $0.t > 0.15 }.map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
+        #expect(frames.filter { $0.t > 0.3 }.allSatisfy { abs($0.value - end) < span * 0.05 },
+                "\(what) still moving after 0.3 s (start \(String(format: "%.0f", start)), end \(String(format: "%.0f", end))): \(late)")
     }
 
     @Test func theBroadcastBannerComesInOverAMomentAndGoes() throws {
@@ -60,15 +63,63 @@ struct MotionOverlayTests {
         }
     }
 
+    /// The first file overlay a process opens pays a one-off start (WebKit and
+    /// the view hierarchy) before its first frame; a second one, on another
+    /// surface, does not (measured per process, cold/fresh/reopen, 2026-11-17).
+    /// That cold first-use latency is not this animation's gate: it is printed
+    /// here and stays a separate performance follow-up, not fixed behaviour.
+    /// So one real overlay is opened, shown and closed on a surface, probe and
+    /// window of its own, and the fade is then timed on a fresh surface.
+    private func warmUpFileOverlay(_ file: URL) throws {
+        let surface = Tako.SurfaceView(frame: .zero)
+        let started = ProcessInfo.processInfo.systemUptime
+        let probe = SwiftUIMotionProbe(Tako.InspectableSurface(surfaceView: surface), size: CGSize(width: 240, height: 140))
+        let mounted = ProcessInfo.processInfo.systemUptime
+        defer {
+            probe.close()
+            probe.window.contentView = nil
+        }
+        defer { _ = OverlayStore.shared.closeOverlay(paneId: surface.id) }
+        let blank = SwiftUIMotionProbe.light(probe.snapshot())
+        _ = try OverlayStore.shared.openOverlay(paneId: surface.id, path: file.path,
+                                                surfacePwd: file.deletingLastPathComponent().path)
+        // Readiness is a precondition, outside the measured fade. Cold
+        // WebKit startup can be slower when this suite shares a CI process.
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        var shown = blank
+        repeat {
+            probe.settle(0.1)
+            shown = SwiftUIMotionProbe.light(probe.snapshot())
+        } while shown <= blank + 10 && ProcessInfo.processInfo.systemUptime < deadline
+        let ready = ProcessInfo.processInfo.systemUptime
+        try #require(shown > blank + 10, "the warm-up overlay never showed: \(blank) -> \(shown)")
+        _ = OverlayStore.shared.closeOverlay(paneId: surface.id)
+        probe.settle(0.8)
+        try #require(OverlayStore.shared.overlay(for: surface.id) == nil, "the warm-up overlay is still open")
+        try #require(!containsWebView(probe.host), "the warm-up overlay left its web view in the pane")
+        print(String(format: "[overlay warm-up] cold probe %.0f ms, cold open to shown snapshot %.0f ms; first-use startup, not this animation's gate",
+                     (mounted - started) * 1000, (ready - mounted) * 1000))
+    }
+
+    private func containsWebView(_ root: NSView) -> Bool {
+        var visited = 0
+        func walk(_ view: NSView) -> Bool {
+            guard visited < 200 else { return false }
+            visited += 1
+            if view is WKWebView { return true }
+            return view.subviews.contains { walk($0) }
+        }
+        return walk(root)
+    }
+
     @Test func aFileOverlayFadesInOverThePaneAndOut() throws {
         _ = NSApplication.shared
-        let surface = Tako.SurfaceView(frame: .zero)
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("tako-fade-\(UUID().uuidString).txt")
         try String(repeating: "an overlay over the pane fades in and out\n", count: 40).write(to: file, atomically: true, encoding: .utf8)
-        defer {
-            _ = OverlayStore.shared.closeOverlay(paneId: surface.id)
-            try? FileManager.default.removeItem(at: file)
-        }
+        defer { try? FileManager.default.removeItem(at: file) }
+        try warmUpFileOverlay(file)
+        let surface = Tako.SurfaceView(frame: .zero)
+        defer { _ = OverlayStore.shared.closeOverlay(paneId: surface.id) }
         let probe = SwiftUIMotionProbe(Tako.InspectableSurface(surfaceView: surface), size: CGSize(width: 240, height: 140))
         defer { probe.close() }
         probe.settle(0.8)

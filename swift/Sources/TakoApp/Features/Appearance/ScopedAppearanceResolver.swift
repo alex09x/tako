@@ -14,38 +14,27 @@ import CoreGraphics
 /// Resolves the effective terminal theme across global configuration, workspace overrides,
 /// and pane overrides according to the precedence hierarchy.
 public enum ScopedAppearanceResolver {
-    /// Resolves the effective theme in order:
-    /// 1. Optional workspace theme preset over global (`applyingTheme` preserves fonts).
-    /// 2. Workspace explicit fields.
-    /// 3. Optional pane theme preset over current theme (`applyingTheme` preserves fonts).
-    /// 4. Pane explicit fields.
+    /// Resolves the effective theme over global, then each present scope in
+    /// order workspace -> session -> pane. Every scope applies its optional
+    /// full theme preset (`applyingTheme` preserves fonts unless the preset
+    /// defines typography) and then its explicit fields, so a child's
+    /// explicit field always beats any parent's preset or field.
     public static func resolve(
         global: TerminalTheme,
         workspaceOverrides: [String: String]?,
+        sessionOverrides: [String: String]? = nil,
         paneOverrides: [String: String]?,
         themeSearchPaths: [String] = TerminalTheme.themeSearchPaths,
         themeOverrides: [String: TerminalTheme] = [:]
     ) -> TerminalTheme {
         var theme = global
-
-        // 1. Optional workspace theme preset
-        if let ws = workspaceOverrides {
-            if let preset = ws[AppearanceKey.theme.rawValue] {
+        for layer in [workspaceOverrides, sessionOverrides, paneOverrides] {
+            guard let layer else { continue }
+            if let preset = layer[AppearanceKey.theme.rawValue] {
                 theme = themeOverrides[preset] ?? theme.applyingTheme(named: preset, searchPaths: themeSearchPaths)
             }
-            // 2. Workspace explicit fields
-            applyExplicitFields(overrides: ws, to: &theme)
+            applyExplicitFields(overrides: layer, to: &theme)
         }
-
-        // 3. Optional pane theme preset
-        if let pane = paneOverrides {
-            if let preset = pane[AppearanceKey.theme.rawValue] {
-                theme = themeOverrides[preset] ?? theme.applyingTheme(named: preset, searchPaths: themeSearchPaths)
-            }
-            // 4. Pane explicit fields
-            applyExplicitFields(overrides: pane, to: &theme)
-        }
-
         return theme
     }
 
