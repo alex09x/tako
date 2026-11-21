@@ -124,7 +124,16 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
     }
 
     func enterSize(_ value: String, in app: XCUIApplication) {
-        setText(value, field: fontSize(in: app), in: app)
+        let field = fontSize(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        reveal(field, in: app)
+        // A synthesized quick click can leave the AppKit field editor
+        // waiting in mouse tracking. Exercise a held gesture inside the field.
+        let start = field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = start.withOffset(CGVector(dx: 1, dy: 0))
+        start.click(forDuration: 0.15, thenDragTo: end)
+        app.typeKey("a", modifierFlags: .command)
+        field.typeText(value)
         app.typeKey(.return, modifierFlags: [])
     }
 
