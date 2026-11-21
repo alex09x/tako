@@ -46,7 +46,10 @@ let scenarios: [Scenario] = [
         // Every scenario ends with a kill, which the layout journal rightly
         // treats as a crash: start from nothing an earlier scenario left.
         forgetLayout(d)
-        try d.launch(config: "")
+        // Keep the marker and the relaunch bootstrap in the visible grid.
+        // A tiny default window can wrap the marker across physical rows.
+        let config = "window-width = 80\nwindow-height = 28\n"
+        try d.launch(config: config)
         // A marker and a directory of this run only, so a screen restored
         // from an earlier run cannot pass for this one. The output, not the
         // command line, holds the marker; any shell's printf makes it.
@@ -65,7 +68,7 @@ let scenarios: [Scenario] = [
             throw Failure("the marker never showed: [\(d.screenText().suffix(300))]")
         }
         try d.quitNormally()
-        try d.launch(config: "")
+        try d.launch(config: config)
         let screen = d.screenText()
         guard screen.contains(marker), !screen.contains("restored from")
         else { throw Failure("this run's screen was not restored as it was: [\(screen)]") }
