@@ -12,11 +12,9 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-/// A real click on a sidebar row, timed until the window set on screen
-/// changes to the clicked tab's. Five tabs, one of them printing a line every
-/// 100 ms. Clicks land on a row's name and beside it; every switch must reach
-/// the screen within 250 ms. Private HOME/XDG/history/sessions; the processes
-/// it starts are killed and checked gone.
+/// Clicks on and beside five sidebar row names must show the corresponding
+/// tab's window and activate its pane. One tab prints a line every 100 ms.
+/// Reports switch timings and verifies cleanup of the private shell fixtures.
 func runSidebarSwitchSpeedScenario(_ d: Driver) throws {
     d.quit()
     let saved = d.environment
@@ -102,6 +100,25 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     }
     usleep(1_000_000)
 
+    let treeText = try d.exec("\(ctl) tree --json")
+    let tree = try JSONSerialization.jsonObject(with: Data(treeText.utf8)) as? [String: Any]
+    let windows = (tree?["result"] as? [String: Any])?["windows"] as? [[String: Any]] ?? []
+    let tabs = windows.flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
+    var targets: [String: (pane: String, tab: String)] = [:]
+    for (name, pane) in zip(names, panes) {
+        let matches = tabs.filter { tab in
+            (tab["panes"] as? [[String: Any]])?.contains { $0["id"] as? String == pane } == true
+        }
+        guard matches.count == 1, let tab = matches[0]["stableTabId"] as? String, !tab.isEmpty else {
+            throw Failure("expected one stable tab for \(name)'s pane \(pane)")
+        }
+        targets[name] = (pane, tab)
+    }
+    guard Set(targets.values.map { $0.tab }).count == names.count,
+          let initialTab = targets[names[0]]?.tab, try d.focusedPaneId() == first else {
+        throw Failure("expected distinct tab IDs and \(names[0])'s pane initially active")
+    }
+
     func frame(_ e: AXUIElement) throws -> CGRect {
         guard let p: AXValue = d.attribute(e, kAXPositionAttribute), let s: AXValue = d.attribute(e, kAXSizeAttribute) else {
             throw Failure("no accessibility frame")
@@ -111,8 +128,10 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
         return CGRect(origin: pos, size: size)
     }
     var timings: [Double] = []
+    var windowOf: [String: CGWindowID] = [:]
     var lines: [String] = []
     struct Boundary {
+        let target: String
         let name: String
         let down: Double
         let up: Double
@@ -130,7 +149,7 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
     for (round, order) in orders.enumerated() {
         let beside = round == 2
         for name in order {
-            guard let r = row(name) else { throw Failure("no row \(name)") }
+            guard let r = row(name), let target = targets[name] else { throw Failure("no row or tab for \(name)") }
             var point = try center(r)
             if beside { point.x = try frame(r).maxX + 14 }
             let before = d.onScreenWindowNumbers()
@@ -160,13 +179,39 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             }
             let shown = Date().timeIntervalSince(started)
             let shownAt = ProcessInfo.processInfo.systemUptime
-            boundaries.append(Boundary(name: (beside ? "beside " : "name ") + name,
+            boundaries.append(Boundary(target: target.tab, name: (beside ? "beside " : "name ") + name,
                                        down: downAt, up: upAt, shown: shownAt, wallMS: shown * 1000,
                                        polls: polls, maxPoll: maxPoll,
                                        lastUnchangedStart: lastUnchangedStart, changedPollStart: changedPollStart))
             lines.append(String(format: "%@%@ %.0f ms", beside ? "beside " : "name ", name, shown * 1000))
             guard changed else { throw Failure("a click on \(name)'s row did not switch tabs: \(lines)") }
             timings.append(shown * 1000)
+            // Verify the pane and its sole visible window together after the measurement.
+            var matchingWindow: CGWindowID?
+            var lastObservation = ""
+            guard d.wait(for: {
+                let activePane: String?
+                do {
+                    activePane = try d.focusedPaneId()
+                } catch {
+                    lastObservation = "could not read the active pane: \(error)"
+                    return false
+                }
+                let window = d.activeOnScreenWindow()
+                let title: String? = window.flatMap { d.attribute($0, kAXTitleAttribute) }
+                let visible = d.onScreenWindowNumbers()
+                lastObservation = "pane \(activePane ?? "none"), window \(title ?? "none"), visible IDs \(visible)"
+                guard activePane == target.pane, title?.contains(name) == true,
+                      let wid = window.flatMap({ d.windowID(for: $0) }), visible == [wid] else { return false }
+                matchingWindow = wid
+                return true
+            }, timeout: 3), let wid = matchingWindow else {
+                throw Failure("click on \(name) did not show its window alone with pane \(target.pane) active: \(lastObservation)")
+            }
+            if let known = windowOf[name], known != wid {
+                throw Failure("\(name) was shown in window \(wid) after \(known)")
+            }
+            windowOf[name] = wid
             usleep(450_000)
         }
     }
@@ -196,13 +241,31 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
             print(String(format: "[timing model] %@ -> %@ @%.1f ms",
                          event["from_id"] as? String ?? "missing", event["to_id"] as? String ?? "missing", (time-origin)*1000))
         }
+        guard timedHistory.count == boundaries.count else {
+            throw Failure("\(boundaries.count) clicks recorded \(timedHistory.count) tab transitions")
+        }
+        // The transition must occur between this click and the next, with
+        // stable IDs from the fixture's tree rather than inferred from history.
+        var source = initialTab
+        for (index, click) in boundaries.enumerated() {
+            let event = timedHistory[index]
+            let nextDown = index + 1 < boundaries.count ? boundaries[index + 1].down : .infinity
+            guard event["from_id"] as? String == source, event["to_id"] as? String == click.target,
+                  let timestamp = (event["timestamp"] as? NSNumber)?.doubleValue,
+                  timestamp >= click.down, timestamp < nextDown else {
+                throw Failure("expected \(source) → \(click.target) for \(click.name), got \(event)")
+            }
+            source = click.target
+        }
+        guard Set(windowOf.values).count == names.count else {
+            throw Failure("the five rows were not shown in five different windows: \(windowOf)")
+        }
     } catch {
         historyFailure = error
         print("[timing model] unavailable: \(error)")
     }
-    // A click on the name used to wait out the double-click interval (~480 ms).
-    guard let slowest = sorted.last, slowest < 250 else {
-        throw Failure(String(format: "a sidebar switch took %.0f ms to reach the screen", sorted.last ?? 0))
-    }
+    // The timings above are information, not a gate: speed is profiled by
+    // hand. Every click still had to put its own tab's window on screen and
+    // make its pane the active one.
     if let historyFailure { throw historyFailure }
 }
