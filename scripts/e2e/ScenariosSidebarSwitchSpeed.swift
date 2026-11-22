@@ -201,23 +201,8 @@ private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout Ow
         print("[timing model] unavailable: \(error)")
     }
     // A click on the name used to wait out the double-click interval (~480 ms).
-    // Real hardware must show every switch within 250 ms. A hosted macOS VM
-    // has no GPU and starves this very process: the 20 ms between its own
-    // mouse down and up stretches to 90 ms there. It still has to stay
-    // clear of that interval.
-    let budget = runsInVirtualMachine() ? 450.0 : 250.0
-    print(String(format: "[timing] sidebar switch budget: %.0f ms (%@)", budget,
-                 runsInVirtualMachine() ? "virtual machine" : "hardware"))
-    guard let slowest = sorted.last, slowest < budget else {
-        throw Failure(String(format: "a sidebar switch took %.0f ms to reach the screen (budget %.0f ms)",
-                             sorted.last ?? 0, budget))
+    guard let slowest = sorted.last, slowest < 250 else {
+        throw Failure(String(format: "a sidebar switch took %.0f ms to reach the screen", sorted.last ?? 0))
     }
     if let historyFailure { throw historyFailure }
-}
-
-/// True inside a hypervisor guest, as the hosted CI runners are.
-private func runsInVirtualMachine() -> Bool {
-    var present: Int32 = 0
-    var size = MemoryLayout<Int32>.size
-    return sysctlbyname("kern.hv_vmm_present", &present, &size, nil, 0) == 0 && present == 1
 }
