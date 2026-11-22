@@ -89,7 +89,8 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         let toggle = control("Float", pane: second, in: app)
         XCTAssertEqual(toggle.value as? String, "tiled")
         toggle.click()
-        XCTAssertEqual(toggle.value as? String, "floating")
+        let floated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'floating'"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [floated], timeout: 5), .completed, "The pane should float after the click")
         let before = pane(second, in: app).frame
         let drag = header(second, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
         drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: -35, dy: 20)))
@@ -98,7 +99,8 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         XCTAssertEqual(after.minY, before.minY + 20, accuracy: 5)
         XCTAssertEqual(toggle.value as? String, "floating")
         toggle.click()
-        XCTAssertEqual(toggle.value as? String, "tiled")
+        let tiled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'tiled'"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [tiled], timeout: 5), .completed, "The pane should return to the grid after the click")
         XCTAssertFalse(pane(first, in: app).frame.intersects(pane(second, in: app).frame))
         XCTAssertEqual(try shellPID(second, phase: "NATIVE_FLOAT_AFTER", in: app, focus: false), process)
     }
