@@ -58,7 +58,8 @@ struct SurfaceViewCoverageTests {
     }
 
     @Test func appBackedInitDerivesConfigFromTheAppAndAcceptsABaseConfig() throws {
-        let app = Tako.App()
+        let config = try TemporaryConfig("session-persistence = false\n")
+        let app = Tako.App(configPath: config.temporaryFile.path)
         var base = Tako.SurfaceConfiguration()
         base.workingDirectory = NSHomeDirectory()
         base.initialInput = "echo base-config-initial-input\n"
