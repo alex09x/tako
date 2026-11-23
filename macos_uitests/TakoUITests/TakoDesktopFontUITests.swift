@@ -38,10 +38,11 @@ final class TakoDesktopFontUITests: TakoDesktopDesignCase {
         enterSize("nonsense", in: app)
         assertSize("13", in: app)
         XCTAssertEqual(try configText(), before)
-        enterSize("73", in: app)
+        // Correct the value through the same field editor after each rejection.
+        replaceFocusedSize("73", in: app)
         XCTAssertTrue(settings(in: app).staticTexts["DesktopSettingsError"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(try configText(), before)
-        enterSize("13.5", in: app)
+        replaceFocusedSize("13.5", in: app)
         assertSize("13.5", in: app)
         XCTAssertTrue(try configText().contains("font-size = 13.5"))
     }

@@ -132,8 +132,13 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         let start = field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = start.withOffset(CGVector(dx: 1, dy: 0))
         start.click(forDuration: 0.15, thenDragTo: end)
+        replaceFocusedSize(value, in: app)
+    }
+
+    func replaceFocusedSize(_ value: String, in app: XCUIApplication) {
         app.typeKey("a", modifierFlags: .command)
-        field.typeText(value)
+        app.typeText(value)
+        assertSize(value, in: app)
         app.typeKey(.return, modifierFlags: [])
     }
 
