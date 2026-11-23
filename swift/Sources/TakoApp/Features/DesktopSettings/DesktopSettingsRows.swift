@@ -80,6 +80,12 @@ struct DesktopStepper: View {
     @State private var text = ""
     @FocusState private var focused: Bool
 
+    private static let reportsTestFontFocus: Bool = {
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        return (bundleID == "com.tako-core.terminal.uitest" || bundleID.hasPrefix("com.tako-core.terminal.uitest."))
+            && ProcessInfo.processInfo.environment["TAKO_TEST_FONT_FOCUS"] == "1"
+    }()
+
     static func render(_ value: Double) -> String {
         value.rounded() == value ? String(Int(value)) : String(value)
     }
@@ -88,14 +94,16 @@ struct DesktopStepper: View {
         HStack(spacing: 4) {
             stepButton("−", identifier: "\(identifier)-decrease") { commit(max(range.lowerBound, value - step)) }
                 .disabled(value <= range.lowerBound)
-            TextField("", text: $text)
-                .multilineTextAlignment(.center)
-                .focused($focused)
-                .frame(width: 56)
-                .desktopField(palette, focused: focused)
-                .accessibilityIdentifier(identifier)
-                .onSubmit(submit)
-                .onChange(of: focused) { _, now in if !now { submit() } }
+            fontFocusWitness(
+                TextField("", text: $text)
+                    .multilineTextAlignment(.center)
+                    .focused($focused)
+                    .frame(width: 56)
+                    .desktopField(palette, focused: focused)
+                    .accessibilityIdentifier(identifier)
+                    .onSubmit(submit)
+                    .onChange(of: focused) { _, now in if !now { submit() } }
+            )
             stepButton("+", identifier: "\(identifier)-increase") { commit(min(range.upperBound, value + step)) }
                 .disabled(value >= range.upperBound)
             if !unit.isEmpty { Text(unit).foregroundStyle(Color(palette.muted)) }
@@ -103,6 +111,15 @@ struct DesktopStepper: View {
         .revealsWhenFocused(focused, id: identifier)
         .onAppear { text = Self.render(value) }
         .onChange(of: value) { _, new in text = Self.render(new) }
+    }
+
+    @ViewBuilder
+    private func fontFocusWitness<Content: View>(_ field: Content) -> some View {
+        if Self.reportsTestFontFocus && identifier == "DesktopFontSize" {
+            field.accessibilityLabel(Text(verbatim: focused ? "Font size has keyboard focus" : "Font size awaiting keyboard focus"))
+        } else {
+            field
+        }
     }
 
     private func submit() {

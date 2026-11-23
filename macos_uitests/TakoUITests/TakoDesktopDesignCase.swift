@@ -43,6 +43,7 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         """.write(to: designConfig, atomically: true, encoding: .utf8)
         let app = try takoApplication()
         app.launchEnvironment["TAKO_CONFIG_PATH"] = designConfig.path
+        app.launchEnvironment["TAKO_TEST_FONT_FOCUS"] = "1"
         let agents = designDirectory.appendingPathComponent("agents", isDirectory: true)
         let codex = agents.appendingPathComponent(".codex", isDirectory: true)
         try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true,
@@ -123,19 +124,25 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         settings(in: app).textFields["DesktopFontSize"].firstMatch
     }
 
+    private let fontSizeFocusLabel = "Font size has keyboard focus"
+
     func enterSize(_ value: String, in app: XCUIApplication) {
         let field = fontSize(in: app)
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         reveal(field, in: app)
-        // A synthesized quick click can leave the AppKit field editor
-        // waiting in mouse tracking. Exercise a held gesture inside the field.
-        let start = field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let end = start.withOffset(CGVector(dx: 1, dy: 0))
-        start.click(forDuration: 0.15, thenDragTo: end)
+        app.activate()
+        // Keyboard navigation avoids entering NSTextView's mouse-tracking loop.
+        XCTAssertTrue([fontSizeFocusLabel, "Font size awaiting keyboard focus"].contains(field.label),
+                      "The UI test host should report font size focus")
+        for _ in 0..<32 {
+            if field.label == fontSizeFocusLabel { break }
+            app.typeKey(.tab, modifierFlags: [])
+        }
         replaceFocusedSize(value, in: app)
     }
 
     func replaceFocusedSize(_ value: String, in app: XCUIApplication) {
+        XCTAssertEqual(fontSize(in: app).label, fontSizeFocusLabel, "The font size field should have keyboard focus")
         app.typeKey("a", modifierFlags: .command)
         app.typeText(value)
         assertSize(value, in: app)
