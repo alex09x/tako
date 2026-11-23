@@ -204,6 +204,7 @@ final class FloatingActionButtonNSView: NSView {
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
+    override func isAccessibilityEnabled() -> Bool { onAction != nil || menuProvider != nil }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

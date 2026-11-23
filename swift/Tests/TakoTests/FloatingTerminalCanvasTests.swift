@@ -277,6 +277,7 @@ struct FloatingTerminalCanvasTests {
 
         let cardButton = try #require(findAppKitView(identifier: "FloatingMinimizedCard-\(p3Id)", in: hostView) as? FloatingActionButtonNSView)
         #expect(cardButton.accessibilityRole() == .button)
+        #expect(cardButton.isAccessibilityEnabled())
         #expect(cardButton.accessibilityRole() != .window)
         #expect((cardButton.accessibilityValue() as? String) == "Working")
 

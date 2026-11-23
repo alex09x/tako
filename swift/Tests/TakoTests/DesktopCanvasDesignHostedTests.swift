@@ -107,6 +107,7 @@ extension DesktopCanvasDesignTests {
 
             // Detach p2 through its real header icon.
             let icon = try #require(find("FloatingPaneFloat-\(key(p2))", in: w.contentView!))
+            #expect(icon.isAccessibilityEnabled())
             #expect(icon.accessibilityPerformPress())
             settle(w)
             #expect(!store.isTiled(p2.id))

@@ -88,6 +88,7 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         let process = try shellPID(second, phase: "NATIVE_FLOAT_BEFORE", in: app)
         let toggle = control("Float", pane: second, in: app)
         XCTAssertEqual(toggle.value as? String, "tiled")
+        XCTAssertTrue(toggle.isEnabled, "The Float control should be enabled for accessibility")
         toggle.click()
         let floated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'floating'"), object: toggle)
         XCTAssertEqual(XCTWaiter.wait(for: [floated], timeout: 5), .completed, "The pane should float after the click")
