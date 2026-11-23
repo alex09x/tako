@@ -523,9 +523,17 @@ REGRESSIONS = [
 ]
 
 SCENARIOS = BEHAVIOUR + AUTH + HOST_KEYS + KEYBOARD + REGRESSIONS
+PROBE_STARTUP_LIMIT = 60
 
 
-def scenario(spec):
+def wait_for_file(path, seconds, interval=0.5):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline and not os.path.exists(path):
+        time.sleep(interval)
+    return os.path.exists(path)
+
+
+def scenario(spec, *, first_launch=False):
     name = spec["name"]
     out = os.path.join(OUT, name)
     os.makedirs(out, exist_ok=True)
@@ -533,13 +541,15 @@ def scenario(spec):
     port = spec.get("port", 0)
     port = ECHO_PORT if port == "echo" else PORT + port
 
+    subprocess.run(["xcrun", "simctl", "terminate", DEVICE, BUNDLE_ID],
+                   capture_output=True)
     data = container()
     docs = os.path.join(data, "Documents")
     os.makedirs(docs, exist_ok=True)
     # A fresh container per scenario would mean a reinstall per scenario; the
     # cheaper equivalent is to clear what the last one left, so a stale dump
     # can never be read as this run's result.
-    for stale in ("dump.txt", "dump.png", "client_key", "password", "passphrase"):
+    for stale in ("dump.ready", "dump.txt", "dump.png", "client_key", "password", "passphrase"):
         path = os.path.join(docs, stale)
         if os.path.exists(path):
             os.remove(path)
@@ -573,16 +583,28 @@ def scenario(spec):
         args += ["-takoSend", spec["send"]]
     args += ["-takoDump", str(dump_at)]
 
-    subprocess.run(["xcrun", "simctl", "terminate", DEVICE, BUNDLE_ID],
-                   capture_output=True)
+    started = time.monotonic()
     run(["xcrun", "simctl", "launch", DEVICE, BUNDLE_ID] + args)
 
+    ready = os.path.join(docs, "dump.ready")
     dump = os.path.join(docs, "dump.txt")
-    deadline = time.time() + dump_at + 20
-    while time.time() < deadline and not os.path.exists(dump):
-        time.sleep(0.5)
+    failure = None
+    # The launcher can return while SwiftUI is still setting up the first
+    # session. Use a separate startup bound for the app's probe receipt.
+    if not wait_for_file(ready, PROBE_STARTUP_LIMIT):
+        failure = "the app never armed the dump probe"
+    else:
+        armed_after = time.monotonic() - started
+        print(f"[simtest]   dump probe armed after {armed_after:.1f}s")
+        dump_limit = dump_at + 20
+        # On the first launch, rendering can still block the main queue
+        # after it has armed the timer. Allow that startup window too.
+        if first_launch:
+            dump_limit = max(dump_limit, PROBE_STARTUP_LIMIT - armed_after)
+        if not wait_for_file(dump, dump_limit):
+            failure = "the app never wrote a dump after arming"
 
-    if not os.path.exists(dump):
+    if failure:
         # Preserve the first cold-launch failure before the next scenario
         # terminates it. Capture only this test simulator and this app's log;
         # never upload the SSH fixture directory or its private keys.
@@ -599,7 +621,7 @@ def scenario(spec):
                 except (OSError, subprocess.TimeoutExpired) as error:
                     log.write(f"{label}: {type(error).__name__}\n")
         return {"name": name, "why": spec["why"], "ok": False,
-                "note": "the app never wrote a dump"}
+                "note": failure}
 
     shutil.copy(dump, os.path.join(out, "dump.txt"))
     png = os.path.join(docs, "dump.png")
@@ -608,11 +630,8 @@ def scenario(spec):
     # is ready; copying immediately made successful runs randomly lose their
     # visual evidence. Give the second, synchronous write its own bounded
     # deadline and fail the scenario if it never arrives.
-    png_deadline = time.time() + 5
-    while time.time() < png_deadline and not os.path.exists(png):
-        time.sleep(0.1)
-    screenshot_ok = os.path.exists(png)
-    if os.path.exists(png):
+    screenshot_ok = wait_for_file(png, 5, interval=0.1)
+    if screenshot_ok:
         shutil.copy(png, os.path.join(out, "screen.png"))
 
     with open(dump) as f:
@@ -845,7 +864,7 @@ def main():
         results = []
         for spec in wanted:
             print(f"[simtest] {spec['name']}: {spec['why']}")
-            results.append(scenario(spec))
+            results.append(scenario(spec, first_launch=not results))
             r = results[-1]
             flag = "ok " if r["ok"] else "FAIL"
             detail = ""
