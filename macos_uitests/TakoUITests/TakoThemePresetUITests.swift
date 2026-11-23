@@ -148,20 +148,12 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
 
         // A failed write keeps the saved file; the draft stays open and previewed with
         // the error shown, and only Undo gives the pane its saved look back.
-        let before = try XCTUnwrap(env.rendererColor(of: id))
-        let baseline = probe(env, id)
+        let saved = NSColor(srgbRed: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1)
+        let draft = NSColor(srgbRed: 136.0 / 255, green: 68.0 / 255, blue: 34.0 / 255, alpha: 1)
+        let baseline = expectRenderer(saved, phase: "saved preset", env: env, pane: id, app: app)
         editSaved(root, in: app)
         setConfig(background: "#884422", root: root)
-        // Same predicate and timeout as `rendererColor`, with each sample's error kept.
-        var last = RendererProbe(), samples = 0
-        let previewed = H.wait {
-            last = self.probe(env, id); samples += 1
-            guard let color = last.witness else { return false }; return H.colorDifference(before, color) > 0.04
-        }
-        if !previewed { report(before: before, baseline: baseline, last: last, samples: samples, app: app) } else {
-            print("RENDERER-PROBE ok before=\(Self.hex(before)) last witness=\(Self.hex(last.witness)) interior=\(Self.hex(last.interior)) samples=\(samples)")
-        }
-        XCTAssertTrue(previewed)
+        expectRenderer(draft, phase: "draft preview", env: env, pane: id, app: app, baseline: baseline)
         let themes = url.deletingLastPathComponent()
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: themes.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: themes.path) }
@@ -169,33 +161,64 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         XCTAssertTrue(root.staticTexts["DesktopThemeError"].firstMatch.waitForExistence(timeout: 5), "the failed write is reported")
         XCTAssertTrue(H.editor(in: root).exists, "the draft stays open after a failed write")
         XCTAssertEqual(try Data(contentsOf: url), original)
+        expectRenderer(draft, phase: "failed write keeps preview", env: env, pane: id, app: app, baseline: baseline)
         root.buttons["DesktopThemeCancel"].firstMatch.click()
-        XCTAssertTrue(H.wait { guard let color = env.rendererColor(of: id) else { return false }; return H.colorDifference(before, color) < 0.03 })
+        expectRenderer(saved, phase: "Undo restores saved background", env: env, pane: id, app: app, baseline: baseline)
         H.closeSettings(root)
     }
 
-    // MARK: - Renderer diagnostics (hosted line-154 replay)
+    // MARK: - Renderer evidence
 
-    /// One `takoctl screenshot` of the pane: the bottom-right witness `rendererColor`
-    /// samples, an interior point, the image itself, or the command's error.
     private struct RendererProbe {
-        var witness: NSColor?, interior: NSColor?, image: CGImage?, error: String?
+        var background: NSColor?, image: CGImage?, error: String?
     }
 
-    private func probe(_ env: H, _ id: String) -> RendererProbe {
-        do {
-            let image = try env.rendererImage(of: id)
-            return RendererProbe(witness: H.samplePixelColor(from: image), interior: Self.pixel(image, x: 0.5, y: 0.5), image: image)
-        } catch { return RendererProbe(error: String(describing: error)) }
+    @discardableResult
+    @MainActor private func expectRenderer(
+        _ expected: NSColor, phase: String, env: H, pane: String, app: XCUIApplication,
+        baseline: RendererProbe? = nil, file: StaticString = #filePath, line: UInt = #line
+    ) -> RendererProbe {
+        var last = RendererProbe()
+        var samples = 0
+        let matched = H.wait {
+            samples += 1
+            do {
+                let image = try env.rendererImage(of: pane)
+                last = RendererProbe(background: Self.backgroundColor(image), image: image)
+            } catch {
+                last = RendererProbe(error: String(describing: error))
+            }
+            guard let color = last.background else { return false }
+            return H.colorDifference(expected, color) < 0.03
+        }
+        if !matched {
+            report(expected: expected, phase: phase, baseline: baseline, last: last, samples: samples, app: app)
+        } else {
+            print("RENDERER-PROBE \(phase) background=\(Self.hex(last.background)) samples=\(samples)")
+        }
+        XCTAssertTrue(matched, "Unexpected renderer color: \(phase)", file: file, line: line)
+        return last
     }
 
-    private static func pixel(_ cg: CGImage, x: Double, y: Double) -> NSColor? {
-        guard let context = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
+    /// Sample an interior majority so one cursor or glyph cannot stand in for the background.
+    private static func backgroundColor(_ cg: CGImage) -> NSColor? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
         context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
         guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
-        let offset = (Int(Double(cg.height) * y) * cg.width + Int(Double(cg.width) * x)) * 4
-        return NSColor(srgbRed: CGFloat(data[offset]) / 255, green: CGFloat(data[offset + 1]) / 255, blue: CGFloat(data[offset + 2]) / 255, alpha: 1)
+        let grid = [0.25, 0.5, 0.75]
+        var counts: [UInt32: Int] = [:]
+        for y in grid {
+            for x in grid {
+                let offset = (Int(Double(cg.height) * y) * cg.width + Int(Double(cg.width) * x)) * 4
+                let rgb = UInt32(data[offset]) << 16 | UInt32(data[offset + 1]) << 8 | UInt32(data[offset + 2])
+                counts[rgb, default: 0] += 1
+            }
+        }
+        guard let majority = counts.first(where: { $0.value > grid.count * grid.count / 2 })?.key else { return nil }
+        return NSColor(srgbRed: CGFloat((majority >> 16) & 0xff) / 255, green: CGFloat((majority >> 8) & 0xff) / 255,
+                       blue: CGFloat(majority & 0xff) / 255, alpha: 1)
     }
 
     private static func hex(_ color: NSColor?) -> String {
@@ -203,12 +226,13 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         return String(format: "#%02x%02x%02x", Int(round(c.redComponent * 255)), Int(round(c.greenComponent * 255)), Int(round(c.blueComponent * 255)))
     }
 
-    @MainActor private func report(before: NSColor, baseline: RendererProbe, last: RendererProbe, samples: Int, app: XCUIApplication) {
+    @MainActor private func report(expected: NSColor, phase: String, baseline: RendererProbe?, last: RendererProbe, samples: Int, app: XCUIApplication) {
         let size = last.image.map { "\($0.width)x\($0.height)" } ?? "nil"
-        let text = "before witness=\(Self.hex(before)) baseline witness=\(Self.hex(baseline.witness)) interior=\(Self.hex(baseline.interior)) error=\(baseline.error ?? "-")\n"
-            + "last witness=\(Self.hex(last.witness)) interior=\(Self.hex(last.interior)) image=\(size) error=\(last.error ?? "-") samples=\(samples)"
+        let corner = last.image.flatMap { H.samplePixelColor(from: $0) }
+        let text = "\(phase): expected=\(Self.hex(expected)) baseline=\(Self.hex(baseline?.background))\n"
+            + "last background=\(Self.hex(last.background)) corner=\(Self.hex(corner)) image=\(size) error=\(last.error ?? "-") samples=\(samples)"
         let note = XCTAttachment(string: text); note.name = "renderer-probe"; note.lifetime = .keepAlways; add(note)
-        for (name, image) in [("renderer-baseline", baseline.image), ("renderer-last", last.image)] {
+        for (name, image) in [("renderer-baseline", baseline?.image), ("renderer-last", last.image)] {
             guard let image else { continue }
             let png = XCTAttachment(image: NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height)))
             png.name = name; png.lifetime = .keepAlways; add(png)
