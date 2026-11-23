@@ -495,27 +495,19 @@ let scenarios: [Scenario] = [
         try """
         b=$(takoctl split right) || exit 1
         f=$(takoctl tab-new --no-select) || exit 1
-        takoctl tree --json > \(out)/before
+        takoctl tree --json > \(out)/before || exit 1
         echo done > \(out)/made
         """.write(toFile: d.path("make.sh"), atomically: true, encoding: .utf8)
         try d.run("sh \(d.path("make.sh"))")
         _ = try d.file("made", timeout: 15)
-        func count(_ json: String) -> (tabs: Int, panes: Int) {
-            guard let data = json.data(using: .utf8),
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let windows = (root["result"] as? [String: Any])?["windows"] as? [[String: Any]] else { return (0, 0) }
-            let tabs = windows.flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
-            return (tabs.count, tabs.reduce(0) { $0 + (($1["panes"] as? [Any])?.count ?? 0) })
-        }
-        let before = count(try d.file("before"))
+        let before = try decodeCrashLayout(d.file("before"), name: "before")
         guard before.tabs >= 2, before.panes >= 3 else { throw Failure("layout not made: \(before)") }
         usleep(UInt32(ProcessInfo.processInfo.environment["TAKO_E2E_CRASH_WAIT"].flatMap(Double.init).map { $0 * 1_000_000 } ?? 3_000_000))
         d.quit()                          // SIGKILL: a crash, nothing saved on the way out
         usleep(1_000_000)
         try d.launch(config: config)
         usleep(1_500_000)
-        try d.run("takoctl tree --json > \(d.path("after"))")
-        let after = count(try d.file("after"))
+        let after = try crashLayoutCount(d, "after")
         guard after.tabs >= before.tabs, after.panes >= before.panes else {
             throw Failure("after the crash: \(after.tabs) tabs, \(after.panes) panes; before: \(before.tabs), \(before.panes)")
         }
@@ -4278,11 +4270,33 @@ func crashLayoutSetup(_ d: Driver, separateWindows: Bool = false) throws {
 }
 
 func crashLayoutCount(_ d: Driver, _ name: String) throws -> (windows: Int, tabs: Int, panes: Int) {
-    try d.run("takoctl tree --json > \(d.path(name))")
-    let json = try d.file(name)
-    guard let data = json.data(using: .utf8),
-          let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let windows = (root["result"] as? [String: Any])?["windows"] as? [[String: Any]] else { return (0, 0, 0) }
+    let script = d.path("\(name).sh")
+    let statusFile = "\(name).status"
+    let pendingStatus = d.path("\(statusFile).tmp")
+    let stderrFile = d.path("\(name).stderr")
+    // A shell redirect creates stdout before the command starts. Publish
+    // its exit status atomically after both output streams are complete.
+    try """
+    takoctl tree --json > '\(d.path(name))' 2> '\(stderrFile)'
+    status=$?
+    printf '%s\\n' "$status" > '\(pendingStatus)' && mv '\(pendingStatus)' '\(d.path(statusFile))'
+    """.write(toFile: script, atomically: true, encoding: .utf8)
+    try d.run("sh '\(script)'")
+    let status = try d.file(statusFile).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard status == "0" else {
+        let error = (try? String(contentsOfFile: stderrFile, encoding: .utf8)) ?? ""
+        throw Failure("takoctl tree for \(name) exited with status \(status): \(error.suffix(1000))")
+    }
+    let json = try String(contentsOfFile: d.path(name), encoding: .utf8)
+    return try decodeCrashLayout(json, name: name)
+}
+
+func decodeCrashLayout(_ json: String, name: String) throws -> (windows: Int, tabs: Int, panes: Int) {
+    guard let root = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+          root["ok"] as? Bool == true,
+          let windows = (root["result"] as? [String: Any])?["windows"] as? [[String: Any]] else {
+        throw Failure("takoctl tree for \(name) did not return a valid layout (\(json.utf8.count) bytes)")
+    }
     let tabs = windows.flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
     return (windows.count, tabs.count, tabs.reduce(0) { $0 + (($1["panes"] as? [Any])?.count ?? 0) })
 }
