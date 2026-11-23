@@ -69,7 +69,10 @@ struct FloatingChromeReferenceTests {
         let headerRings = rings(in: content).filter { band.insetBy(dx: -1, dy: -1).contains($0.convert($0.bounds, to: content)) }
         let ring = try #require(headerRings.first, "no status ring in the header \(band)")
         #expect(abs(ring.bounds.width - 14) < 0.5 && abs(ring.statusLayer.transform.m11 - 1) < 0.01)
+        // The header's left corner is a square inset: the ring as far from the
+        // left edge as from the top.
         let ringFrame = ring.convert(ring.bounds, to: content)
-        #expect(abs(ringFrame.minX - band.minX - 10) < 1, "the ring is \(ringFrame.minX - band.minX) pt in, not 10")
+        let ringLeft = ringFrame.minX - band.minX, ringTop = band.maxY - ringFrame.maxY
+        #expect(abs(ringLeft - 7) < 1 && abs(ringLeft - ringTop) < 0.5, "ring left \(ringLeft), top \(ringTop)")
     }
 }
