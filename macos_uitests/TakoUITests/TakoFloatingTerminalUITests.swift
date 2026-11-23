@@ -81,20 +81,25 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
     @MainActor
     func testMinimizedShelfReceivesStatusAndRestoresProcessesFocusAndModes() throws {
         let app = try launchFloatingApp()
-        let first = try XCTUnwrap(paneIDs(in: app).first)
-        let firstProcess = try shellPID(first, phase: "SHELF_A_BEFORE", in: app)
-        restorePaneToNormal(first, in: app)
+        let second = try XCTUnwrap(paneIDs(in: app).first)
+        let secondProcess = try shellPID(second, phase: "SHELF_B_BEFORE", in: app)
+        restorePaneToNormal(second, in: app)
         app.typeKey("d", modifierFlags: .command)
         waitForPaneCount(2, in: app)
-        let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
-        let secondProcess = try shellPID(second, phase: "SHELF_B_BEFORE", in: app)
+        // Maximize the right tile so its controls stay clear of the left tile's header.
+        let first = try XCTUnwrap(paneIDs(in: app).first { $0 != second })
+        let firstProcess = try shellPID(first, phase: "SHELF_A_BEFORE", in: app)
         let firstNormal = pane(first, in: app).frame
 
         try focusThroughSidebar(first, in: app)
         control("Maximize", pane: first, in: app).click()
         let gap = Self.canvasPaneGap
         assertRect(pane(first, in: app).frame, equals: canvas(in: app).frame.insetBy(dx: gap, dy: gap))
-        control("Minimize", pane: first, in: app).click()
+        let minimize = control("Minimize", pane: first, in: app)
+        let backgroundMinimize = control("Minimize", pane: second, in: app)
+        XCTAssertFalse(minimize.frame.intersects(backgroundMinimize.frame),
+                       "The shelf fixture needs separate click targets for both panes")
+        minimize.click()
         waitForPaneCount(1, in: app)
         XCTAssertTrue(minimizedCard(first, in: app).waitForExistence(timeout: 5))
 
@@ -108,8 +113,9 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         XCTAssertTrue(canvas(in: app).isHittable)
         XCTAssertTrue(activeWindow(in: app).descendants(matching: .any)["SessionSidebar"].firstMatch.isHittable)
         let workspace = canvas(in: app).frame
-        XCTAssertLessThanOrEqual(secondCard.frame.maxX, workspace.maxX)
-        XCTAssertGreaterThan(secondCard.frame.maxX, workspace.maxX - 40)
+        let shelfRightEdge = max(firstCard.frame.maxX, secondCard.frame.maxX)
+        XCTAssertLessThanOrEqual(shelfRightEdge, workspace.maxX)
+        XCTAssertGreaterThan(shelfRightEdge, workspace.maxX - 40)
         XCTAssertLessThanOrEqual(secondCard.frame.maxY, workspace.maxY)
         XCTAssertGreaterThan(secondCard.frame.maxY, workspace.maxY - 40)
         attachCanvas(app, named: "All terminals minimized to lower-right shelf")
