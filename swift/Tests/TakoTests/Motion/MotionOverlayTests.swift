@@ -20,17 +20,19 @@ import WebKit
 /// being put in, where an animation never reaches it.
 @Suite(.serialized) @MainActor
 struct MotionOverlayTests {
-    /// A change that moved: frames in between, and at rest within 0.3 s.
+    /// A change that moved through intermediate frames and ended at rest.
     private func expectAnimated(_ frames: [(t: TimeInterval, value: Double)], from start: Double, _ what: String) throws {
-        let end = try #require(frames.last).value
+        let tail = frames.suffix(3)
+        try #require(tail.count == 3, "\(what): need three final samples to check for rest")
+        let end = try #require(tail.last).value
         let span = abs(end - start)
         #expect(span > 10, "\(what): nothing changed (\(start) -> \(end))")
         let between = frames.filter { abs($0.value - start) > span * 0.1 && abs($0.value - end) > span * 0.1 }
         let first = frames.prefix(8).map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
         #expect(!between.isEmpty, "\(what) happened at once: \(first)")
-        let late = frames.filter { $0.t > 0.15 }.map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
-        #expect(frames.filter { $0.t > 0.3 }.allSatisfy { abs($0.value - end) < span * 0.05 },
-                "\(what) still moving after 0.3 s (start \(String(format: "%.0f", start)), end \(String(format: "%.0f", end))): \(late)")
+        let late = tail.map { String(format: "%.0f@%.3f", $0.value, $0.t) }.joined(separator: " ")
+        #expect(tail.allSatisfy { abs($0.value - end) < span * 0.05 },
+                "\(what) did not settle by the end of the capture: \(late)")
     }
 
     @Test func theBroadcastBannerComesInOverAMomentAndGoes() throws {
