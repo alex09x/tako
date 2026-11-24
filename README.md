@@ -10,9 +10,9 @@ A native macOS terminal with a permanent session sidebar and a canvas for tiled 
 
 **[Download the macOS release candidate](https://github.com/alex09x/tako/releases/download/v0.2.0-rc.1/Tako-0.2.0.dmg)** · [Stable v0.1.12](https://github.com/alex09x/tako/releases/tag/v0.1.12) · [Release notes](https://github.com/alex09x/tako/releases/tag/v0.2.0-rc.1)
 
-[![Watch Tako on macOS. The session sidebar sits beside a canvas of terminal panes.](docs/media/tako-desktop-rc1.webp)](https://takocore.com/#preview)
+[![Tako on macOS with a session sidebar and a floating terminal pane](docs/media/tako-desktop-rc1.webp)](docs/media/tako-desktop-rc1.mp4)
 
-[Watch the desktop walkthrough](https://takocore.com/#preview) to see panes split, float and return to the grid.
+[Watch the 20-second desktop walkthrough](docs/media/tako-desktop-rc1.mp4) to see panes split, float and return to the grid. [English captions](docs/media/tako-desktop-rc1.vtt)
 
 ---
 
