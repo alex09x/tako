@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.800
+Split the terminal with Command-D. Both panes appear under the current session in the sidebar.
+
+00:00:05.400 --> 00:00:08.200
+Float the second pane above the grid using its header control.
+
+00:00:08.250 --> 00:00:11.800
+Drag the floating pane by its header.
+
+00:00:11.850 --> 00:00:14.700
+Minimize the pane. It becomes a capsule at the lower right.
+
+00:00:14.750 --> 00:00:17.450
+Click the capsule to restore the floating pane.
+
+00:00:17.500 --> 00:00:20.400
+Return the pane to the grid. Its terminal output is still there.
