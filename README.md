@@ -1,6 +1,6 @@
 # Tako 🐙
 
-A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 17+, powered by a pure-Rust emulation engine and a native Metal renderer.
+A native macOS terminal with a permanent session sidebar and a canvas for tiled and floating panes. Its Rust engine and Metal renderer are also available as the TakoCoreUI Swift SDK for macOS and iOS.
 
 [![macOS 14+](https://img.shields.io/badge/macOS-14.0%2B-blue.svg)](https://apple.com/macos)
 [![iOS 17+](https://img.shields.io/badge/iOS-17.0%2B-green.svg)](https://apple.com/ios)
@@ -8,9 +8,11 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 [![Metal](https://img.shields.io/badge/Renderer-Metal-purple.svg)](https://developer.apple.com/metal/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-<p align="center">
-  <img src="swift/preview-macos.png" alt="Tako Terminal on macOS" width="760">
-</p>
+**[Download the macOS release candidate](https://github.com/alex09x/tako/releases/download/v0.2.0-rc.1/Tako-0.2.0.dmg)** · [Stable v0.1.12](https://github.com/alex09x/tako/releases/tag/v0.1.12) · [Release notes](https://github.com/alex09x/tako/releases/tag/v0.2.0-rc.1)
+
+[![Watch Tako on macOS. The session sidebar sits beside a canvas of terminal panes.](docs/media/tako-desktop-rc1.webp)](https://takocore.com/#preview)
+
+[Watch the desktop walkthrough](https://takocore.com/#preview) to see panes split, float and return to the grid.
 
 ---
 
@@ -101,7 +103,7 @@ open -n \
   target/macapp-dev/Tako.app
 ```
 
-For everyday installation, use the signed, notarized release above. The
+For everyday installation, use the signed, notarized stable release linked above. The
 development commands launch their own bundle and state without replacing
 the installed application. Build, test, release and diagnostics entry points
 are listed in [scripts/README.md](scripts/README.md).
