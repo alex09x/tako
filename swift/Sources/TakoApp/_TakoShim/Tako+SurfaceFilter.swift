@@ -49,7 +49,8 @@ extension Tako.SurfaceView {
             focus: Bool,
             reportClose: Bool,
             timeoutMs: UInt64?,
-            onlyWhenUnfocused: Bool
+            onlyWhenUnfocused: Bool,
+            activitySound: ActivitySoundChoice = .byUrgency
         ) {
             let action = NotificationCoalescer.shared.process(
                 surfaceId: self.id,
@@ -91,6 +92,7 @@ extension Tako.SurfaceView {
                     onlyWhenUnfocused: onlyWhenUnfocused,
                     coalescedCount: count
                 )
+                activitySound.apply(to: content)
                 let request = UNNotificationRequest(identifier: reqId, content: content, trigger: nil)
                 AppDelegate.notificationCenterProvider()?.add(request)
                 Tako.onNotificationPosted?(request)
@@ -130,6 +132,7 @@ extension Tako.SurfaceView {
                     reportClose: reportClose,
                     onlyWhenUnfocused: onlyWhenUnfocused
                 )
+                activitySound.apply(to: content)
 
                 let request = UNNotificationRequest(identifier: reqId, content: content, trigger: nil)
                 AppDelegate.notificationCenterProvider()?.add(request)
@@ -289,6 +292,13 @@ extension Tako.SurfaceView {
                 guard let self else { return }
                 if status == .error || status == .needsApproval || status == .waitingForInput {
                     AttentionManager.shared.recordAttentionEvent(for: self.id)
+                }
+                // Captured now: a restored status (checkpoint) is not news. The
+                // crab's state (exit code) settles with the status; read it on the next turn.
+                guard self.crab.announcesStatusChanges else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.crab.paneStatus == status else { return }
+                    PaneToastCenter.shared.statusChanged(self, to: status)
                 }
             }.store(in: &attentionCancellables)
 

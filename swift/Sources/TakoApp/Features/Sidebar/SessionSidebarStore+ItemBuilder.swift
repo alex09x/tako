@@ -66,7 +66,10 @@ extension SessionSidebarStore {
             let surfaceId = surface?.id
             let id = win.stableTabIdentifier
 
-            let title = titleFor(window: win, surface: surface)
+            // A session of several terminals is named by them (SessionNaming).
+            let title = SessionNaming.sessionName(
+                override: controller?.titleOverride, single: titleFor(window: win, surface: surface),
+                terminals: winSurfaces.enumerated().map { .init(title: $1.sidebarTitle(index: $0), directory: $1.pwd) })
             let crab = aggregateCrab(for: win)
             let status = crab?.paneStatus ?? .idle
             let crabState = crab?.state ?? .idle

@@ -12,6 +12,9 @@ import Cocoa
 
 extension TitlebarTabsVenturaTerminalWindow {
     func updateNewTabButtonOpacity() {
+        // The custom strip disables native tabbing; there is no native button
+        // to find in that mode, and searching its tree on every update is costly.
+        guard tabbingMode != .disallowed else { return }
         guard let newTabButton: NSButton = titlebarContainer?.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
         guard let newTabButtonImageView = newTabButton.firstDescendant(withClassName: "NSImageView") as? NSImageView else { return }
 
@@ -19,6 +22,7 @@ extension TitlebarTabsVenturaTerminalWindow {
     }
 
 	func updateNewTabButtonImage() {
+		guard tabbingMode != .disallowed else { return }
 		guard let newTabButton: NSButton = titlebarContainer?.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
         guard let newTabButtonImageView = newTabButton.firstDescendant(withClassName: "NSImageView") as? NSImageView else { return }
         guard let newTabButtonImage = newTabButtonImageView.image else { return }
@@ -37,6 +41,8 @@ extension TitlebarTabsVenturaTerminalWindow {
 	func updateTabsForVeryDarkBackgrounds() {
 		guard hasVeryDarkBackground else { return }
         guard let titlebarContainer else { return }
+        // Tako's own strip draws the tabs; the titlebar beneath stays clear.
+        guard !keepsTitlebarClear else { return }
 
 		if let tabGroup = tabGroup, tabGroup.isTabBarVisible {
 			guard let activeTabBackgroundView = titlebarContainer.firstDescendant(withClassName: "NSTabButton")?.superview?.subviews.last?.firstDescendant(withID: "_backgroundView")

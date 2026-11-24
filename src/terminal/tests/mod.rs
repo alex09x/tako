@@ -11,6 +11,7 @@
 mod cursor_modes;
 mod events;
 mod graphics;
+mod osc_iterm;
 mod osc_protocols;
 mod selection;
 mod text;

@@ -10,10 +10,9 @@
 # Before a push that changes the Swift app, the motion gate runs on the test
 # Mac (scripts/motion-gate.sh): a push that breaks an animation, an effect, a
 # state or a transition of the design does not leave the machine. A change
-# to the terminal view runs the iOS simulator suite as well. Once it
-# passes, if what moves changed, the mutants (scripts/motion-mutants.py) run
-# in the background to prove the gate still catches every broken spec item,
-# and say how many they caught in a notification.
+# to the terminal view runs the iOS simulator suite as well. Mutation
+# campaigns are explicitly scoped validation work; this hook does not
+# start detached repository workers after its required gates finish.
 #
 #   git config core.hooksPath scripts/git-hooks       # turn it on
 #   git config tako.testMac user@test-mac.local       # where the gate runs (or TAKO_MAC)
@@ -50,18 +49,4 @@ scripts/motion-gate.sh
 if grep -qE '^swift/(Sources/(TakoCoreUI|iOSApp)|Tests/TakoCoreUITests)/|^scripts/test-ios-surface' <<<"$changed"; then
     echo "pre-push: iOS terminal tests on the simulator" >&2
     scripts/check.sh ios
-fi
-
-# What moves: the status layers and surfaces, the strip, the sidebar, the
-# Overview, the crab's rules, the cursor, and the motion tests themselves.
-moving='_TakoShim/Tako\+(TabStatusLayer|Living|LiveRing|LiveActivity|Crab|TabBar|TabStrip|PaneStatus)|Features/(Sidebar|Overview)/|TakoCoreUI/(TakoTerminalNSView\+Drawing|TerminalMetalFramePlanner\+Overlays)|Tests/TakoTests/Motion/|scripts/motion-'
-if grep -qE "$moving" <<<"$changed"; then
-    gitdir=$(git rev-parse --git-dir)
-    if [ -f "$gitdir/motion-mutants.pid" ] && kill -0 "$(cat "$gitdir/motion-mutants.pid")" 2>/dev/null; then
-        echo "pre-push: mutants already running (log: $gitdir/motion-mutants.log)" >&2
-    else
-        nohup scripts/motion-mutants.py --notify > "$gitdir/motion-mutants.log" 2>&1 &
-        echo $! > "$gitdir/motion-mutants.pid"
-        echo "pre-push: mutants running in the background (log: $gitdir/motion-mutants.log)" >&2
-    fi
 fi

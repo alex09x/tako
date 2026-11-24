@@ -12,7 +12,7 @@
 //
 // Regenerate every snapshot after an intentional behaviour change:
 //
-//     UPDATE_SNAPSHOTS=1 cargo test --test ref_replay
+//     UPDATE_SNAPSHOTS=1 mitts test --test ref_replay
 //
 // and read the resulting diff before committing it. A snapshot that changes
 // without a reason in the same commit is the bug this file exists to catch.

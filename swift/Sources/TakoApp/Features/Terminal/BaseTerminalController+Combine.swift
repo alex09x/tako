@@ -61,10 +61,7 @@ extension BaseTerminalController: NSMenuItemValidation {
             return true
 
         case #selector(toggleSessionSidebar(_:)):
-            if let menu = item as? NSMenuItem {
-                menu.state = sessionSidebarIsShowing ? .on : .off
-            }
-            return true
+            return false
 
         case #selector(togglePaneOverview(_:)):
             if let menu = item as? NSMenuItem {
@@ -93,6 +90,28 @@ extension BaseTerminalController: NSMenuItemValidation {
             guard let surface = focusedSurface else { return false }
             item.title = surface.isAttentionMuted ? "Unmute Attention" : "Mute Attention"
             item.state = surface.isAttentionMuted ? .on : .off
+            return true
+
+        case #selector(close(_:)):
+            guard usesFloatingCanvas else { return true }
+            if surfaceTree.isEmpty {
+                item.title = "Close Session"
+                return true
+            }
+            item.title = FloatingPaneCopy.close
+            let activeVisible = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
+                ?? topmostVisibleFloatingSurface()
+            return activeVisible != nil
+
+        case #selector(splitZoom(_:)):
+            guard usesFloatingCanvas else { return focusedSurface != nil }
+            let target = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
+                ?? topmostVisibleFloatingSurface()
+            guard let target, let st = floatingCanvas.state(for: target.id) else {
+                item.title = FloatingPaneCopy.maximize(.normal)
+                return false
+            }
+            item.title = FloatingPaneCopy.maximize(st.mode)
             return true
 
         default:
@@ -158,9 +177,12 @@ extension BaseTerminalController {
     func setupSidebarStatePublisher() {
         sidebarStateCancellable = SessionSidebarStore.shared.$isShowing
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] showing in
-                guard let self, self.sessionSidebarIsShowing != showing else { return }
-                self.sessionSidebarIsShowing = showing
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let expected = self.supportsSessionSidebar
+                if self.sessionSidebarIsShowing != expected {
+                    self.sessionSidebarIsShowing = expected
+                }
             }
     }
 

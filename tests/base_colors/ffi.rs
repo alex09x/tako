@@ -151,3 +151,46 @@ fn ffi_reset_keeps_the_host_base_colors_and_drops_program_overrides() {
     assert_eq!(fresh.palette().get(1), BASE_IDX1);
     assert_eq!(fresh.palette().get(2), term.palette().base(2));
 }
+
+/// What the host asks for the drawn defaults (a terminal card's fill takes
+/// them): the base colours, then a program's OSC 10/11 override, which a
+/// later theme change does not replace.
+#[test]
+fn ffi_default_colors_are_the_ones_the_screen_is_drawn_in() {
+    let core = TakoCore::new(10, 3);
+    assert_eq!(core.default_background(), None);
+    core.set_base_colors(
+        Some(rgb(BASE_FG.0, BASE_FG.1, BASE_FG.2)),
+        Some(rgb(BASE_BG.0, BASE_BG.1, BASE_BG.2)),
+        None,
+        vec![],
+    );
+    assert_eq!(
+        core.default_background(),
+        Some(rgb(BASE_BG.0, BASE_BG.1, BASE_BG.2))
+    );
+    assert_eq!(
+        core.default_foreground(),
+        Some(rgb(BASE_FG.0, BASE_FG.1, BASE_FG.2))
+    );
+
+    core.feed(b"\x1b]11;#0e1820\x07\x1b]10;#ede6df\x07".to_vec());
+    core.set_base_colors(
+        Some(rgb(1, 2, 3)),
+        Some(rgb(0x28, 0x2a, 0x36)),
+        None,
+        vec![],
+    );
+    assert_eq!(core.default_background(), Some(rgb(0x0e, 0x18, 0x20)));
+    assert_eq!(core.default_foreground(), Some(rgb(0xed, 0xe6, 0xdf)));
+    core.feed(b"X".to_vec());
+    let cell = core.get_cell(0, 0).unwrap();
+    assert_eq!(
+        (cell.bg_r, cell.bg_g, cell.bg_b),
+        (0x0e, 0x18, 0x20),
+        "the cells agree"
+    );
+
+    core.feed(b"\x1b]111\x07".to_vec());
+    assert_eq!(core.default_background(), Some(rgb(0x28, 0x2a, 0x36)));
+}

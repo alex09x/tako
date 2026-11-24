@@ -232,6 +232,7 @@ extension SurfaceViewCoverageTests {
 
         view.title = "a live title"
 
+        TerminalTestSupport.waitUntil(timeout: 1) { view.titleText == "a live title" }
         #expect(view.titleText == "a live title")
         #expect(!view.isUserSetTitle)
     }

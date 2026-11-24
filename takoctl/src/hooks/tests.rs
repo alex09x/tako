@@ -10,14 +10,14 @@
 
 use super::*;
 use std::fs;
-use std::path::PathBuf;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 #[test]
 fn all_adapters_parse_valid_json() {
     let adapters = all_adapters();
-    assert_eq!(adapters.len(), 5);
+    assert_eq!(adapters.len(), 7);
     assert!(find_adapter("claude").is_some());
     assert!(find_adapter("gemini").is_some());
     assert!(find_adapter("antigravity").is_some());
@@ -109,7 +109,10 @@ fn codex_adapter_injects_and_removes_hooks() {
     unsafe {
         std::env::set_var("CODEX_HOME", custom_dir);
     }
-    assert_eq!(adapter.resolve_path(None), PathBuf::from(custom_dir).join("hooks.json"));
+    assert_eq!(
+        adapter.resolve_path(None),
+        PathBuf::from(custom_dir).join("hooks.json")
+    );
     unsafe {
         std::env::remove_var("CODEX_HOME");
     }
@@ -139,15 +142,15 @@ fn install_and_uninstall_roundtrip_is_byte_identical_on_existing_file() {
 
     let path_str = config_file.to_str().unwrap();
 
-    // 1. Install
-    install("claude", Some(path_str), true, false, false).unwrap();
+    // 1. Install (legacy hook-based adapter: gemini)
+    install("gemini", Some(path_str), true, false, false).unwrap();
     assert!(config_file.exists());
     let installed_content = fs::read_to_string(&config_file).unwrap();
     assert!(installed_content.contains("takoctl"));
     assert!(installed_content.contains("customKey"));
 
     // 2. Uninstall
-    uninstall("claude", Some(path_str), true, false, false).unwrap();
+    uninstall("gemini", Some(path_str), true, false, false).unwrap();
     assert!(config_file.exists());
     let restored_bytes = fs::read(&config_file).unwrap();
 
@@ -166,14 +169,14 @@ fn install_and_uninstall_roundtrip_is_byte_identical_on_new_file() {
 
     assert!(!config_file.exists());
 
-    // 1. Install into non-existent file
-    install("codex", Some(path_str), true, false, false).unwrap();
+    // 1. Install into non-existent file (legacy hook-based adapter: gemini)
+    install("gemini", Some(path_str), true, false, false).unwrap();
     assert!(config_file.exists());
     let installed = fs::read_to_string(&config_file).unwrap();
     assert!(installed.contains("takoctl") || installed.contains("tako-hook"));
 
     // 2. Uninstall
-    uninstall("codex", Some(path_str), true, false, false).unwrap();
+    uninstall("gemini", Some(path_str), true, false, false).unwrap();
 
     // File must no longer exist (byte-identical to before install!)
     assert!(!config_file.exists());
@@ -212,15 +215,15 @@ fn install_reports_already_installed_when_run_twice() {
     let config_file = temp_dir.join("double-install.json");
     let path_str = config_file.to_str().unwrap();
 
-    // 1. First install
-    install("codex", Some(path_str), true, false, false).unwrap();
+    // 1. First install (legacy hook-based adapter: gemini)
+    install("gemini", Some(path_str), true, false, false).unwrap();
     assert!(config_file.exists());
 
     // 2. Second install should detect already installed and succeed without error
-    install("codex", Some(path_str), true, false, false).unwrap();
+    install("gemini", Some(path_str), true, false, false).unwrap();
 
     // 3. Uninstall cleans it up completely
-    uninstall("codex", Some(path_str), true, false, false).unwrap();
+    uninstall("gemini", Some(path_str), true, false, false).unwrap();
     assert!(!config_file.exists());
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -228,7 +231,8 @@ fn install_reports_already_installed_when_run_twice() {
 
 #[test]
 fn uninstall_on_file_without_hooks_succeeds_cleanly() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-nohooks-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-nohooks-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("no-hooks.json");
     let path_str = config_file.to_str().unwrap();
@@ -245,7 +249,8 @@ fn uninstall_on_file_without_hooks_succeeds_cleanly() {
 
 #[test]
 fn invalid_json_returns_error_without_panicking() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-invalid-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-invalid-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("corrupted.json");
     let path_str = config_file.to_str().unwrap();
@@ -280,19 +285,23 @@ fn test_backup_created_with_restrictive_permissions() {
     fs::write(&config_file, secret_bytes).unwrap();
     fs::set_permissions(&config_file, fs::Permissions::from_mode(0o644)).unwrap();
 
-    // Install hooks
-    install("claude", Some(path_str), true, false, false).unwrap();
+    // Install hooks (legacy hook-based adapter: gemini)
+    install("gemini", Some(path_str), true, false, false).unwrap();
 
     let bak = backup_path(&config_file);
     assert!(bak.exists());
     let bak_meta = fs::metadata(&bak).unwrap();
     let mode = bak_meta.permissions().mode() & 0o777;
     // Mode must be restrictive: no group or other read/write/execute (0600)
-    assert_eq!(mode & 0o077, 0, "backup must not be readable/writable by group or others");
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "backup must not be readable/writable by group or others"
+    );
     assert_eq!(mode, 0o600);
 
     // Uninstall
-    uninstall("claude", Some(path_str), true, false, false).unwrap();
+    uninstall("gemini", Some(path_str), true, false, false).unwrap();
     assert_eq!(fs::read(&config_file).unwrap(), secret_bytes);
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -301,7 +310,8 @@ fn test_backup_created_with_restrictive_permissions() {
 #[cfg(unix)]
 #[test]
 fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-preexist-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-preexist-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("legacy-config.json");
     let path_str = config_file.to_str().unwrap();
@@ -315,12 +325,16 @@ fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
     fs::set_permissions(&bak, fs::Permissions::from_mode(0o644)).unwrap();
     assert_ne!(fs::metadata(&bak).unwrap().permissions().mode() & 0o077, 0);
 
-    // Install hooks
-    install("claude", Some(path_str), true, false, false).unwrap();
+    // Install hooks (legacy hook-based adapter: gemini)
+    install("gemini", Some(path_str), true, false, false).unwrap();
 
     // Verify the pre-existing backup was tightened to owner-only (0600)
     let mode = fs::metadata(&bak).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode & 0o077, 0, "existing backup must be hardened to no group/other access");
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "existing backup must be hardened to no group/other access"
+    );
     assert_eq!(mode, 0o600);
 
     // Now test when hooks are ALREADY installed:
@@ -329,9 +343,13 @@ fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
     assert_ne!(fs::metadata(&bak).unwrap().permissions().mode() & 0o077, 0);
 
     // Running install again (which detects already_installed) must also harden existing backup
-    install("claude", Some(path_str), true, false, false).unwrap();
+    install("gemini", Some(path_str), true, false, false).unwrap();
     let mode_again = fs::metadata(&bak).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode_again & 0o077, 0, "backup must be hardened even when already installed");
+    assert_eq!(
+        mode_again & 0o077,
+        0,
+        "backup must be hardened even when already installed"
+    );
     assert_eq!(mode_again, 0o600);
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -340,7 +358,8 @@ fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
 #[cfg(unix)]
 #[test]
 fn test_symlink_backup_is_rejected_and_fails_closed() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-symlink-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-symlink-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("config.json");
     let path_str = config_file.to_str().unwrap();
@@ -354,14 +373,18 @@ fn test_symlink_backup_is_rejected_and_fails_closed() {
     std::os::unix::fs::symlink(&sensitive_target, &bak).unwrap();
 
     // Install must fail closed and reject the symlink
-    let res = install("claude", Some(path_str), true, false, false);
+    let res = install("gemini", Some(path_str), true, false, false);
     assert!(res.is_err());
     assert!(res.unwrap_err().contains("refusing to use symlink"));
 
     // Uninstall must also fail closed and reject the symlink
-    let uninst_res = uninstall("claude", Some(path_str), true, false, false);
+    let uninst_res = uninstall("gemini", Some(path_str), true, false, false);
     assert!(uninst_res.is_err());
-    assert!(uninst_res.unwrap_err().contains("refusing to restore from symlink"));
+    assert!(
+        uninst_res
+            .unwrap_err()
+            .contains("refusing to restore from symlink")
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }

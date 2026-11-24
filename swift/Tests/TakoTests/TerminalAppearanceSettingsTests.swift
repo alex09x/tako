@@ -24,15 +24,20 @@ struct TerminalAppearanceSettingsTests {
 
     @Test func bundledPresetsAreRealDistinctThemeFiles() throws {
         let names = TerminalAppearanceCatalog.themeNames(paths: [themesDirectory.path])
-        #expect(names == ["TakoCore", "Tako Forest", "Tako Night", "Tako Ocean", "Tako Slate"])
-        var backgrounds = Set<String>()
+        let tako = ["TakoCore", "Tako Dawn", "Tako Ember", "Tako Forest", "Tako Ink", "Tako Night", "Tako Ocean",
+                    "Tako Paper", "Tako Slate", "Tako Violet"]
+        #expect(Set(names) == Set(tako + ApprovedThemeCatalogTests.names))
+        #expect(names.first == "TakoCore")
+        var looks = Set<String>()
         for name in names {
             let theme = TerminalTheme.takoDefault.applyingTheme(named: name, searchPaths: [themesDirectory.path])
             #expect(theme.palette.count == 16, "\(name) needs a complete terminal palette")
-            let color = try #require(NSColor(cgColor: theme.background))
-            backgrounds.insert(Tako.Brand.hexString(for: color))
+            let colors = try ([theme.background] + (0..<16).map { theme.palette[$0] }).map { cg -> String in
+                Tako.Brand.hexString(for: try #require(cg.flatMap { NSColor(cgColor: $0) }))
+            }
+            looks.insert(colors.joined(separator: " "))
         }
-        #expect(backgrounds.count == names.count)
+        #expect(looks.count == names.count)
     }
 
     @Test func customCatalogListsReadableThemeFilesWithoutUnsafeNames() throws {

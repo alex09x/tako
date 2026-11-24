@@ -22,7 +22,7 @@ extension AppDelegate {
     @IBAction func showSettings(_ sender: Any?) {
         guard let window = (sender as? NSView)?.window
             ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) else { return }
-        TerminalSettingsDialog.show(in: window, theme: tako.config.theme, configPath: tako.activeConfigPath)
+        DesktopSettingsController.show(in: window, configPath: tako.activeConfigPath)
     }
 
     @IBAction func reloadConfig(_ sender: Any?) {
@@ -217,20 +217,9 @@ extension AppDelegate {
     }
 
     func setupSidebarMenuItem() {
-        guard let mainMenu = NSApp.mainMenu else { return }
-
-        if let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
-            viewMenu.addItem(NSMenuItem.separator())
-
-            let sidebarItem = NSMenuItem(
-                title: "Session Sidebar",
-                action: #selector(BaseTerminalController.toggleSessionSidebar(_:)),
-                keyEquivalent: "s"
-            )
-            sidebarItem.keyEquivalentModifierMask = [.command, .option]
-            sidebarItem.target = self
-            sidebarItem.setImageIfDesired(systemSymbolName: "sidebar.left")
-            viewMenu.addItem(sidebarItem)
+        guard let viewMenu = NSApp.mainMenu?.items.first(where: { $0.title == "View" })?.submenu else { return }
+        for item in viewMenu.items where item.action == #selector(BaseTerminalController.toggleSessionSidebar(_:)) {
+            viewMenu.removeItem(item)
         }
     }
 
@@ -238,6 +227,7 @@ extension AppDelegate {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         if let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
+            viewMenu.addItem(NSMenuItem.separator())
             let overviewItem = NSMenuItem(
                 title: "Pane Overview",
                 action: #selector(BaseTerminalController.togglePaneOverview(_:)),
@@ -346,9 +336,7 @@ extension AppDelegate {
     }
 
     @IBAction func toggleSessionSidebar(_ sender: Any?) {
-        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
-                TerminalController.all.first else { return }
-        controller.toggleSessionSidebar(sender)
+        // Session Sidebar is permanently open on desktop windows and cannot be hidden.
     }
 
     @IBAction func toggleNotificationCenter(_ sender: Any?) {

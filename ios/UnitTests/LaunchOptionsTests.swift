@@ -55,6 +55,15 @@ final class LaunchOptionsTests: XCTestCase {
         XCTAssertNil(LaunchOptions.screen)
     }
 
+    // MARK: - -takoHostKeyArmingHold
+
+    func testHostKeyArmingHoldRequiresExplicitOptIn() {
+        set([])
+        XCTAssertFalse(LaunchOptions.hostKeyArmingHold)
+        set(["-takoHostKeyArmingHold"])
+        XCTAssertTrue(LaunchOptions.hostKeyArmingHold)
+    }
+
     // MARK: - -takoHost / -takoKeyPath / -takoPassphrasePath / -takoPasswordPath
 
     func testHostParsesHostPortUser() {

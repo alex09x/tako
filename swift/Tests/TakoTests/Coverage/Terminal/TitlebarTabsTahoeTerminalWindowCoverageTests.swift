@@ -24,13 +24,15 @@ private func makeTahoeWindow() -> TitlebarTabsTahoeTerminalWindow {
 
 @MainActor
 struct TitlebarTabsTahoeTerminalWindowCoverageTests {
-    @Test func awakeFromNibHidesTitleAndAddsAToolbar() {
+    @Test func awakeFromNibLeavesTheCustomStripUncovered() {
         withAppDelegate { _ in
             let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             #expect(window.titleVisibility == .hidden)
-            #expect(window.toolbar != nil)
+            #expect(window.toolbar == nil)
+            window.becomeMain()
+            #expect(window.titlebarAccessoryViewControllers.isEmpty)
         }
     }
 
@@ -92,7 +94,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
             let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
-            let toolbar = try! #require(window.toolbar)
+            let toolbar = NSToolbar(identifier: "TerminalToolbar")
             #expect(window.toolbarAllowedItemIdentifiers(toolbar).contains(.title))
             #expect(window.toolbarDefaultItemIdentifiers(toolbar).contains(.title))
         }
@@ -103,7 +105,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
             let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
-            let toolbar = try! #require(window.toolbar)
+            let toolbar = NSToolbar(identifier: "TerminalToolbar")
             let item = window.toolbar(toolbar, itemForItemIdentifier: .title, willBeInsertedIntoToolbar: true)
             #expect(item != nil)
         }
@@ -114,7 +116,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
             let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
-            let toolbar = try! #require(window.toolbar)
+            let toolbar = NSToolbar(identifier: "TerminalToolbar")
             let item = window.toolbar(toolbar, itemForItemIdentifier: .flexibleSpace, willBeInsertedIntoToolbar: true)
             #expect(item != nil)
         }
@@ -199,7 +201,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
             let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
-            let toolbar = try! #require(window.toolbar)
+            let toolbar = NSToolbar(identifier: "TerminalToolbar")
             let item = window.toolbar(toolbar, itemForItemIdentifier: .title, willBeInsertedIntoToolbar: true)
             let view = try! #require(item?.view)
             #expect(view.hitTest(NSPoint(x: 5, y: 5)) == nil)

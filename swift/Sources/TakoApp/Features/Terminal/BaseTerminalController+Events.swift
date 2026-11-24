@@ -204,6 +204,11 @@ extension BaseTerminalController {
         // Check if target surface is in current controller's tree
         guard surfaceTree.contains(target) else { return }
 
+        if usesFloatingCanvas {
+            handleFloatingEqualizeSplits()
+            return
+        }
+
         // Equalize the splits
         surfaceTree = surfaceTree.equalized()
     }
@@ -216,6 +221,11 @@ extension BaseTerminalController {
         // Get the direction from the notification
         guard let directionAny = notification.userInfo?[Tako.Notification.SplitDirectionKey] else { return }
         guard let direction = directionAny as? Tako.SplitFocusDirection else { return }
+
+        if usesFloatingCanvas {
+            handleFloatingFocusSplit(from: target, direction: direction)
+            return
+        }
 
         // Find the node for the target surface
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
@@ -245,6 +255,11 @@ extension BaseTerminalController {
         // The target must be within our tree
         guard let target = notification.object as? Tako.SurfaceView else { return }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
+
+        if usesFloatingCanvas {
+            handleFloatingToggleZoom(target: target)
+            return
+        }
 
         // Toggle the zoomed state
         if surfaceTree.zoomed == targetNode {
@@ -285,6 +300,11 @@ extension BaseTerminalController {
 
         guard let amountAny = notification.userInfo?[Tako.Notification.ResizeSplitAmountKey] else { return }
         guard let amount = amountAny as? UInt16 else { return }
+
+        if usesFloatingCanvas {
+            handleFloatingResizeSplit(target: target, direction: direction, amount: amount)
+            return
+        }
 
         // Convert Tako.SplitResizeDirection to SplitTree.Spatial.Direction
         let spatialDirection: SplitTree<Tako.SurfaceView>.Spatial.Direction
@@ -333,39 +353,8 @@ extension BaseTerminalController {
 
     @objc func takoSurfaceDragEndedNoTarget(_ notification: Notification) {
         guard let target = notification.object as? Tako.SurfaceView else { return }
-        guard let targetNode = surfaceTree.root?.node(view: target) else { return }
-
-        // If our tree isn't split, then we never create a new window, because
-        // it is already a single split.
-        guard surfaceTree.isSplit else { return }
-
-        // If we are removing our focused surface then we move it. We need to
-        // keep track of our old one so undo sends focus back to the right place.
-        let oldFocusedSurface = focusedSurface
-        if focusedSurface == target {
-            focusedSurface = findNextFocusTargetAfterClosing(node: targetNode)
-        }
-
-        // Remove the surface from our tree
-        let removedTree = surfaceTree.removing(targetNode)
-
-        // Create a new tree with the dragged surface and open a new window
-        let newTree = SplitTree<Tako.SurfaceView>(view: target)
-
-        // Treat our undo below as a full group.
-        undoManager?.beginUndoGrouping()
-        undoManager?.setActionName("Move Split")
-        defer {
-            undoManager?.endUndoGrouping()
-        }
-
-        replaceSurfaceTree(removedTree, moveFocusFrom: oldFocusedSurface)
-        _ = TerminalController.newWindow(
-            tako,
-            tree: newTree,
-            position: notification.userInfo?[Notification.Name.takoSurfaceDragEndedNoTargetPointKey] as? NSPoint,
-            confirmUndo: false,
-            inheritBackgroundOpacity: isBackgroundOpaque)
+        moveSurfaceToNewWindow(target,
+                               position: notification.userInfo?[Notification.Name.takoSurfaceDragEndedNoTargetPointKey] as? NSPoint)
     }
 
 }

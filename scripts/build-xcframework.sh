@@ -45,10 +45,10 @@ else
     TRIPLES="aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim"
 fi
 python3 scripts/engine_fingerprint.py before-cargo $TRIPLES
-MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --lib --features ssh --target aarch64-apple-darwin
+MACOSX_DEPLOYMENT_TARGET=14.0 mitts build --release --lib --features ssh --target aarch64-apple-darwin
 if [ "$MACOS_ONLY" -ne 1 ]; then
-IPHONEOS_DEPLOYMENT_TARGET=17.0 cargo build --release --lib --features ssh --target aarch64-apple-ios
-IPHONEOS_DEPLOYMENT_TARGET=17.0 cargo build --release --lib --features ssh --target aarch64-apple-ios-sim
+IPHONEOS_DEPLOYMENT_TARGET=17.0 mitts build --release --lib --features ssh --target aarch64-apple-ios
+IPHONEOS_DEPLOYMENT_TARGET=17.0 mitts build --release --lib --features ssh --target aarch64-apple-ios-sim
 fi
 
 # 3. macOS slice staging
@@ -60,7 +60,7 @@ fi
 # 4. Generate Swift bindings via UniFFI (proc-macro / library-mode workflow, UniFFI 0.32).
 echo "🔗 Generating Swift bindings via UniFFI..."
 mkdir -p target/bindings
-cargo run --quiet --bin uniffi-bindgen --features uniffi-cli -- \
+mitts run --quiet --bin uniffi-bindgen --features uniffi-cli -- \
     generate \
     --language swift \
     --out-dir target/bindings \

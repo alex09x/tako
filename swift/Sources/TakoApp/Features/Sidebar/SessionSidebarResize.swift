@@ -11,11 +11,11 @@
 import AppKit
 import SwiftUI
 
-/// The session sidebar's width: 280 pt as in the design (4a), dragged wider
-/// or narrower by its right edge, remembered across launches.
+/// The session sidebar's width: 248 pt reference default (A01), dragged wider
+/// or narrower (`220...720` pt) by its right edge, remembered across launches.
 enum SessionSidebarWidth {
-    static let standard: CGFloat = 280
-    static let range: ClosedRange<CGFloat> = 260...720
+    static let standard: CGFloat = DesktopCanvasMetrics.sidebarDefaultWidth
+    static let range: ClosedRange<CGFloat> = 220...720
     static let defaultsKey = "TakoSessionSidebarWidth"
 
     static func clamped(_ width: CGFloat) -> CGFloat {
@@ -52,8 +52,8 @@ struct SessionSidebarResizeHandle: NSViewRepresentable {
 
     func updateNSView(_ grip: SessionSidebarGripView, context: Context) {
         let binding = $width
-        grip.currentWidth = { binding.wrappedValue }
-        grip.setWidth = { binding.wrappedValue = $0 }
+        grip.currentWidth = { Double(SessionSidebarWidth.clamped(CGFloat(binding.wrappedValue))) }
+        grip.setWidth = { binding.wrappedValue = Double(SessionSidebarWidth.clamped(CGFloat($0))) }
     }
 }
 
@@ -75,6 +75,7 @@ final class SessionSidebarGripView: NSView {
         toolTip = "Drag to resize sidebar; double-click to reset"
         setAccessibilityElement(true)
         setAccessibilityRole(.splitter)
+        setAccessibilityIdentifier("SessionSidebarResizeHandle")
         setAccessibilityLabel("Resize session sidebar")
     }
 

@@ -88,7 +88,7 @@ enum LayoutJournal {
                 for tab in window.tabs {
                     guard let tabData = try? JSONSerialization.data(withJSONObject: tab),
                           let shape = try? decoder.decode(TerminalRestorableState.InternalState<PaneShape>.self, from: tabData),
-                          shape.surfaceTree.root != nil else {
+                          (shape.surfaceTree.root != nil || shape.floatingCanvas?.panes.isEmpty == true) else {
                         return (.invalid("a tab does not decode"), nil)
                     }
                 }

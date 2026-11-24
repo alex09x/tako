@@ -27,22 +27,69 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
         if !d.hasText(containing: "Sessions") { d.key(Key.s, [.maskCommand, .maskAlternate]) }
         guard d.wait(for: { d.hasText(containing: "AppearanceWitness") }, timeout: 10) else { throw Failure("no sidebar witness") }
     }
-    func openAppearance(text: String, menu: String) throws -> AXUIElement {
-        try sidebar()
-        guard let window = d.activeWindow(), let row = d.descendants(of: window, role: kAXStaticTextRole as String).first(where: {
-            (d.attribute($0, kAXValueAttribute) as String?) == text
-        }), let position: AXValue = d.attribute(row, kAXPositionAttribute),
-           let extent: AXValue = d.attribute(row, kAXSizeAttribute) else { throw Failure("no sidebar row: \(text)") }
-        var point = CGPoint.zero, size = CGSize.zero
-        AXValueGetValue(position, .cgPoint, &point)
-        AXValueGetValue(extent, .cgSize, &size)
-        point.x += size.width / 2; point.y += size.height / 2
+    // «Appearance ▸» (1ecffe22) replaced the legacy «Workspace / Terminal
+    // Appearance…» dialog: a workspace header offers the workspace level, the
+    // terminal's own right-click menu the pane level, and «Customize…» opens
+    // Settings › Terminal Appearance at that level with the shown theme in
+    // its editor. Every click goes to a point Tako owns.
+    func rightClick(_ point: CGPoint) throws {
+        guard d.topmostOwner(at: point) == d.pid else { throw Failure("\(point) is not Tako's") }
+        try d.requireAXOwnedTarget(at: point)
+        CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
         CGEvent(mouseEventSource: d.source, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
         CGEvent(mouseEventSource: d.source, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
-        try d.clickOpenMenuItem(titled: menu)
-        guard d.wait(for: { d.element(withIdentifier: "TerminalSettingsDialog") != nil }, timeout: 5),
-              let dialog = d.element(withIdentifier: "TerminalSettingsDialog") else { throw Failure("appearance dialog did not open") }
-        return dialog
+    }
+    /// The workspace header's menu (sidebar text `text`), or the focused
+    /// terminal's own menu when `text` is nil; then its «Appearance» submenu.
+    func openAppearanceMenu(sidebarText text: String?) throws {
+        if let text {
+            try sidebar()
+            guard let window = d.activeWindow(), let row = d.descendants(of: window, role: kAXStaticTextRole as String).first(where: {
+                (d.attribute($0, kAXValueAttribute) as String?) == text
+            }), let rect = d.axFrame(row) else { throw Failure("no sidebar row: \(text)") }
+            try rightClick(CGPoint(x: rect.midX, y: rect.midY))
+        } else {
+            guard let rect = d.terminalFrame() else { throw Failure("no terminal to right-click") }
+            try rightClick(CGPoint(x: rect.midX, y: rect.midY))
+        }
+        try openSubmenu("Appearance")
+    }
+    /// Opens the submenu item `title` of the open menu with a real HID click
+    /// on its frame (Driver.clickOpenMenuItem: owner + AX target guarded, no
+    /// AXPress). Each caller then requires the exact child it needs
+    /// (clickOpenMenuItem, which lists every menu item when it is missing, or
+    /// appearanceChecks): that child is the proof the submenu opened.
+    func openSubmenu(_ title: String) throws {
+        try d.clickOpenMenuItem(titled: title)
+    }
+    /// Whether the open Appearance submenu checks `name` (the level's own preset).
+    func appearanceChecks(_ name: String) -> Bool {
+        guard d.wait(for: { d.openMenuItem(titled: name) != nil }, timeout: 5), let item = d.openMenuItem(titled: name) else { return false }
+        return ((d.attribute(item, "AXMenuItemMarkChar") as String?) ?? "").isEmpty == false
+    }
+    /// Escape to the open menu itself (HID), only while a menu is open, so no
+    /// Escape reaches the terminal underneath.
+    func dismissMenu() throws {
+        for _ in 0..<3 where d.openMenuItem(titled: "Appearance") != nil {
+            d.systemKey(Key.escape)
+            usleep(200_000)
+        }
+        guard d.openMenuItem(titled: "Appearance") == nil else { throw Failure("the Appearance menu did not close") }
+    }
+    let page = SettingsPage(d)
+    func closeSettings() throws {
+        try page.click("DesktopSettingsClose")
+        guard d.wait(for: { d.element(withIdentifier: "DesktopSettingsRoot") == nil }, timeout: 5) else {
+            throw Failure("Close did not dismiss Settings")
+        }
+    }
+    /// Settings › Terminal Appearance for the focused terminal (pane level),
+    /// its shown theme open in the editor.
+    func customizePane() throws {
+        try openAppearanceMenu(sidebarText: nil)
+        try d.clickOpenMenuItem(titled: "Customize…")
+        guard d.wait(for: { page.exact("DesktopThemeName") != nil }, timeout: 5) else { throw Failure("the pane theme editor did not open") }
+        page.placeWindow()
     }
     func background(_ name: String) throws -> NSColor {
         let path = d.path(name + ".png")
@@ -63,11 +110,9 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
         var point = CGPoint.zero, size = CGSize.zero
         AXValueGetValue(position, .cgPoint, &point); AXValueGetValue(extent, .cgSize, &size)
         point.x += size.width / 2; point.y += size.height / 2
-        CGEvent(mouseEventSource: d.source, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
-        CGEvent(mouseEventSource: d.source, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
-        guard d.wait(for: { d.openMenuItem(titled: "Move to Workspace") != nil }, timeout: 5),
-              let submenu = d.openMenuItem(titled: "Move to Workspace") else { throw Failure("missing workspace move submenu") }
-        d.press(submenu)
+        try rightClick(point)
+        guard d.wait(for: { d.openMenuItem(titled: "Move to Workspace") != nil }, timeout: 5) else { throw Failure("missing workspace move submenu") }
+        try openSubmenu("Move to Workspace")
         try d.clickOpenMenuItem(titled: workspace)
     }
     func difference(_ a: NSColor, _ b: NSColor) -> CGFloat {
@@ -75,14 +120,20 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
     }
     let initial = try background("scoped-before")
     let configBefore = try String(contentsOfFile: d.path("config"), encoding: .utf8)
-    let workspaceDialog = try openAppearance(text: "DEFAULT", menu: "Workspace Appearance…")
-    func value(_ dialog: AXUIElement) -> String { (d.attribute(dialog, kAXValueAttribute) as String?) ?? "" }
-    guard value(workspaceDialog).contains("Themes:") else { throw Failure("workspace themes missing") }
-    // Inherit, TakoCore, Forest, Night, Ocean.
-    for _ in 0..<4 { d.key(Key.down) }
-    guard value(workspaceDialog).contains("Tako Ocean") else { throw Failure("workspace preset missing: \(value(workspaceDialog))") }
-    d.key(Key.returnKey)
-    d.key(Key.escape)
+    // The submenu offers the first six presets of the catalog (TakoCore, Ayu
+    // Mirage, Dracula, …); Tako Ocean is chosen the way the product offers
+    // every other one: «All Themes…» at the workspace level, then its card.
+    try openAppearanceMenu(sidebarText: "DEFAULT")
+    try d.clickOpenMenuItem(titled: "All Themes…")
+    guard d.wait(for: { d.element(withIdentifier: "DesktopSettingsRoot") != nil }, timeout: 5) else {
+        throw Failure("All Themes… did not open Settings")
+    }
+    page.placeWindow()
+    try page.click("DesktopTheme-Tako Ocean")
+    guard d.wait(for: { page.value("DesktopTheme-Tako Ocean") == "selected" }, timeout: 5) else {
+        throw Failure("the workspace did not select Tako Ocean: [\(page.value("DesktopTheme-Tako Ocean"))]")
+    }
+    try closeSettings()
     guard d.wait(for: { guard let color = try? background("scoped-workspace") else { return false }; return difference(initial, color) > 0.03 }, timeout: 10) else {
         throw Failure("workspace theme did not reach the live renderer")
     }
@@ -96,33 +147,41 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
     }
     _ = try d.exec("\(ctl) workspace assign --workspace Default --target \(pane)")
     _ = try d.exec("\(ctl) workspace switch Default")
-    let paneDialog = try openAppearance(text: "AppearanceWitness", menu: "Terminal Appearance…")
-    d.key(14, .maskCommand) // Edit the inherited effective theme as a custom preset.
-    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
-          let editor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("pane theme editor missing") }
-    d.key(Key.a, .maskCommand); try d.type("Scoped Session"); d.key(Key.returnKey)
-    d.key(23, .maskCommand) // Font Size
-    guard d.wait(for: { value(editor).contains("Font Size:") && value(editor).contains("= 13") }, timeout: 5) else {
-        throw Failure("pane theme did not start with its inherited size: \(value(editor))")
+    // The pane level: the terminal's own menu › Appearance › Customize… opens
+    // the inherited effective theme (Tako Ocean) in the editor as a copy.
+    try customizePane()
+    try page.enter("DesktopThemeName", "Scoped Session", submit: false)
+    try page.click("DesktopThemeEditorSection-type")
+    // DesktopStepper's field shows DesktopStepper.render(value) ("13", "13.5")
+    // and draws its "pt" unit as a separate label, so the AX value is the
+    // bare number: the whole value must parse and equal the size exactly.
+    func fontSize() -> String { page.value("DesktopThemeField-font-size") }
+    func fontSizeIs(_ size: Double) -> Bool {
+        Double(fontSize().trimmingCharacters(in: .whitespaces)) == size
     }
-    d.key(Key.right)
-    guard d.wait(for: { value(editor).contains("setting_custom_success: font-size") }, timeout: 5) else {
-        throw Failure("pane theme size did not change: \(value(editor))")
+    guard d.wait(for: { fontSizeIs(13) }, timeout: 5) else {
+        throw Failure("pane theme did not start with its inherited size: [\(fontSize())]")
     }
-    // The save acknowledgement temporarily replaces the section description.
-    // Return to the section to read its persisted effective size.
-    d.key(Key.three, .maskCommand)
-    d.key(23, .maskCommand)
-    guard d.wait(for: { value(editor).contains("= 14") }, timeout: 5) else {
-        throw Failure("pane theme size did not read back: \(value(editor))")
+    // The stepper moves 0.5 pt a step.
+    try page.click("DesktopThemeField-font-size-increase")
+    try page.click("DesktopThemeField-font-size-increase")
+    guard d.wait(for: { fontSizeIs(14) }, timeout: 5) else {
+        throw Failure("pane theme size did not change to 14: [\(fontSize())]")
     }
-    d.key(Key.one, .maskCommand)
-    guard value(editor).contains("14") else { throw Failure("theme editor escaped into global settings") }
-    guard let save = d.element(withIdentifier: "ThemePresetSaveButton") else { throw Failure("missing theme Save") }
-    d.press(save)
-    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") == nil }, timeout: 5),
-          value(paneDialog).contains("Scoped Session") else { throw Failure("pane custom theme did not save") }
-    d.key(Key.escape)
+    try page.click("DesktopThemeSave")
+    guard d.wait(for: { page.exact("DesktopThemeName") == nil }, timeout: 5) else {
+        throw Failure("pane custom theme did not save: \(page.value("DesktopThemeError"))")
+    }
+    try closeSettings()
+    // Selected at the pane level, and only there: the workspace keeps Ocean.
+    try openAppearanceMenu(sidebarText: nil)
+    guard appearanceChecks("Scoped Session") else { throw Failure("the pane level does not select Scoped Session") }
+    try dismissMenu()
+    try openAppearanceMenu(sidebarText: "DEFAULT")
+    guard appearanceChecks("Tako Ocean"), !appearanceChecks("Scoped Session") else {
+        throw Failure("the workspace level changed with the pane's theme")
+    }
+    try dismissMenu()
     _ = try d.exec("\(ctl) workspace assign --workspace Unstyled --target \(pane)")
     _ = try d.exec("\(ctl) workspace switch Unstyled")
     guard d.wait(for: { guard let color = try? background("scoped-moved") else { return false }; return difference(ocean, color) < 0.02 }, timeout: 10) else {
@@ -130,19 +189,20 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
     }
     d.quit()
     guard kill(process, 0) == 0 else { throw Failure("quitting the renderer killed its process") }
-    try d.launch(config: config)
+    // The restored pane is the live session (its `sleep` runs in front), not
+    // a fresh shell: no bootstrap is typed into it, as in the recovery journeys.
+    try d.launch(config: config, settleTerminal: false)
     _ = try d.exec("\(ctl) focus --target \(pane)")
-    let restored = try openAppearance(text: "AppearanceWitness", menu: "Terminal Appearance…")
-    guard value(restored).contains("Scoped Session") else { throw Failure("pane theme assignment did not survive restore") }
-    d.key(14, .maskCommand)
-    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
-          let restoredEditor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("restored theme editor missing") }
-    d.key(23, .maskCommand)
-    guard d.wait(for: { value(restoredEditor).contains("Font Size:") && value(restoredEditor).contains("= 14") }, timeout: 5) else {
-        throw Failure("pane theme typography did not survive restore: \(value(restoredEditor))")
+    try openAppearanceMenu(sidebarText: nil)
+    guard appearanceChecks("Scoped Session") else { throw Failure("pane theme assignment did not survive restore") }
+    try dismissMenu()
+    try customizePane()
+    try page.click("DesktopThemeEditorSection-type")
+    guard d.wait(for: { fontSizeIs(14) }, timeout: 5) else {
+        throw Failure("pane theme typography did not survive restore: [\(fontSize())]")
     }
-    d.key(Key.escape)
-    d.key(Key.escape)
+    try page.click("DesktopThemeCancel")
+    try closeSettings()
     _ = try d.exec("\(ctl) workspace assign --workspace Default --target \(pane)")
     _ = try d.exec("\(ctl) workspace switch Default")
     guard d.wait(for: { guard let color = try? background("scoped-restored-workspace") else { return false }; return difference(ocean, color) < 0.02 }, timeout: 10),

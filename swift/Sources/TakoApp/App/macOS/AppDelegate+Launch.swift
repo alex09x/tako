@@ -117,6 +117,7 @@ extension AppDelegate {
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
         // Initial config loading
+        DesktopPresentation.shared.configure(tako.config)
         takoConfigDidChange(config: tako.config)
 
         // Register our service provider. This must happen after everything is initialized.
@@ -217,6 +218,7 @@ extension AppDelegate {
             }
 
             tako_app_set_color_scheme(app, scheme)
+            self.tako.updateSystemTheme(darkAppearance: appearance.isDark)
         }
 
         // Setup our menu
@@ -225,9 +227,9 @@ extension AppDelegate {
         setupUpdateMenuItem()
         setupCommandLineToolMenuItem()
         setupAgentHooksMenuItem()
+        setupFirstRunMenuItem()
         setupPromptNavigationMenuItems()
         setupNotificationMenuItems()
-        setupSidebarMenuItem()
         setupPaneOverviewMenuItem()
         setupAttentionMenuItems()
         setupWorkspaceTopLevelMenu()
@@ -242,9 +244,7 @@ extension AppDelegate {
         }
         setupDiagnosticsMenuItem()
         setDockBadge()
-        WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
-        CommandLineTool.offerAtLaunch(theme: tako.config.theme)
-        AgentHooksTool.offerAtLaunch(theme: tako.config.theme)
+        SetupCoordinator.shared.offerAtLaunch(app: tako)
 
         // Setup signal handlers
         setupSignals()

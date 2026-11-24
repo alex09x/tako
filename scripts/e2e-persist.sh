@@ -1,63 +1,88 @@
 #!/bin/bash
+# tako — Isolated session persistence tests
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # The session-persistence scenarios, each isolated: a copy of the app built
 # with its session runtime under a bundle id of that scenario's run only (so
 # its saved windows and Application Support are its own) and a fresh
 # session home. Saved windows are removed with forget-saved-state.py: newer
-# macOS keeps them outside ~/Library/Saved Application State. Everything a run creates --
-# sessions, saved state, records -- is removed afterwards, whatever the
-# outcome; nothing of a real Tako's is read or touched.
+# macOS keeps them outside ~/Library/Saved Application State. Nothing of a
+# real Tako's is read or touched.
+#
+# What a case creates -- sessions, saved state, records -- is removed only
+# after its cleanup is proved (scripts/e2e/persist-case.sh): its own runtimes
+# stopped, nothing of it still running. A failed case, or one whose cleanup
+# is in doubt, keeps all of it with its evidence under
+# target/e2e-persist-evidence/<bundle>/, and the run stops there.
 #
 #   ./scripts/e2e-persist.sh            # every persistence scenario
 #   ./scripts/e2e-persist.sh persist-live
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. scripts/e2e/persist-case.sh
 
 [ $# -gt 0 ] || set -- persist-live persist-gone persist-close persist-cancel persist-close-asks persist-close-quit persist-second-owner persist-reflow
-export TAKO_APP_DIR=target/macapp-persist TAKO_WITH_ZMX=1
+# Every case reseals the app under a bundle id of its own, so macOS sees a
+# new app each time; launched from an external volume (the test Mac builds
+# on one) it asked anew on every case for access to that volume. The app is
+# built where scripts/app_locations.py says: off any external volume.
+TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-persist)"
+case "$TAKO_APP_DIR" in /*) ;; *) TAKO_APP_DIR="$PWD/$TAKO_APP_DIR" ;; esac
+export TAKO_APP_DIR TAKO_WITH_ZMX=1 TAKO_CODESIGN_IDENTITY=-
 APP="$TAKO_APP_DIR/Tako.app"
+python3 scripts/app_locations.py check-app "$APP"
+# Bundle identity is metadata, not a Swift compile input. Build once, then
+# reseal only that metadata per scenario; inner executable bytes stay fixed.
+# TAKO_PREBUILT_DIR: the one build of this commit (scripts/prebuilt.py),
+# checked against this checkout and toolchain, instead of a build here.
+if [ -n "${TAKO_PREBUILT_DIR:-}" ]; then
+    python3 scripts/prebuilt.py install "$TAKO_PREBUILT_DIR" --app-dir "$TAKO_APP_DIR" \
+        --bundle-id "com.tako-core.terminal.e2e-persist-build-$$" --require-zmx
+else
+    TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-persist-build-$$" python3 scripts/build-macapp.py
+fi
+export PERSIST_ZMX="$APP/Contents/Helpers/zmx" PERSIST_FORGET="scripts/e2e/forget-saved-state.py"
+APPEXE="$APP/Contents/MacOS/Tako"
 
+# Called on the left of ||, so errexit does not apply here: every step
+# checks its own status.
 run_one() {
     local scenario=$1
     local bundle="com.tako-core.terminal.e2e-persist-$(date +%s)-$$"
     local support="$HOME/Library/Application Support/$bundle"
+    local evidence="$PWD/target/e2e-persist-evidence/$bundle"
+    mkdir -p "$evidence" || return 1
     # Short: socket paths under it must stay within macOS's 104 bytes.
     local sessions
-    sessions=$(mktemp -d /tmp/tkp.XXXXXX)
-    cleanup_one() {
-        local zmx="$APP/Contents/Helpers/zmx"
-        for dir in "$sessions"/.tako-sessions/*/; do
-            [ -d "$dir" ] || continue
-            for name in $(ZMX_DIR="$dir" "$zmx" list --short 2>/dev/null); do
-                ZMX_DIR="$dir" "$zmx" kill "$name" --force >/dev/null 2>&1 || true
-            done
-        done
-        python3 scripts/e2e/forget-saved-state.py "$bundle"
-        rm -rf "$sessions" "$support"
-    }
-    trap cleanup_one EXIT
-    # Called on the left of ||, so errexit does not apply here: every step
-    # that must stop the run checks its own status.
-    if ! TAKO_BUNDLE_ID=$bundle python3 scripts/build-macapp.py >/dev/null; then
-        echo "FAIL  $scenario: the app could not be built" >&2
-        cleanup_one
-        trap - EXIT
-        return 1
-    fi
-    if [ "$(defaults read "$PWD/$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$bundle" ]; then
-        echo "FAIL  $scenario: the built app is not this run's ($bundle)" >&2
-        cleanup_one
-        trap - EXIT
-        return 1
-    fi
+    sessions=$(mktemp -d /tmp/tkp.XXXXXX) || return 1
+    printf 'scenario %s\nbundle %s\nsessions %s\nsupport %s\n' "$scenario" "$bundle" "$sessions" "$support" > "$evidence/identity.txt"
     local status=0
-    APP="$APP" TAKO_BUNDLE_ID="$bundle" TAKO_SESSIONS_HOME="$sessions" scripts/e2e-macapp.sh "$scenario" || status=$?
-    cleanup_one
-    trap - EXIT
-    return $status
+    if ! /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle" "$APP/Contents/Info.plist" \
+        || ! codesign --force --sign - "$APP"; then
+        echo "FAIL  $scenario: the isolated app could not be resealed" >&2
+        status=1
+    elif [ "$(defaults read "$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$bundle" ]; then
+        echo "FAIL  $scenario: the built app is not this run's ($bundle)" >&2
+        status=1
+    else
+        APP="$APP" TAKO_BUNDLE_ID="$bundle" TAKO_SESSIONS_HOME="$sessions" scripts/e2e-macapp.sh "$scenario" 2>&1 \
+            | tee "$evidence/runner.log"
+        status=${PIPESTATUS[0]}
+    fi
+    persist_finish "$status" "$sessions" "$support" "$bundle" "$APPEXE" "$evidence"
 }
 
 failed=0
 for scenario in "$@"; do
-    run_one "$scenario" || failed=1
+    if ! run_one "$scenario"; then
+        failed=1
+        # What ran may still run: no further case on top of it.
+        echo "e2e-persist: stopping after $scenario; its state and evidence are kept" >&2
+        break
+    fi
 done
 exit $failed

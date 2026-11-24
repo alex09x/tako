@@ -34,48 +34,42 @@ func runThemePresetScenario(_ d: Driver) throws {
     let themeURL = d.work.appendingPathComponent("themes").appendingPathComponent(themeName)
     let source = "font-family = Monaco\nfont-size = 21\nbackground = #123456\nforeground = #c0ffee\npalette = 1=#fa1234\npalette = 15=#feabcd\ncursor-style-blink = false\n"
 
-    func button(_ id: String) throws {
-        guard d.wait(for: { d.element(withIdentifier: id) != nil }, timeout: 5),
-              let element = d.element(withIdentifier: id) else { throw Failure("missing button: \(id)") }
-        d.press(element)
+    // Cmd+, opens the native Settings panel. Its Appearance page edits full
+    // presets in a draft that previews live and writes nothing until Save.
+    let page = SettingsPage(d)
+    func openAppearance() throws {
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.element(withIdentifier: "DesktopSettingsRoot") != nil }, timeout: 5) else { throw Failure("Settings did not open") }
+        page.placeWindow()
+        try page.click("DesktopSettingsSection-appearance")
     }
-    func editorValue() -> String {
-        guard let element = d.element(withIdentifier: "ThemePresetEditor") else { return "" }
-        return (d.attribute(element, kAXValueAttribute) as String?) ?? ""
+    func editorValue() -> String { page.value("DesktopThemeError") }
+    func draftOpen() -> Bool { d.element(withIdentifier: "DesktopThemeName") != nil }
+    /// The complete text the draft would save (its Configuration tab).
+    func draftText() throws -> String {
+        try page.click("DesktopThemeEditorSection-config")
+        return page.value("DesktopThemeConfiguration")
     }
     func createDraft() throws {
-        try button("ThemePresetNewButton")
-        guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5) else { throw Failure("theme editor did not open") }
-        d.key(Key.a, .maskCommand)
-        try d.type(themeName)
-        d.key(Key.returnKey) // Commit name and focus the Colors list.
-        for _ in 0..<11 { d.key(Key.down) } // Palette 1 after all terminal and status colors.
-        d.key(Key.returnKey)
-        guard d.wait(for: { d.textField(identifier: "terminal-setting-color-palette:1") != nil }, timeout: 5) else {
-            throw Failure("ANSI 1 structured color editor did not open")
+        try page.click("DesktopThemeDuplicate") // An editable copy of the selected theme.
+        guard d.wait(for: { draftOpen() }, timeout: 5) else { throw Failure("theme editor did not open") }
+        try page.enter("DesktopThemeName", themeName, submit: false)
+        guard d.wait(for: { page.value("DesktopThemeName") == themeName }, timeout: 5) else { throw Failure("the draft name was not typed") }
+        try page.click("DesktopThemeEditorSection-ansi")
+        try page.enter("DesktopThemePalette-1", "#fa1234")
+        try page.enter("DesktopThemePalette-15", "#feabcd") // The last ANSI color.
+        try page.click("DesktopThemeEditorSection-type")
+        try page.choose(menu: "DesktopThemeField-font-family", typing: "Monaco")
+        try page.enter("DesktopThemeField-font-size", "21")
+        var draft = ""
+        guard d.wait(for: {
+            draft = (try? draftText()) ?? ""
+            return draft.contains("font-size = 21") && draft.contains("font-family = Monaco")
+                && draft.contains("1=#fa1234") && draft.contains("15=#feabcd")
+        }, timeout: 5) else {
+            throw Failure("structured palette/font changes did not reach complete config: \(draft)")
         }
-        d.key(Key.a, .maskCommand); try d.type("#fa1234"); d.key(Key.returnKey)
-        for _ in 0..<14 { d.key(Key.down) } // Scroll to the last ANSI color.
-        d.key(Key.returnKey)
-        guard d.wait(for: { d.textField(identifier: "terminal-setting-color-palette:15") != nil }, timeout: 5) else {
-            throw Failure("last ANSI color was not reachable through the scrolling list")
-        }
-        d.key(Key.a, .maskCommand); try d.type("#feabcd"); d.key(Key.returnKey)
-        d.key(21, .maskCommand) // Fonts
-        d.key(Key.slash); try d.type("Monaco"); d.key(Key.returnKey)
-        guard d.wait(for: { editorValue().contains("font-family = Monaco") }, timeout: 5) else { throw Failure("draft font family did not apply") }
-        d.key(Key.slash); d.key(Key.a, .maskCommand); d.key(51); d.key(Key.down)
-        d.key(23, .maskCommand) // Font Size
-        for _ in 0..<8 { d.key(Key.right) }
-        d.key(22, .maskCommand) // Cmd+6: full configuration
-        guard d.wait(for: { editorValue().hasPrefix("Config:") }, timeout: 5),
-              let text = d.element(withIdentifier: "ThemePresetConfiguration"),
-              let draft = d.attribute(text, kAXValueAttribute) as String?, draft.contains("font-size = 21"),
-              draft.contains("font-family = Monaco"), draft.contains("1=#fa1234"), draft.contains("15=#feabcd") else {
-            throw Failure("structured palette/font changes did not reach complete config: \(editorValue())")
-        }
-        d.key(Key.a, .maskCommand)
-        try d.type(source)
+        try page.enter("DesktopThemeConfiguration", source, submit: false)
     }
     func background(_ name: String) throws -> NSColor {
         let path = d.path(name + ".png")
@@ -145,27 +139,25 @@ func runThemePresetScenario(_ d: Driver) throws {
     guard d.wait(for: { originalGlyphs = try? glyphBounds("preset-glyphs-original"); return originalGlyphs != nil }, timeout: 10),
           let originalGlyphs else { throw Failure("font witness was not rendered before editing") }
     let blue = NSColor(srgbRed: 0x12 / 255.0, green: 0x34 / 255.0, blue: 0x56 / 255.0, alpha: 1)
-    d.key(Key.comma, .maskCommand)
-    d.key(Key.three, .maskCommand)
+    try openAppearance()
 
-    // Preview changes the renderer but not config/preset files; Cancel restores.
+    // The draft previews live without Save: the renderer changes, config and
+    // preset files do not; Undo (Cancel) restores the terminal.
     try createDraft()
-    try button("ThemePresetPreviewButton")
-    guard d.wait(for: { editorValue().hasPrefix("theme_preview_success:") }, timeout: 5) else { throw Failure("preview failed: \(editorValue())") }
     try waitBackground(blue, name: "preset-preview")
     guard d.wait(for: { ((try? palettePixels("preset-palette-preview")) ?? 0) > 8 }, timeout: 10) else { throw Failure("ANSI palette did not reach live preview") }
     guard !FileManager.default.fileExists(atPath: themeURL.path), try String(contentsOfFile: configPath, encoding: .utf8) == initialConfig else {
         throw Failure("preview persisted an unsaved draft")
     }
-    try button("ThemePresetCancelButton")
-    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") == nil }, timeout: 5) else { throw Failure("cancel did not close editor") }
+    try page.click("DesktopThemeCancel")
+    guard d.wait(for: { !draftOpen() }, timeout: 5) else { throw Failure("cancel did not close editor") }
     try waitBackground(before, name: "preset-cancelled")
     guard try palettePixels("preset-palette-cancelled") == 0 else { throw Failure("Cancel left preview ANSI colors applied") }
 
     // Saving the full preset applies its own fonts/colors, replacing stale root overrides.
     try createDraft()
-    try button("ThemePresetSaveButton")
-    guard d.wait(for: { FileManager.default.fileExists(atPath: themeURL.path) && d.element(withIdentifier: "ThemePresetEditor") == nil }, timeout: 5) else {
+    try page.click("DesktopThemeSave")
+    guard d.wait(for: { FileManager.default.fileExists(atPath: themeURL.path) && !draftOpen() }, timeout: 5) else {
         throw Failure("preset save failed: \(editorValue())")
     }
     let saved = try String(contentsOf: themeURL, encoding: .utf8)
@@ -174,11 +166,12 @@ func runThemePresetScenario(_ d: Driver) throws {
           appliedConfig.contains("theme = \(themeName)"), !appliedConfig.contains("font-size = 13"), !appliedConfig.contains("foreground = #ffffff") else {
         throw Failure("full preset did not own saved typography and palette")
     }
-    guard let catalog = d.element(withIdentifier: "TerminalSettingsDialog"),
-          ((d.attribute(catalog, kAXValueAttribute) as String?) ?? "").contains(themeName) else {
+    try page.enter("DesktopThemeFilter", themeName, submit: false)
+    guard d.wait(for: { page.value("DesktopTheme-\(themeName)") == "selected" }, timeout: 5) else {
         throw Failure("saved preset was not selected in its catalog")
     }
     d.key(Key.escape)
+    guard d.wait(for: { d.element(withIdentifier: "DesktopSettingsRoot") == nil }, timeout: 5) else { throw Failure("Escape did not close Settings") }
     try waitBackground(blue, name: "preset-saved")
     guard d.wait(for: { ((try? palettePixels("preset-palette-saved")) ?? 0) > 8 }, timeout: 10) else { throw Failure("saved ANSI palette did not reach terminal pixels") }
     guard d.wait(for: {
@@ -192,34 +185,35 @@ func runThemePresetScenario(_ d: Driver) throws {
     d.quit()
     try d.launch(config: appliedConfig)
     try waitBackground(blue, name: "preset-relaunched")
-    d.key(Key.comma, .maskCommand)
-    d.key(Key.three, .maskCommand)
-    d.key(Key.slash)
-    d.key(Key.a, .maskCommand)
-    try d.type(themeName)
-    d.key(14, .maskCommand)
-    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
-          let nameField = d.textField(identifier: "ThemePresetName"),
-          (d.attribute(nameField, kAXValueAttribute) as String?) == themeName else { throw Failure("saved theme did not reopen for editing") }
+    try openAppearance()
+    func editSaved() throws {
+        try page.enter("DesktopThemeFilter", themeName, submit: false)
+        try page.choose(menu: "DesktopThemeMenu-\(themeName)", item: "Edit…") // A user theme opens in place.
+        guard d.wait(for: { page.value("DesktopThemeName") == themeName }, timeout: 5) else { throw Failure("saved theme did not reopen for editing") }
+    }
+    try editSaved()
+    let reopened = try draftText()
+    guard reopened.contains("font-size = 21"), reopened.contains("font-family = Monaco"), reopened.contains("1=#fa1234"),
+          reopened.contains("15=#feabcd") else { throw Failure("the reopened theme lost its palette or typography: \(reopened)") }
     let originalBytes = try Data(contentsOf: themeURL)
 
     // Existing theme survives invalid names and storage failure; draft stays editable.
-    d.key(Key.a, .maskCommand)
-    try d.type("../Invalid")
-    try button("ThemePresetSaveButton")
-    guard d.wait(for: { editorValue().hasPrefix("theme_save_error:") }, timeout: 5), try Data(contentsOf: themeURL) == originalBytes else {
+    // An invalid name is refused before saving: Save is disabled and the footer says why.
+    try page.enter("DesktopThemeName", "../Invalid", submit: false)
+    try page.click("DesktopThemeSave")
+    guard d.wait(for: { !editorValue().isEmpty }, timeout: 5), draftOpen(), try Data(contentsOf: themeURL) == originalBytes else {
         throw Failure("invalid name was not refused without changing the theme")
     }
-    try button("ThemePresetCancelButton")
-    try button("ThemePresetEditButton")
-    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5) else { throw Failure("theme did not reopen after cancelled invalid edit") }
+    try page.click("DesktopThemeCancel")
+    guard d.wait(for: { !draftOpen() }, timeout: 5) else { throw Failure("cancel did not close the invalid draft") }
+    try editSaved()
     let themes = themeURL.deletingLastPathComponent()
     try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: themes.path)
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: themes.path) }
-    try button("ThemePresetSaveButton")
-    guard d.wait(for: { editorValue().hasPrefix("theme_save_error:") }, timeout: 5), try Data(contentsOf: themeURL) == originalBytes else {
+    try page.click("DesktopThemeSave")
+    guard d.wait(for: { !editorValue().isEmpty }, timeout: 5), draftOpen(), try Data(contentsOf: themeURL) == originalBytes else {
         throw Failure("failed write changed original preset or closed the draft")
     }
-    try button("ThemePresetCancelButton")
+    try page.click("DesktopThemeCancel")
     d.key(Key.escape)
 }

@@ -26,7 +26,7 @@ final class TakoCoreTabBarStressUITests: TakoCustomConfigCase {
         let app = try takoApplication()
         app.launch()
 
-        let terminal = app.groups["Terminal pane"]
+        let terminal = TakoScopedAppearanceHelpers.terminalPane(in: app)
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
         terminal.click()
         attachScreenshot(named: "01 terminal focused before typing")
@@ -72,7 +72,7 @@ final class TakoCoreTabBarStressUITests: TakoCustomConfigCase {
         let app = try takoApplication()
         app.launch()
 
-        let terminal = app.groups["Terminal pane"]
+        let terminal = TakoScopedAppearanceHelpers.terminalPane(in: app)
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
         terminal.typeKey("t", modifierFlags: .command)
 

@@ -39,12 +39,12 @@ if [[ $force -eq 0 && -f "$HEADER" && -z "$newest_source" ]]; then
 fi
 
 # The apps link the ssh transport, so the bindings have to describe it.
-echo "==> cargo build --release"
-cargo build --release --features ssh
+echo "==> mitts build --release"
+mitts build --release --features ssh
 
 echo "==> uniffi-bindgen"
 mkdir -p "$OUT"
-cargo run --quiet --bin uniffi-bindgen --features uniffi-cli,ssh -- \
+mitts run --quiet --bin uniffi-bindgen --features uniffi-cli,ssh -- \
     generate --language swift --out-dir "$OUT" \
     target/release/libtako_core.dylib
 

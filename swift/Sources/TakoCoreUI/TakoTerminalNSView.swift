@@ -21,6 +21,8 @@ import simd
 @MainActor
 open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public weak var delegate: TakoTerminalNSViewDelegate?
+    /// Optional typed consume-once reply handler. When installed, replies are routed here instead of `sendDeviceReplyData`.
+    public var onClassifiedReplies: ((TerminalClassifiedReplyBatch) -> Void)?
     public let core: TakoCore
     let parserCoordinator: TerminalParserCoordinator
 
@@ -48,19 +50,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var isHoveringStickyHeader = false
     public internal(set) var activeStickyCommandHeader: StickyCommandHeader?
 
-    public let paneProgressBarLayer = CALayer()
-    public var paneProgressBarEnabled: Bool = true {
-        didSet {
-            guard paneProgressBarEnabled != oldValue else { return }
-            if !paneProgressBarEnabled {
-                paneProgressBarLayer.isHidden = true
-            } else if activeProgressState != .none {
-                updateProgressBar(state: activeProgressState, progress: activeProgressValue)
-            }
-        }
-    }
     public internal(set) var activeProgressState: ProgressState = .none
     public internal(set) var activeProgressValue: Int? = nil
+    var deliveredOsc7501Active = false
 
     public let contextTintLayer = CALayer()
     public let contextBreadcrumbsLayer = CALayer()
@@ -83,9 +75,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
     var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
     var trackedCommandsEpoch: UInt64 = 0
-    var trackedCommandsCountForTesting: Int { trackedCommands.count }
-    var activeTrackedCommandsCountForTesting: Int { trackedCommands.values.filter { !$0.hasNoOutput }.count }
-    var trackedCommandsForTesting: [UInt64: TrackedCommandOutput] { trackedCommands }
     var activeRunningCommandId: UInt64? = nil
     var commandDurations: [UInt64: TimeInterval] = [:]
     var gutterCommandMarksByRow: [Int: (commandId: UInt64, status: UInt8, exitCode: Int32?, duration: TimeInterval?, startedAt: Date?)] = [:]
@@ -94,6 +83,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var scrollbarDragStartKnobY: CGFloat = 0.0
     /// The cell the pointer was on when a frame last checked for a link.
     var lastFrameHoverCell: (row: Int, col: Int)?
+    var hoverLinkRowCache: HoverLinkRowCache?
+    var hoverLinkRowReadCount = 0
     /// The pointer is over the scrollbar's track: its line widens.
     var isHoveringScrollbar = false
     var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -102,8 +93,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public var commandMarksEnabled: Bool = true {
         didSet {
             guard commandMarksEnabled != oldValue else { return }
-            updateGutterMarks()
-            updateScroller()
+            updateCommandGutterLayout()
         }
     }
     public var stickyCommandHeaderEnabled: Bool = true {
@@ -112,16 +102,16 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             updateStickyCommandHeader()
         }
     }
-    public var commandDurationsEnabled: Bool = true {
+    public var commandDurationsEnabled: Bool = false {
         didSet {
             guard commandDurationsEnabled != oldValue else { return }
-            updateGutterMarks()
+            updateCommandGutterLayout()
         }
     }
     public var commandTimestampsEnabled: Bool = false {
         didSet {
             guard commandTimestampsEnabled != oldValue else { return }
-            updateGutterMarks()
+            updateCommandGutterLayout()
         }
     }
 
@@ -171,7 +161,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public internal(set) var cols: Int = 80
     public internal(set) var rows: Int = 24
     public var title: String = "" {
-        didSet { titleDidChange() }
+        didSet { if title != oldValue { titleDidChange() } }
     }
     open func titleDidChange() {}
     open var workingDirectory: String?

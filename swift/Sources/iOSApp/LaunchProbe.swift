@@ -23,11 +23,27 @@ import UIKit
 /// any of this.
 @MainActor
 enum LaunchProbe {
+    private static var documents: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    }
+
     static func armIfAsked(session: Session) {
         guard let deadline = LaunchOptions.dumpAfter else { return }
         waitForConnection(session: session, giveUpAfter: deadline)
         DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
             MainActor.assumeIsolated { write(session: session) }
+        }
+        // Let the simulator harness budget the dump from the timer being
+        // armed, after a cold launch has made it through the main queue.
+        guard let documents else {
+            NSLog("Launch probe cannot find Documents for the dump readiness receipt")
+            return
+        }
+        do {
+            try "armed\n".write(to: documents.appendingPathComponent("dump.ready"),
+                                atomically: true, encoding: .utf8)
+        } catch {
+            NSLog("Launch probe could not publish dump readiness: \(error)")
         }
     }
 
@@ -129,9 +145,7 @@ enum LaunchProbe {
     /// Not private: unit tests call this directly rather than waiting out a
     /// real `-takoDump` deadline.
     static func write(session: Session) {
-        guard let docs = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first else { return }
+        guard let docs = documents else { return }
 
         // The screen the engine holds, rejoined across soft wraps. This is
         // the authoritative half: it says what the parser made of the bytes
@@ -142,9 +156,13 @@ enum LaunchProbe {
         // is the difference between "the app lost it" and "the app is not
         // showing it" -- and only one of those is a data bug.
         let onScreen = session.surface?.accessibilityValue ?? "<no surface>"
+        // The grid the core holds -- what the far end must have been told --
+        // and the view's own, for comparison. Read only; test mode only.
+        let view = session.surface.map { "\($0.cols)x\($0.rows)" } ?? "none"
         let report = """
             status: \(session.status.label)
             title: \(session.title)
+            grid: \(session.core.cols())x\(session.core.rows()) (view \(view))
             ── on screen ──
             \(onScreen)
             ── buffer ──

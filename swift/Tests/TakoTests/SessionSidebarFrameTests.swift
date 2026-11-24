@@ -41,11 +41,19 @@ struct SessionSidebarFrameTests {
         }
     }
 
-    @Test func newSessionHintUsesTheConfiguredShortcut() {
-        let shortcut = KeyboardShortcut("n", modifiers: [.command, .shift])
-        let custom = SessionSidebarView(isPresented: .constant(true), newSessionShortcut: shortcut)
-        let unbound = SessionSidebarView(isPresented: .constant(true), newSessionShortcut: nil)
-        #expect(custom.newSessionHint == "[⇧⌘N]  New session")
-        #expect(unbound.newSessionHint == "New session")
+    /// The + menu (the reference has no footer) shows each action's real
+    /// shortcut: New Session ⌘T, New Terminal to the Right ⌘D, New Window ⌘N.
+    @Test func plusMenuItemsShowTheRegistryShortcuts() {
+        let session = SidebarMenuAction("New Session", binding: "new_tab") {}
+        let split = SidebarMenuAction("New Terminal to the Right", binding: "new_split:right") {}
+        let window = SidebarMenuAction("New Window", binding: "new_window") {}
+        #expect(session.keyEquivalent == "t" && session.keyEquivalentModifierMask == [.command])
+        #expect(split.keyEquivalent == "d" && split.keyEquivalentModifierMask == [.command])
+        #expect(window.keyEquivalent == "n" && window.keyEquivalentModifierMask == [.command])
+        var ran = false
+        let item = SidebarMenuAction("x", binding: "no_such_action") { ran = true }
+        #expect(item.keyEquivalent.isEmpty)
+        _ = (item.target as? NSObject)?.perform(item.action, with: item)
+        #expect(ran)
     }
 }

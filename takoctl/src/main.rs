@@ -61,6 +61,9 @@ fn run_hooks(opts: &Options) -> Result<(), String> {
         "list" => hooks::list(opts.json),
         "status" => {
             let agent = opts.args.get("agent").and_then(Value::as_str);
+            if let (Some(agent), Some(path)) = (agent, config_override) {
+                return hooks::native::status_at(agent, path, opts.json);
+            }
             hooks::status(agent, opts.json)
         }
         "install" => {
@@ -71,10 +74,12 @@ fn run_hooks(opts: &Options) -> Result<(), String> {
                 .ok_or("hooks install needs an agent name")?;
             hooks::install(agent, config_override, yes, diff_only, opts.json)?;
             // The agent sees Tako only if it is told: the skill goes in with the hooks.
-            if !diff_only && config_override.is_none() && skills::find_adapter(agent).is_some() {
-                if let Err(e) = skills::install(agent, None, true, false, opts.json) {
-                    eprintln!("takoctl: hooks installed, but the skill was not: {e}");
-                }
+            if !diff_only
+                && config_override.is_none()
+                && skills::find_adapter(agent).is_some()
+                && let Err(e) = skills::install(agent, None, true, false, opts.json)
+            {
+                eprintln!("takoctl: hooks installed, but the skill was not: {e}");
             }
             Ok(())
         }
@@ -140,7 +145,7 @@ fn run_skills(opts: &Options) -> Result<(), String> {
 fn run_mcp(opts: &Options) -> Result<(), String> {
     let capabilities = match opts.args.get("capabilities").and_then(Value::as_str) {
         Some(s) => mcp::Capabilities::parse(s)?,
-        None => mcp::Capabilities::all(),
+        None => mcp::Capabilities::default_set(),
     };
 
     let inherited = std::env::var("TAKO_SOCKET").ok();
@@ -281,20 +286,20 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
     if opts.cmd == "events" {
         let res = socket::stream_events(&path, &req, |line| {
-            if let Ok(val) = serde_json::from_str::<Value>(line) {
-                if val.get("ok") == Some(&Value::Bool(false)) {
-                    if opts.json {
-                        println!("{line}");
-                    } else {
-                        let error = &val["error"];
-                        eprintln!(
-                            "takoctl: {}: {}",
-                            error["code"].as_str().unwrap_or("error"),
-                            error["message"].as_str().unwrap_or("")
-                        );
-                    }
-                    return Err("aborted".to_string());
+            if let Ok(val) = serde_json::from_str::<Value>(line)
+                && val.get("ok") == Some(&Value::Bool(false))
+            {
+                if opts.json {
+                    println!("{line}");
+                } else {
+                    let error = &val["error"];
+                    eprintln!(
+                        "takoctl: {}: {}",
+                        error["code"].as_str().unwrap_or("error"),
+                        error["message"].as_str().unwrap_or("")
+                    );
                 }
+                return Err("aborted".to_string());
             }
             use std::io::Write;
             println!("{line}");
@@ -371,12 +376,12 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
         }
     }
     if ok {
-        if opts.cmd == "layout" && opts.args.get("action").and_then(Value::as_str) == Some("save") {
-            if let Some(content) = answer["result"]["content"].as_str() {
-                if let Some(path) = opts.args.get("path").and_then(Value::as_str) {
-                    let _ = std::fs::write(path, content);
-                }
-            }
+        if opts.cmd == "layout"
+            && opts.args.get("action").and_then(Value::as_str) == Some("save")
+            && let Some(content) = answer["result"]["content"].as_str()
+            && let Some(path) = opts.args.get("path").and_then(Value::as_str)
+        {
+            let _ = std::fs::write(path, content);
         }
         ExitCode::SUCCESS
     } else if opts.cmd == "ask" {

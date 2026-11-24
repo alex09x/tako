@@ -17,7 +17,7 @@ import Testing
 /// are buttons, and it can be withdrawn.
 @MainActor
 struct TerminalDialogTests {
-    private func window() -> NSWindow {
+    func window() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
                               styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
@@ -25,7 +25,7 @@ struct TerminalDialogTests {
         return window
     }
 
-    private func key(_ code: UInt16, _ characters: String = "") -> NSEvent {
+    func key(_ code: UInt16, _ characters: String = "") -> NSEvent {
         NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                          windowNumber: 0, context: nil, characters: characters,
                          charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!

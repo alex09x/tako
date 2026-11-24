@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
+# tako — iOS terminal surface acceptance
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# The simulator tests read the source tree while they run (#filePath).
+python3 scripts/app_locations.py check-source ios-surface
+
 BUILD_DIR="target/ios_test_build"
+# The test runner is built and run from here: a target linked onto a
+# volume would ask for access as well.
+python3 scripts/app_locations.py check-app "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 echo "=== 1. Running Rust Parity and Core Surface Tests ==="
-cargo test --test parity_input_encoding --test parity_resize --test pty_chunk_boundary
+mitts test --test parity_input_encoding --test parity_resize --test pty_chunk_boundary
 
 echo "=== 2. Building iOS App and Terminal Surface ==="
 python3 scripts/build-iosapp.py
@@ -126,7 +139,12 @@ swiftc -target arm64-apple-ios17.0-simulator \
     "$BUILD_DIR/main.swift" \
     -framework UIKit -framework Foundation -framework CoreText -framework XCTest
 
-SIM_DEVICE="$(xcrun simctl list devices booted | grep -E -o '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' | head -n 1 || true)"
+# A shared test Mac may have an operator's simulator booted. The caller can
+# select its own already-booted fixture explicitly; hosted defaults stay as before.
+SIM_DEVICE="${TAKO_IOS_SURFACE_DEVICE:-}"
+if [ -z "$SIM_DEVICE" ]; then
+    SIM_DEVICE="$(xcrun simctl list devices booted | grep -E -o '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' | head -n 1 || true)"
+fi
 if [ -z "$SIM_DEVICE" ]; then
     SIM_DEVICE="$(xcrun simctl list devices available | grep -E 'iPhone|iPad' | grep -E -o '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' | head -n 1)"
     xcrun simctl boot "$SIM_DEVICE" || true

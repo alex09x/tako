@@ -232,7 +232,17 @@ enum LayoutRecorder {
 
     // MARK: - Restoring
 
-    private static func restore(_ journal: LayoutJournal.Journal, app: Tako.App) {
+    /// How a journal restore gets a controller's window and brings Tako to
+    /// the front. Tests substitute it: their host has no `Terminal.xib`, and
+    /// must not take the front from whoever uses the test Mac.
+    struct Presentation {
+        var loadWindow: (TerminalController) -> NSWindow? = { $0.window }
+        var activate: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    static var presentation = Presentation()
+
+    static func restore(_ journal: LayoutJournal.Journal, app: Tako.App) {
         let decoder = JSONDecoder()
         var keyWindow: NSWindow?
         for entry in journal.windows {
@@ -248,13 +258,24 @@ enum LayoutRecorder {
                     continue
                 }
                 let controller = TerminalController(app, withSurfaceTree: state.surfaceTree)
-                guard let window = controller.window else { continue }
+                // The saved identifier before the window loads (see TerminalController).
+                controller.restoredTabIdentifier = state.tabIdentifier
+                guard let window = presentation.loadWindow(controller) else { continue }
                 controller.titleOverride = state.titleOverride
                 if let tabId = state.tabIdentifier { window.stableTabIdentifier = tabId }
                 if let color = state.tabColor { (window as? TerminalWindow)?.tabColor = color }
+                controller.floatingCanvas.loadRestoredSnapshot(
+                    state.floatingCanvas,
+                    for: controller.surfaceTree,
+                    fallbackSize: controller.estimatedFloatingCanvasSize()
+                )
+                controller.syncSurfaceTreeOcclusionState()
                 if let focused = state.focusedSurface,
-                   let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }) {
-                    controller.focusedSurface = view
+                   let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }),
+                   !controller.isMinimizedInFloatingCanvas(view.id) {
+                    // Logical only: restoring is not reading (see TerminalRestorable).
+                    controller.setFocusedSurfaceUnseen(view)
+                    controller.floatingCanvas.requestPendingFocus(for: view.id)
                 }
                 // As undoing a closed window rebuilds its tabs: shown, then
                 // joined to the first, in order.
@@ -291,7 +312,7 @@ enum LayoutRecorder {
                 ?? WorkspaceStore.defaultWorkspaceId) == WorkspaceStore.shared.activeWorkspaceId {
             keyWindow.makeKeyAndOrderFront(nil)
         }
-        NSApp.activate(ignoringOtherApps: true)
+        presentation.activate()
     }
 
     /// Groups the windows AppKit restored as `journal` recorded them: each
@@ -313,6 +334,21 @@ enum LayoutRecorder {
                       let state = try? decoder.decode(TerminalRestorableState.self, from: data),
                       let id = state.tabIdentifier,
                       let window = byTab.removeValue(forKey: id) else { continue }
+                if let controller = window.windowController as? TerminalController,
+                   let snapshot = state.floatingCanvas {
+                    controller.floatingCanvas.loadRestoredSnapshot(
+                        snapshot,
+                        for: controller.surfaceTree,
+                        fallbackSize: controller.estimatedFloatingCanvasSize()
+                    )
+                    controller.syncSurfaceTreeOcclusionState()
+                    if let focused = state.focusedSurface,
+                       let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }),
+                       !controller.isMinimizedInFloatingCanvas(view.id) {
+                        controller.setFocusedSurfaceUnseen(view)
+                        controller.floatingCanvas.requestPendingFocus(for: view.id)
+                    }
+                }
                 windows.append(window)
                 if index == entry.selectedTab { selected = window }
             }

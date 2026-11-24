@@ -11,20 +11,12 @@
 import AppKit
 
 /// A question drawn inside the terminal window instead of a macOS sheet or
-/// alert, the way a terminal UI draws one: the terminal dims, and a card on
-/// the cell grid, in the terminal's font, asks it --
+/// alert: the terminal dims, and a card in the look of the desktop sheets
+/// (Settings, Set Up Tako) asks it -- a rounded panel in the shell's
+/// colours, the title in the interface font, the body on the cell grid in
+/// the terminal's font, desktop buttons on the right, a hint below.
 ///
-///     ╭─ Close Terminal? ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╮
-///     │                                                 │
-///     │  The terminal still has a running process.      │
-///     │                                                 │
-///     │                             Cancel   ▌ Close ▐  │
-///     │                                                 │
-///     │  tab choose · return confirm · esc cancel       │
-///     ╰─────────────────────────────────────────────────╯
-///
-/// In the TakoCore palette (`TakoTUI`): the frame and the hatching after the
-/// title run from Rust to Ember, the title is Claw. The body is lines of
+/// The colours follow `app-appearance` (`Palette`). The body is lines of
 /// styled runs -- plain text, or release notes with headings, bullets, bold,
 /// code and links. The keyboard answers it -- left, right or tab to choose,
 /// return to press the chosen button, escape or `n` to cancel, `y` to press
@@ -76,6 +68,9 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// for text; return presses the chosen button.
     var field: NSTextField?
     var fieldRow = 0
+    /// What the body measures and how it wraps, kept while the card’s width holds.
+    var naturalBodyWidth: CGFloat?
+    var layoutCache: BodyLayout?
     /// Associated prompt ID, when presented on behalf of PromptManager (B10).
     var promptId: String?
 
@@ -124,7 +119,7 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         super.init(frame: .zero)
         wantsLayer = true
         // The terminal behind dims, as a TUI's backdrop does.
-        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.62).cgColor
+        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.4).cgColor
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("terminal-dialog-view")
         setAccessibilityLabel(title)
@@ -238,9 +233,9 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         // on key and main changes; a question answered in a window that was
         // never key -- one restored in the background -- left it hidden until
         // the window was clicked.
-        if let window, let bar = Tako.TabBarController.bar(for: window) {
+        if let window, Tako.TabBarController.isInstalled(in: window) {
             Tako.TabBarController.clearTitlebarBackground(in: window)
-            bar.needsDisplay = true
+            Tako.TabBarController.bar(for: window)?.needsDisplay = true
         }
         pending?(cancelIndex)
     }
@@ -261,8 +256,8 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         case 125: scroll(by: 1)                // down
         case 116: scroll(by: -visibleRows)     // page up
         case 121: scroll(by: visibleRows)      // page down
-        case 115: scroll(by: -lines.count)     // home
-        case 119: scroll(by: lines.count)      // end
+        case 115: scroll(by: -bodyLayout.rows.count) // home
+        case 119: scroll(by: bodyLayout.rows.count)  // end
         case 123: move(-1)                     // left
         case 124, 48: move(1)                  // right, tab
         case 36, 76: answer(selected)          // return, keypad enter
@@ -304,7 +299,30 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard !flags.isEmpty else { return false }
-        if flags == .command && event.charactersIgnoringModifiers?.lowercased() == "w" { withdraw(); return true }
+        let rawKey = event.charactersIgnoringModifiers?.lowercased()
+        // Command editing keeps working when the input source is Cyrillic.
+        let commandKey = rawKey?.unicodeScalars.allSatisfy({ $0.isASCII }) == false
+            ? [UInt16(0): "a", 8: "c", 7: "x", 9: "v", 6: "z", 13: "w"][event.keyCode] : rawKey
+        if flags == .command && commandKey == "w" { withdraw(); return true }
+        // A prompt field owns editing shortcuts. Swallowing them here left
+        // Cmd-A ineffective and made renames append to the existing name.
+        if let editor = field?.currentEditor() as? NSTextView, window?.firstResponder === editor {
+            if flags == .command {
+                switch commandKey {
+                case "a": editor.selectAll(nil); return true
+                case "c": editor.copy(nil); return true
+                case "x": editor.cut(nil); return true
+                case "v": editor.paste(nil); return true
+                case "z":
+                    if editor.undoManager?.canUndo == true { editor.undoManager?.undo() }
+                    return true
+                default: break
+                }
+            } else if flags == [.command, .shift], commandKey == "z" {
+                if editor.undoManager?.canRedo == true { editor.undoManager?.redo() }
+                return true
+            }
+        }
         return true
     }
 

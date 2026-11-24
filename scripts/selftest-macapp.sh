@@ -1,111 +1,111 @@
 #!/usr/bin/env bash
+# tako — macOS app self-tests
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # Does the built macOS app actually take input?
 #
-# The app has carried `--selftest-keys` and `--selftest-input` for a while:
-# the first drives real NSEvents through the surface and records the bytes
-# they produce, the second types into the live shell and dumps the screen.
-# Nothing ran them, so a refactor that left the input path unwired produced a
-# terminal that launched, drew, spawned its shell -- and silently swallowed
-# every keystroke. This script is that gap closed: it runs both and fails.
+# The app carries `--selftest-keys`, `--selftest-input`, `--selftest-scroll`
+# and `--selftest-frame`. Each runs as an explicit case of the e2e runner
+# (scripts/e2e/ScenariosAppSelftests.swift), through its private launch,
+# owned-process cleanup and kept-on-failure work directory, with the checks
+# and deadlines this script used to apply itself. A failed mode does not stop
+# the next one. `macapp self-test: ok` is printed only when every requested
+# case reported ok exactly once (scripts/selftest_verdict.py).
+#
+#   ./scripts/selftest-macapp.sh                 # keys, input, scroll, frame
+#   ./scripts/selftest-macapp.sh --scroll-only   # scroll
+#
+# The runner drives the app by its bundle identifier and resets that
+# identifier's defaults. A test bundle runs as it is, under its own
+# identifier (TAKO_BUNDLE_ID, when set, must name it). An app with the
+# production identifier is never launched under it: a disposable ad-hoc
+# resealed copy with a fresh e2e identifier runs instead; the original bundle
+# is not touched.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="${APP:-${TAKO_APP_DIR:-target/macapp}/Tako.app}"
+case "${1:-}" in
+    "") names=(app-selftest-keys app-selftest-input app-selftest-scroll app-selftest-frame) ;;
+    --scroll-only) names=(app-selftest-scroll) ;;
+    *) echo "usage: $0 [--scroll-only]" >&2; exit 2 ;;
+esac
+
+# Off any external volume, where macOS would ask for access on every build.
+APP="${APP:-${TAKO_APP_DIR:-$(python3 scripts/app_locations.py dir macapp)}/Tako.app}"
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
+python3 scripts/app_locations.py check-app "$APP"
 
-# Reports go to a directory of this run's own (the app reads
-# TAKO_SELFTEST_DIR), so two runs on one machine never read each other's.
-# The whole self-test holds the GUI session: re-run under the lock.
-if [ -z "${TAKO_GUI_LOCKED:-}" ]; then
-    TAKO_GUI_LOCKED=1 exec python3 scripts/gui_lock.py -- "$0" "$@"
+production=com.tako-core.terminal
+actual=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist") \
+    || { echo "FAIL: $APP has no bundle identifier" >&2; exit 1; }
+if ! [[ "$actual" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+    echo "FAIL: $APP has an unusable bundle identifier [$actual]; nothing was launched" >&2
+    exit 1
 fi
-
-REPORTS="$(mktemp -d "${TMPDIR:-/tmp}/tako-selftest.XXXXXX")"
-launch() { open -n --env "TAKO_SELFTEST_DIR=$REPORTS" "$APP" --args "$@"; }
-
-quit() { pkill -f "$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")/Contents/MacOS/" 2>/dev/null || true; }
-trap 'quit; rm -rf "$REPORTS"' EXIT
-
-fail=0
-
-echo "== keys: an NSEvent must produce the bytes it stands for =="
-rm -f "$REPORTS"/tako-keytest.txt
-quit; launch --selftest-keys
-for _ in $(seq 1 20); do [ -f "$REPORTS/tako-keytest.txt" ] && break; sleep 1; done
-quit
-if [ ! -f "$REPORTS/tako-keytest.txt" ]; then
-    echo "  FAIL: the app produced no report at all" >&2; fail=1
+copy_dir=""
+if [ -n "${TAKO_BUNDLE_ID:-}" ] && [ "$TAKO_BUNDLE_ID" != "$actual" ]; then
+    echo "FAIL: TAKO_BUNDLE_ID=$TAKO_BUNDLE_ID but $APP is $actual; nothing was launched" >&2
+    exit 1
+elif [ "$actual" = "$production" ]; then
+    copies="$(python3 scripts/app_locations.py dir selftest-copies)"
+    mkdir -p "$copies"
+    copies=$(cd "$copies" && pwd -P)
+    copy_dir=$(mktemp -d "$copies/run.XXXXXX")
+    TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-selftest-$(basename "$copy_dir" | tr -cd 'A-Za-z0-9')-$$"
+    ditto "$APP" "$copy_dir/Tako.app"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $TAKO_BUNDLE_ID" "$copy_dir/Tako.app/Contents/Info.plist"
+    codesign --force --sign - "$copy_dir/Tako.app" >/dev/null
+    APP="$copy_dir/Tako.app"
+    python3 scripts/app_locations.py check-app "$APP"
+    echo "self-test: $actual is the production identifier; running a disposable copy as $TAKO_BUNDLE_ID ($APP)"
 else
-    cat "$REPORTS/tako-keytest.txt"
-    # Each line reads "label chars=X -> hh (c)". An unwired input path still
-    # prints every line, with nothing between the arrow and the parenthesis.
-    if grep -qE '\->\s+\(' "$REPORTS/tako-keytest.txt"; then
-        echo "  FAIL: a keystroke produced no bytes -- input is not reaching the shell" >&2
-        fail=1
+    TAKO_BUNDLE_ID="$actual"
+fi
+export TAKO_BUNDLE_ID
+
+# One log per invocation: two runs never share or truncate each other's.
+# The runner takes the GUI lock itself.
+mkdir -p target
+log=$(mktemp target/selftest-macapp-log.XXXXXX)
+set +e
+APP="$APP" ./scripts/e2e-macapp.sh "${names[@]}" 2>&1 | tee "$log"
+statuses=("${PIPESTATUS[@]}")
+set -e
+echo
+verdict=0
+python3 scripts/selftest_verdict.py --status "${statuses[0]}" --tee-status "${statuses[1]}" --log "$log" "${names[@]}" \
+    || verdict=$?
+
+# The disposable copy goes only after a passing run whose app is proved gone;
+# anything less keeps it, and says where. Nothing else is ever removed.
+if [ -n "$copy_dir" ]; then
+    # pgrep -f takes an extended regex: match the copy's path literally.
+    # Only its "no process matched" status (1) proves nothing runs from it.
+    pattern=$(printf '%s' "$copy_dir/Tako.app/Contents/" | sed 's/[][\.*^$()+?{}|]/\\&/g')
+    set +e
+    running=$(pgrep -f "$pattern" 2>&1)
+    census=$?
+    set -e
+    if [ "$census" -eq 0 ]; then
+        reason="still running: $(echo $running)"
+    elif [ "$census" -ne 1 ]; then
+        reason="the process census failed (pgrep status $census): $running"
+    elif [ "${statuses[0]}" -ne 0 ] || [ "$verdict" -ne 0 ]; then
+        reason="the run did not pass"
+    elif [ "$(dirname "$copy_dir")" != "$copies" ] || ! [[ "$(basename "$copy_dir")" =~ ^run\.[A-Za-z0-9]{6}$ ]]; then
+        reason="it is not this run's own copy directory"
+    else
+        reason=""
     fi
-    for expect in 'chars=a -> 61' 'chars=A -> 41' 'chars=1 -> 31' 'chars=! -> 21'; do
-        grep -qF "$expect" "$REPORTS/tako-keytest.txt" || { echo "  FAIL: missing $expect" >&2; fail=1; }
-    done
-    # The space bar, by label: what it types is invisible in the chars
-    # column. Option+Space is a no-break space on the usual Mac layouts, and a
-    # shell cannot split words on one, so it must arrive as 20 too.
-    for expect in 'space 20' 'space2 20' 'shift+spc 20' 'ctrl+spc 00' 'opt+spc 20'; do
-        label="${expect% *}" bytes="${expect#* }"
-        grep -aqE "^$(printf '%s' "$label" | sed 's/[+]/[+]/g') +chars=.* -> $bytes \(" "$REPORTS/tako-keytest.txt" \
-            || { echo "  FAIL: $label should send $bytes" >&2; fail=1; }
-    done
-fi
-
-echo
-echo "== input: typing must reach the real shell and come back on screen =="
-rm -f "$REPORTS"/tako-inputtest.txt
-quit; launch --selftest-input
-for _ in $(seq 1 30); do [ -f "$REPORTS/tako-inputtest.txt" ] && break; sleep 1; done
-quit
-if [ ! -f "$REPORTS/tako-inputtest.txt" ]; then
-    echo "  FAIL: the app produced no report at all" >&2; fail=1
-else
-    cat "$REPORTS/tako-inputtest.txt"
-    tail -n 1 "$REPORTS/tako-inputtest.txt" | grep -q "hello world" \
-        || { echo "  FAIL: what was typed never appeared on screen" >&2; fail=1; }
-    grep -q "^focused at launch: yes" "$REPORTS/tako-inputtest.txt" \
-        || { echo "  FAIL: a new window does not give the terminal the keyboard" >&2; fail=1; }
-fi
-
-echo
-echo "== scroll: a precise delta must move the grid by a fraction of a row =="
-rm -f "$REPORTS"/tako-scrolltest.txt
-quit; launch --selftest-scroll
-for _ in $(seq 1 25); do [ -f "$REPORTS/tako-scrolltest.txt" ] && break; sleep 1; done
-quit
-if [ ! -f "$REPORTS/tako-scrolltest.txt" ]; then
-    echo "  FAIL: the app produced no report at all" >&2; fail=1
-else
-    cat "$REPORTS/tako-scrolltest.txt"
-    grep -q "^FAIL" "$REPORTS/tako-scrolltest.txt" && fail=1
-    # A run that scrolled without ever handing a frame over would report every
-    # position correctly and still show nothing moving.
-    grep -qE "submitted=[1-9]" "$REPORTS/tako-scrolltest.txt" \
-        || { echo "  FAIL: no frame was handed to the display while scrolling" >&2; fail=1; }
-fi
-
-echo
-echo "== frame: the pixels on screen put the grid inside its padding =="
-rm -f "$REPORTS"/tako-frametest.txt "$REPORTS"/tako-frame.png
-quit; launch --selftest-frame
-for _ in $(seq 1 25); do [ -f "$REPORTS/tako-frametest.txt" ] && break; sleep 1; done
-quit
-if [ ! -f "$REPORTS/tako-frametest.txt" ]; then
-    echo "  FAIL: the app produced no report at all" >&2; fail=1
-else
-    cat "$REPORTS/tako-frametest.txt"
-    grep -q "^FAIL" "$REPORTS/tako-frametest.txt" && fail=1
-    # What the window showed, for a person to look at.
-    if [ -f "$REPORTS/tako-frame.png" ]; then
-        mkdir -p target && cp "$REPORTS/tako-frame.png" target/selftest-frame.png
-        echo "  frame saved to target/selftest-frame.png"
+    if [ -z "$reason" ]; then
+        rm -rf "$copy_dir" && echo "self-test: removed its disposable copy $copy_dir" \
+            || echo "self-test: could not remove its disposable copy; kept: $copy_dir" >&2
+    else
+        echo "self-test: kept the disposable copy: $copy_dir ($reason)" >&2
     fi
 fi
-
-echo
-[ "$fail" -eq 0 ] && echo "macapp self-test: ok" || { echo "macapp self-test: FAILED" >&2; exit 1; }
+exit "$verdict"

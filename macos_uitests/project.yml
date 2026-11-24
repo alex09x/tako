@@ -1,3 +1,10 @@
+# tako — macOS UI test project
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # XcodeGen spec for the macOS UI test suite.
 #
 # SwiftPM has no UI-Testing-Bundle target kind, so swift/Package.swift cannot
@@ -24,6 +31,10 @@ settings:
     # which reads and writes all over the repo and the target/ directory.
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     ALWAYS_SEARCH_USER_PATHS: NO
+    # The UI-test host's identity and build directory. scripts/uitest.sh --host-id
+    # overrides both for a private run; these defaults are the shared host.
+    TAKO_UITEST_HOST_ID: com.tako-core.terminal.uitest
+    TAKO_UITEST_APP_DIR: target/macapp-uitest
 
 targets:
   # The host application. It has no real sources of its own: the single
@@ -38,7 +49,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: TakoCore
-        PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.terminal.uitest
+        PRODUCT_BUNDLE_IDENTIFIER: $(TAKO_UITEST_HOST_ID)
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         INFOPLIST_KEY_CFBundleDisplayName: TakoCore
@@ -68,20 +79,18 @@ targets:
           # through verbatim: Xcode's log parser turns any bare "error:" line
           # into a build failure, and whether the app build failed is decided
           # below by its exit status, not by grepping its prose.
-          if TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp-uitest/Tako.app" ]; then
+          # Keep Xcode's module-cache and SDK build variables out of the standalone builder.
+          if env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" DEVELOPER_DIR="$DEVELOPER_DIR" LANG="${LANG:-en_US.UTF-8}" \
+            RELEASE="${RELEASE:-0}" TAKO_VERSION="${TAKO_VERSION:-}" TAKO_BUILD_NUMBER="${TAKO_BUILD_NUMBER:-}" CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
+            TAKO_BUNDLE_ID="${TAKO_UITEST_HOST_ID}" TAKO_APP_DIR="${TAKO_UITEST_APP_DIR}" python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "${TAKO_UITEST_APP_DIR}/Tako.app" ]; then
             rm -rf "${DEST}"
-            /usr/bin/ditto "target/macapp-uitest/Tako.app" "${DEST}"
-            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+            /usr/bin/ditto "${TAKO_UITEST_APP_DIR}/Tako.app" "${DEST}"
+            /usr/bin/codesign --force --sign - --timestamp=none --entitlements "${SRCROOT}/../swift/Resources/Tako.entitlements" "${DEST}"
           else
-            # Compiling the UI tests is deliberately not held hostage to the
-            # app build: the tests are what this project exists to build, and
-            # they skip themselves outside a manual Xcode IDE run anyway. Fail
-            # loudly in the build log instead, and leave the placeholder
-            # product so the test bundle still has a Target Application.
-            # It still needs signing itself, since CODE_SIGNING_ALLOWED is
-            # off for this whole target (see the setting's own comment above).
-            echo "warning: scripts/build-macapp.py did not produce target/macapp-uitest/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md."
-            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+            # Never run a GUI journey against a placeholder or an older app
+            # left by another build when the current candidate failed.
+            echo "error: the current Tako UI-test host could not be built. No UI tests will run."
+            exit 1
           fi
 
   TakoUITests:
@@ -97,26 +106,31 @@ targets:
         script: |
           set -uo pipefail
           DEST="${BUILT_PRODUCTS_DIR}/TakoCore.app"
-          SRC="${SRCROOT}/../target/macapp-uitest/Tako.app"
+          case "${TAKO_UITEST_APP_DIR}" in
+            /*) SRC="${TAKO_UITEST_APP_DIR}/Tako.app" ;;
+            *) SRC="${SRCROOT}/../${TAKO_UITEST_APP_DIR}/Tako.app" ;;
+          esac
           if [ -d "${DEST}" ] && [ -d "${SRC}" ]; then
             cp -f "${SRC}/Contents/Info.plist" "${DEST}/Contents/Info.plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable TakoCore" "${DEST}/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string TakoCore" "${DEST}/Contents/Info.plist"
-            rm -f "${DEST}/Contents/MacOS/TakoCore"
+            rm -f "${DEST}/Contents/MacOS/TakoCore" "${DEST}/Contents/MacOS/Tako"
             cp -f "${SRC}/Contents/MacOS/Tako" "${DEST}/Contents/MacOS/TakoCore"
-            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+            /usr/bin/codesign --force --sign - --timestamp=none --entitlements "${SRCROOT}/../swift/Resources/Tako.entitlements" "${DEST}"
+            /usr/bin/codesign --verify --deep --strict "${DEST}"
           fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.TakoUITests
+        # Only this runner reads it: a private run signs the runner with entitlements
+        # generated for its own host, and the host target keeps its own signing.
+        TAKO_UITEST_RUNNER_ENTITLEMENTS: TakoUITests/TakoUITests.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(TAKO_UITEST_RUNNER_ENTITLEMENTS)
         TEST_TARGET_NAME: TakoCore
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  # The default scheme keeps upstream's behaviour: TakoCustomConfigCase
-  # returns an empty suite unless IDE_DISABLED_OS_ACTIVITY_DT_MODE is set, a
-  # variable Xcode's IDE sets and xcodebuild does not. So `xcodebuild test`
-  # here compiles the tests and runs none of them, which is what upstream's
-  # CI wants and what keeps a click-driven suite out of an unattended build.
+  # Both schemes execute real tests. Use build-for-testing when only a
+  # compilation is wanted; a test invocation must not silently run nothing.
   TakoUITests:
     build:
       targets:
@@ -128,18 +142,32 @@ schemes:
     run:
       config: Debug
 
-  # The same tests, actually run. The variable is set here rather than in the
-  # test case so upstream's file stays verbatim, and in a second scheme rather
-  # than the first so that enabling them is always deliberate: they take over
-  # the screen, typing keystrokes and dragging tabs, and need a logged-in
-  # session with Accessibility permission granted. Driven by
-  # scripts/uitest.sh.
+  # Compatibility name used by scripts/uitest.sh and hosted CI. These tests
+  # drive the logged-in desktop and require UI automation authorization.
   TakoUITests-Run:
     build:
       targets:
         TakoUITests: all
     test:
       config: Debug
+      preferredScreenCaptureFormat: screenshots
+      environmentVariables:
+        IDE_DISABLED_OS_ACTIVITY_DT_MODE: "1"
+      targets:
+        - TakoUITests
+    run:
+      config: Debug
+
+  # Opt-in design review retains video from successful scoped UI tests.
+  TakoUITests-VisualReview:
+    build:
+      targets:
+        TakoUITests: all
+    test:
+      config: Debug
+      captureScreenshotsAutomatically: true
+      deleteScreenshotsWhenEachTestSucceeds: false
+      preferredScreenCaptureFormat: screenRecording
       environmentVariables:
         IDE_DISABLED_OS_ACTIVITY_DT_MODE: "1"
       targets:

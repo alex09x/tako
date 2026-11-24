@@ -25,6 +25,7 @@ import AppKit
 final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
     var inputDataReceived = Data()
     var deviceReplyDataReceived = Data()
+    var replyOverflowCounts: [UInt32] = []
     var lastResizedCols: Int?
     var lastResizedRows: Int?
     var resizeCount = 0
@@ -77,6 +78,8 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
     var promptMarkCount = 0
     var reportedStatuses: [(status: String, text: String?)] = []
     var clearStatusCount = 0
+    var programStatusEvents: [TerminalProgramStatusEvent] = []
+    var onProgramStatusEvent: ((TakoTerminalNSView, TerminalProgramStatusEvent) -> Void)?
 
     func terminalView(_ view: TakoTerminalNSView, didChangeWorkingDirectory url: String) {
         lastWorkingDirectory = url
@@ -104,6 +107,15 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
 
     func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {
         clearStatusCount += 1
+    }
+
+    func terminalView(_ view: TakoTerminalNSView, didDropOverflowedReplies droppedCount: UInt32) {
+        replyOverflowCounts.append(droppedCount)
+    }
+
+    func terminalView(_ view: TakoTerminalNSView, didUpdateProgramStatus event: TerminalProgramStatusEvent) {
+        programStatusEvents.append(event)
+        onProgramStatusEvent?(view, event)
     }
 }
 #endif

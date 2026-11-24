@@ -70,7 +70,6 @@ pub fn sanitize_terminal_control(text: &str) -> String {
     out
 }
 
-
 pub fn progress_report(result: &Value) -> String {
     let state = result["state"].as_str().unwrap_or("none");
     let mut out = state.to_string();
@@ -80,7 +79,6 @@ pub fn progress_report(result: &Value) -> String {
     out.push('\n');
     out
 }
-
 
 pub fn status_report(result: &Value) -> String {
     let status = result["status"].as_str().unwrap_or("unknown");
@@ -134,7 +132,8 @@ pub fn tab_status_report(result: &Value) -> String {
     let selected = tab["selected"].as_bool().unwrap_or(false);
     let idx = tab["index"].as_u64().unwrap_or(0);
     let sel_str = if selected { "active" } else { "inactive" };
-    let mut out = format!("tab {idx} \"{title}\" ({sel_str}): dot {color} ({dot}, {hex}), state {state}");
+    let mut out =
+        format!("tab {idx} \"{title}\" ({sel_str}): dot {color} ({dot}, {hex}), state {state}");
     if let Some(summary) = tab["live"]["summary"].as_str().filter(|s| !s.is_empty()) {
         out += &format!(" · {summary}");
     }
@@ -156,7 +155,6 @@ pub fn tab_status_report(result: &Value) -> String {
     out
 }
 
-
 pub fn format_duration(seconds: f64) -> String {
     if seconds < 0.001 {
         "<1ms".to_string()
@@ -174,7 +172,6 @@ pub fn format_duration(seconds: f64) -> String {
 }
 
 /// A command as `last` reports it: `$ line   (cwd)   exit N   (dur)`, then its output.
-
 pub fn command_report(result: &Value) -> String {
     if let Some(process) = result.get("process") {
         return process_report(process, result);
@@ -238,7 +235,6 @@ pub fn command_report(result: &Value) -> String {
 
 /// Matches grouped as the panel groups them: by pane, then by the command
 /// that printed them.
-
 pub fn find_report(result: &Value) -> String {
     let mut out = String::new();
     let mut pane = None;
@@ -282,7 +278,6 @@ pub fn find_report(result: &Value) -> String {
 }
 
 /// The questions up, each as its frame, text and buttons; or what was pressed.
-
 pub fn dialog_report(result: &Value) -> String {
     if let Some(label) = result["pressed"].as_str() {
         return format!(
@@ -324,7 +319,6 @@ pub fn dialog_report(result: &Value) -> String {
 }
 
 /// A program run started: its argv, how it ended, what the pane shows.
-
 pub fn process_report(process: &Value, result: &Value) -> String {
     let argv: Vec<&str> = process["argv"]
         .as_array()

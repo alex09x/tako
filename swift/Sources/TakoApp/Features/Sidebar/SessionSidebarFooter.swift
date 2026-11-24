@@ -36,19 +36,34 @@ extension SessionSidebarView {
         }
     }
 
-    // MARK: - Footer (§5.8)
-
-    var footerView: some View {
-        Text(newSessionHint)
-            .font(Font(T.monoFont(size: 10.5, weight: .regular)))
-            .foregroundColor(Color(nsColor: T.dim))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+    /// ⌘K: the search field is always shown (reference A01); this focuses it.
+    func toggleSearchBar() {
+        isSearchExpanded = true
+        searchFocusToken &+= 1
     }
 
-    var newSessionHint: String {
-        guard let newSessionShortcut else { return "New session" }
-        return "[\(KeybindRegistry.format(shortcut: newSessionShortcut))]  New session"
+    /// Escape in the field: the query and the needs-you filter are cleared,
+    /// the list takes the keys back. The field itself stays.
+    func collapseSearchAndClearFilter() {
+        if let win = targetWindow,
+           let editor = win.firstResponder as? NSTextView,
+           editor.delegate is SidebarSearchNSTextField {
+            _ = win.makeFirstResponder(nil as NSResponder?)
+        }
+        if !filterText.isEmpty {
+            store.setFilterText("", for: targetWindow)
+        }
+        if filterNeedsAttention {
+            store.setFilterNeedsAttention(false, for: targetWindow)
+        }
+        isSearchExpanded = false
+        isSearchFocused = false
+        isListFocused = true
+    }
+
+    /// A new session in this sidebar's window (the + menu's «New Session»).
+    /// The reference has no footer; the old «[⌘T] New session» row is gone.
+    func triggerNewSession() {
+        store.createNewTab(in: targetWindow)
     }
 }

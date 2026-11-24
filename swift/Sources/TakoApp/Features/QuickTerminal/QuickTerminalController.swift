@@ -339,9 +339,10 @@ class QuickTerminalController: BaseTerminalController {
     override func newSplit(
         at oldView: Tako.SurfaceView,
         direction: SplitTree<Tako.SurfaceView>.NewDirection,
-        baseConfig config: Tako.SurfaceConfiguration? = nil
+        baseConfig config: Tako.SurfaceConfiguration? = nil,
+        focus: Bool = true
     ) -> Tako.SurfaceView? {
-        return super.newSplit(at: oldView, direction: direction, baseConfig: Self.surfaceConfiguration(config))
+        return super.newSplit(at: oldView, direction: direction, baseConfig: Self.surfaceConfiguration(config), focus: focus)
     }
 
 

@@ -36,7 +36,8 @@ extension SessionSidebarStore {
         workspaceStore: WorkspaceStore = .shared,
         includeSplitPanes: Bool = true,
         filterText explicitFilterText: String? = nil,
-        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil
+        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil,
+        ignoringWorkspaceCollapse: Bool = false
     ) -> [SessionSidebarWorkspaceGroup] {
         bindSurfaces(for: window)
 
@@ -122,7 +123,9 @@ extension SessionSidebarStore {
             var visibleItems: [SessionSidebarItem] = []
 
             let wsMatchesQuery = !query.isEmpty && ws.name.lowercased().contains(query)
-            let wsCollapsed = isWorkspaceCollapsed(ws.id) && !hasActiveFilter
+            // Grouped by status there is no workspace heading to open again:
+            // a collapsed workspace's sessions are listed all the same.
+            let wsCollapsed = isWorkspaceCollapsed(ws.id) && !hasActiveFilter && !ignoringWorkspaceCollapse
 
             for entry in orderedEntries {
                 let win = entry.window
@@ -198,12 +201,7 @@ extension SessionSidebarStore {
                     let isTabSelected = (win === selectedWindow)
 
                     for (paneIdx, paneSurface) in winSurfaces.enumerated() {
-                        let paneTitle: String = {
-                            if !paneSurface.titleText.isEmpty { return paneSurface.titleText }
-                            if !paneSurface.title.isEmpty { return paneSurface.title }
-                            if let d = paneSurface.pwd, !d.isEmpty { return Tako.titleForDirectory(d) }
-                            return "Pane \(paneIdx + 1)"
-                        }()
+                        let paneTitle = paneSurface.sidebarTitle(index: paneIdx)
                         let pStatus = paneSurface.crab.paneStatus
                         let pUnread = AttentionManager.shared.isMuted(surfaceId: paneSurface.id)
                             ? 0
@@ -329,75 +327,5 @@ extension SessionSidebarStore {
         if item.status.rawValue.lowercased().contains(query) { return true }
         if item.status.sidebarBadgeLabel?.lowercased().contains(query) == true { return true }
         return false
-    }
-}
-
-/// Tree header row for a Workspace in `SessionSidebarView` (Spec 1b §5.4).
-struct SessionSidebarWorkspaceHeaderView: View {
-    let group: SessionSidebarWorkspaceGroup
-    var onToggleCollapse: () -> Void
-    var onSelectWorkspace: () -> Void
-
-    private typealias T = Tako.LivingTokens
-
-    private var workspaceDotColor: NSColor {
-        T.workspaceColor(for: group.color)
-    }
-
-    var body: some View {
-        let rowContentHeight: CGFloat = group.attentionCount > 0 ? 15 : 13
-        HStack(spacing: 7) {
-            Button(action: onToggleCollapse) {
-                Text(group.isCollapsed ? "▸" : "▾")
-                    .font(Font(T.monoFont(size: 9, weight: .regular)))
-                    .foregroundColor(Color(nsColor: T.faint))
-                    .frame(width: 10, height: 13, alignment: .center)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(group.isCollapsed ? "Expand workspace" : "Collapse workspace")
-
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(Color(nsColor: workspaceDotColor))
-                    .frame(width: 7, height: 7)
-
-                Text(group.name.uppercased())
-                    .font(Font(T.monoFont(size: 10, weight: .bold)))
-                    .tracking(0.8)
-                    .foregroundColor(Color(nsColor: T.dim))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 4)
-
-                HStack(spacing: 6) {
-                    if group.attentionCount > 0 {
-                        let countStr = group.attentionCount > 9 ? "9+" : "\(group.attentionCount)"
-                        Text(countStr)
-                            .font(Font(T.monoFont(size: 9.5, weight: .bold)))
-                            .foregroundColor(Color(nsColor: T.ink))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.claw)))
-                    }
-
-                    Text("\(group.sessionCount)")
-                        .font(Font(T.monoFont(size: 10, weight: .medium)))
-                        .foregroundColor(Color(nsColor: T.dim))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onSelectWorkspace)
-        }
-        .frame(height: rowContentHeight)
-        .padding(.top, 10)
-        .padding(.horizontal, 14)
-        .padding(.bottom, 5)
     }
 }

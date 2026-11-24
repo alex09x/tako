@@ -51,15 +51,15 @@ extension Tako {
             var result = CommandKind.batch
             for segment in ShellLine.segments(of: line) {
                 let words = ShellLine.unwrapped(segment)
-                guard let first = words.first else { continue }
-                let program = ShellLine.programName(first)
+                guard let identity = AgentProgramIdentity(words) else { continue }
+                let program = identity.program
                 let kind: CommandKind
-                if busy.contains(program) {
+                if identity.policyNames.contains(where: busy.contains) {
                     kind = .batch
-                } else if quiet.contains(program) {
+                } else if identity.policyNames.contains(where: quiet.contains) {
                     kind = .quiet
                 } else {
-                    kind = CommandRules.kind(of: program, arguments: Array(words.dropFirst()))
+                    kind = CommandRules.kind(of: program, arguments: identity.arguments)
                 }
                 if kind.quietness > result.quietness { result = kind }
             }
@@ -73,9 +73,9 @@ extension Tako {
             var best: (kind: CommandKind, program: String, args: [String])?
             for segment in ShellLine.segments(of: line) {
                 let words = ShellLine.unwrapped(segment)
-                guard let first = words.first else { continue }
-                let program = ShellLine.programName(first)
-                let args = Array(words.dropFirst())
+                guard let identity = AgentProgramIdentity(words) else { continue }
+                let program = identity.program
+                let args = identity.arguments
                 let kind = CommandRules.kind(of: program, arguments: args)
                 if best == nil || kind.quietness > best!.kind.quietness { best = (kind, program, args) }
             }

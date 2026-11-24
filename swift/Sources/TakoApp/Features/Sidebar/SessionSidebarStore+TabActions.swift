@@ -32,7 +32,35 @@ extension SessionSidebarStore {
             target.makeKeyAndOrderFront(nil)
         }
         let allTargetSurfaces = surfaces(in: target)
-        if let sid = item.surfaceId {
+        if let targetController = target.windowController as? BaseTerminalController,
+           targetController.usesFloatingCanvas {
+            if item.isChild,
+               let sid = item.surfaceId,
+               let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) {
+                for s in allTargetSurfaces where s.id != sid {
+                    s.focusDidChange(false)
+                }
+                targetController.revealAndFocusFloatingPane(targetSurface)
+            } else {
+                let candidate: Tako.SurfaceView? = {
+                    if let focused = targetController.focusedSurface,
+                       !targetController.isMinimizedInFloatingCanvas(focused.id),
+                       targetController.surfaceTree.contains(focused) {
+                        return focused
+                    }
+                    return targetController.topmostVisibleFloatingSurface()
+                }()
+                if let candidate {
+                    for s in allTargetSurfaces where s.id != candidate.id {
+                        s.focusDidChange(false)
+                    }
+                    targetController.revealAndFocusFloatingPane(candidate)
+                } else {
+                    for s in allTargetSurfaces { s.focusDidChange(false) }
+                    targetController.focusedSurface = nil
+                }
+            }
+        } else if let sid = item.surfaceId {
             if let targetController = target.windowController as? BaseTerminalController,
                let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) ?? allTargetSurfaces.first(where: { $0.id == sid }) {
                 for s in allTargetSurfaces where s.id != sid {
@@ -84,11 +112,71 @@ extension SessionSidebarStore {
         objectWillChange.send()
     }
 
-    /// Closes a tab from the sidebar.
+    /// «New Session Here»: the workspace becomes current, so the new tab is
+    /// filed under it (`TerminalController.newTab` assigns the active workspace).
+    func createNewTab(inWorkspace workspaceId: UUID, around window: NSWindow?,
+                      workspaceStore: WorkspaceStore = .shared) {
+        if workspaceStore.activeWorkspaceId != workspaceId {
+            selectWorkspace(workspaceId, in: window, workspaceStore: workspaceStore)
+        }
+        createNewTab(in: NSApp?.keyWindow ?? window)
+    }
+
+    /// Creates a new session tab in the target window's tab group.
+    func createNewTab(in window: NSWindow?) {
+        let target = window ?? NSApp?.keyWindow
+        let controller = (target?.windowController as? TerminalController)
+            ?? (target?.delegate as? TerminalController)
+            ?? TerminalController.all.first
+        if let controller {
+            _ = TerminalController.newTab(controller.tako, from: controller.window ?? target)
+        } else {
+            _ = NSApp?.sendAction(#selector(TerminalController.newTab(_:)), to: nil, from: nil)
+        }
+        objectWillChange.send()
+    }
+
+    /// Prompts to rename a session tab from the sidebar.
+    func promptRenameTab(item: SessionSidebarItem, in window: NSWindow?) {
+        guard let target = sidebarWindow(tabId: item.tabId, around: window) else { return }
+        Tako.CustomTabGroup.group(for: target).select(target)
+        let controller = (target.windowController as? BaseTerminalController)
+            ?? (target.delegate as? BaseTerminalController)
+        controller?.promptTabTitle()
+        objectWillChange.send()
+    }
+
+    /// Closes a session tab or split pane from the sidebar without tearing down sibling tabs.
     func closeTab(item: SessionSidebarItem, in window: NSWindow?) {
         // By its tab, not its place: the row may be a tab of another window.
         guard let target = sidebarWindow(tabId: item.tabId, around: window) else { return }
-        target.performClose(nil)
+        if item.isChild,
+           let sid = item.surfaceId,
+           let baseController = (target.windowController as? BaseTerminalController)
+            ?? (target.delegate as? BaseTerminalController),
+           let pane = baseController.surfaceTree.first(where: { $0.id == sid }) {
+            let needsConfirm = pane.needsConfirmClose || SubagentHierarchyStore.shared.hasChildren(pane.id)
+            if needsConfirm {
+                Tako.CustomTabGroup.group(for: target).select(target)
+            }
+            baseController.closeSurface(pane, withConfirmation: needsConfirm)
+            objectWillChange.send()
+            return
+        }
+
+        let controller = (target.windowController as? TerminalController)
+            ?? (target.delegate as? TerminalController)
+        if let controller {
+            if controller.surfaceTree.contains(where: { $0.needsConfirmClose }) {
+                Tako.CustomTabGroup.group(for: target).select(target)
+            }
+            controller.closeTab(nil)
+        } else if target.styleMask.contains(.closable) {
+            target.performClose(nil)
+        } else {
+            Tako.CustomTabGroup.close(target)
+            target.close()
+        }
         objectWillChange.send()
     }
 

@@ -61,7 +61,10 @@ fn prompt_start_emits_no_command_event() {
     term.feed(b"\x1b]133;B\x07");
     let events = term.take_events();
     assert_eq!(events, vec![TerminalEvent::PromptMark]);
-    assert!(!events.iter().any(|e| matches!(e, TerminalEvent::CommandStart { .. } | TerminalEvent::CommandEnd { .. })));
+    assert!(!events.iter().any(|e| matches!(
+        e,
+        TerminalEvent::CommandStart { .. } | TerminalEvent::CommandEnd { .. }
+    )));
 }
 
 /// Events drain, so a host that polls every frame sees each command once.

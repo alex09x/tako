@@ -129,6 +129,67 @@ class DispatcherTests(unittest.TestCase):
         hook.dispatch("codex", "question", self.env, {"tool_name": "exec_command"})
         run.assert_not_called()
 
+    @patch.object(hook.subprocess, "run")
+    @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
+    def test_qwen_and_muse_lifecycle_stays_on_the_explicit_pane(self, which, run):
+        run.return_value = SimpleNamespace(returncode=0)
+        states = {
+            "user_prompt_submit": ["status", "set", "working"],
+            "permission_request": ["status", "set", "needs_approval"],
+            "question": ["status", "set", "waiting_for_input"],
+            "post_tool_use": ["status", "set", "working"],
+            "stop": ["status", "set", "done"],
+            "stop_failure": ["status", "set", "error"],
+            "interrupt": ["status", "set", "idle"],
+            "session_start": ["status", "clear", "--target"],
+            "session_end": ["status", "clear", "--target"],
+        }
+        for provider in ("qwen", "muse"):
+            for event, prefix in states.items():
+                with self.subTest(provider=provider, event=event):
+                    run.reset_mock()
+                    payload = {"tool_name": "request_user_input"} if event == "question" else {}
+                    hook.dispatch(provider, event, self.env, payload)
+                    self.assertEqual(run.call_args_list[0].args[0][1:4], prefix)
+                    for call in run.call_args_list:
+                        self.assertEqual(call.args[0][-2:], ["--target", self.env["TAKO_SURFACE_ID"]])
+                        self.assertEqual(call.kwargs["env"], self.env)
+
+    @patch.object(hook.subprocess, "run")
+    @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
+    def test_qwen_question_permission_and_tool_result_resume(self, which, run):
+        run.return_value = SimpleNamespace(returncode=0)
+        hook.dispatch("qwen", "permission_request", self.env, {"tool_name": "ask_user_question"})
+        self.assertEqual(run.call_args_list[0].args[0][1:4], ["status", "set", "waiting_for_input"])
+        run.reset_mock()
+        hook.dispatch("qwen", "post_tool_use", self.env, {"tool_name": "ask_user_question"})
+        self.assertEqual(run.call_args_list[0].args[0][1:4], ["status", "set", "working"])
+        self.assertEqual(run.call_args_list[1].args[0][1], "progress")
+
+    @patch.object(hook.subprocess, "run")
+    def test_new_providers_never_use_another_panes_context(self, run):
+        for provider in ("qwen", "muse"):
+            for env in ({}, {**self.env, "TAKO_SOCKET": "relative.sock"},
+                        {**self.env, "TAKO_SURFACE_ID": "not-a-uuid"}):
+                hook.dispatch(provider, "user_prompt_submit", env, {})
+        run.assert_not_called()
+
+    @patch.object(hook.subprocess, "run")
+    def test_internal_subagents_do_not_finish_the_root_terminal(self, run):
+        hook.dispatch("qwen", "stop", self.env, {"agent_id": "internal-child"})
+        hook.dispatch("muse", "stop", {**self.env, "MUSE_SESSION_ID": "root", "MUSE_THREAD_ID": "child"}, {})
+        hook.dispatch("muse", "stop", {**self.env, "MUSE_SESSION_ID": "root"}, {})
+        run.assert_not_called()
+
+    @patch.object(hook.subprocess, "run")
+    @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
+    def test_muse_root_thread_keeps_the_inherited_binding(self, which, run):
+        run.return_value = SimpleNamespace(returncode=0)
+        env = {**self.env, "MUSE_SESSION_ID": "root", "MUSE_THREAD_ID": "root"}
+        hook.dispatch("muse", "stop", env, {"session_id": "root"})
+        self.assertEqual(run.call_count, 2)
+        self.assertTrue(all(c.kwargs["env"] == env for c in run.call_args_list))
+
 
 class ClaudeInterruptWatchTests(unittest.TestCase):
     """Claude Code fires no hook on Esc; it writes the stop to the transcript."""

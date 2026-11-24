@@ -11,13 +11,9 @@
 import XCTest
 
 extension WalkthroughTests {
-    /// The host-key decision must never open under the Connect tap that
-    /// started it. Two delays hold that, and both are measured here on the
-    /// running app against the real test server: the prompt mounts 750 ms
-    /// after the key is found, and its Trust and Cancel are dead labels for a
-    /// further second. Tapping a dead label does nothing.
-    func testTheHostKeyPromptMountsLateAndItsButtonsArmLater() {
-        app.launchArguments = ["-takoResetState"]
+    /// Fills the SSH form and records when XCTest returns from the Connect tap.
+    private func connectToAFreshHost(extraArguments: [String] = []) -> Date {
+        app.launchArguments = ["-takoResetState"] + extraArguments
         app.launch()
 
         let newSession = app.buttons["newSession"]
@@ -40,7 +36,17 @@ extension WalkthroughTests {
 
         let connect = app.buttons["Connect"]
         connect.tap()
-        let tappedConnect = Date()
+        return Date()
+    }
+
+    /// The host-key decision must never open under the Connect tap that
+    /// started it. Two delays hold that, and both are measured here on the
+    /// running app against the real test server, at their real defaults: the
+    /// prompt mounts 750 ms after the key is found, and its Trust and Cancel
+    /// are dead labels for a further second. (Tapping a dead label is
+    /// `testATapOnADeadTrustLabelDecidesNothing`.)
+    func testTheHostKeyPromptMountsLateAndItsButtonsArmLater() {
+        let tappedConnect = connectToAFreshHost()
 
         // The prompt's title exists from the moment it mounts.
         let title = app.staticTexts["Unknown host"]
@@ -53,14 +59,10 @@ extension WalkthroughTests {
                                     "the prompt mounted \(mountDelay) s after Connect, before the 0.75 s hold")
         XCTAssertLessThan(mountDelay, 6, "the prompt took \(mountDelay) s to mount")
 
-        // Just mounted: Trust and Cancel are labels, not buttons, and a tap on
-        // them changes nothing.
+        // Just mounted: Trust and Cancel are labels, not buttons.
         XCTAssertFalse(app.buttons["Trust"].exists, "Trust was a live button the moment the prompt mounted")
         XCTAssertFalse(app.buttons["Cancel"].exists, "Cancel was a live button the moment the prompt mounted")
         XCTAssertTrue(app.staticTexts["Trust"].exists, "the dead Trust label is missing")
-        app.staticTexts["Trust"].tap()
-        XCTAssertTrue(title.exists, "a tap on the dead Trust label decided the prompt")
-        XCTAssertFalse(app.buttons["key.esc"].exists, "a tap on the dead Trust label opened the terminal")
 
         // Then they arm, a second after the mount.
         let trust = app.buttons["Trust"]
@@ -71,5 +73,27 @@ extension WalkthroughTests {
         XCTAssertTrue(app.buttons["Cancel"].exists, "Cancel did not arm with Trust")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(title.waitForNonExistence(timeout: 5), "an armed Cancel did not close the prompt")
+    }
+
+    /// Hold arming in this DEBUG fixture so XCTest idleness waits cannot race
+    /// the tap. The default-policy test above verifies timed arming and cancel.
+    func testATapOnADeadTrustLabelDecidesNothing() {
+        _ = connectToAFreshHost(extraArguments: ["-takoHostKeyArmingHold"])
+
+        let title = app.staticTexts["Unknown host"]
+        XCTAssertTrue(title.waitForExistence(timeout: 30), "no host key prompt on a first connection")
+
+        // Admission: the unarmed label, not a button.
+        XCTAssertFalse(app.buttons["Trust"].exists, "Trust was a live button before the dead-label tap")
+        XCTAssertFalse(app.buttons["Cancel"].exists, "Cancel was a live button before the dead-label tap")
+        let deadTrust = app.staticTexts["Trust"]
+        XCTAssertTrue(deadTrust.exists, "the dead Trust label is missing")
+        deadTrust.tap()
+
+        // The delivered tap decided nothing: the prompt is still there and no
+        // terminal opened behind it.
+        XCTAssertTrue(title.exists, "a tap on the dead Trust label decided the prompt")
+        XCTAssertFalse(app.buttons["key.esc"].exists, "a tap on the dead Trust label opened the terminal")
+        XCTAssertTrue(deadTrust.exists, "the tap changed the inert label")
     }
 }

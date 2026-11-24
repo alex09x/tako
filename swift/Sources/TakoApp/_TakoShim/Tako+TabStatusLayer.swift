@@ -36,6 +36,9 @@ extension Tako {
             var progressInset: CGFloat = 0
             /// A sidebar row in progress runs the comet too, its line 1 pt up.
             var cometForProgress = false
+            /// The ring drawn smaller about its own centre (a sidebar style's
+            /// .78 / .8), its place unchanged; 1 everywhere else.
+            var ringScale: CGFloat = 1
         }
 
         var geometry = Geometry() {
@@ -68,7 +71,28 @@ extension Tako {
         let offlineBorderLayer = CAShapeLayer()
         let ringContainer = CALayer()
 
-        override init() { super.init(); setupSublayers() }
+        override init() { super.init(); setupSublayers(); Self.live.add(self) }
+
+        /// Every status layer on screen, so a shell scheme switch reaches them all.
+        private static let live = NSHashTable<TabStatusLayer>.weakObjects()
+
+        /// The shell switched light/dark: repaint every built layer now, with
+        /// the state it already shows -- no one-shot, no state change.
+        static func refreshAllShellColors() {
+            for layer in live.allObjects { layer.refreshShellColors() }
+        }
+
+        func refreshShellColors() {
+            offlineBorderLayer.strokeColor = T.ghostBorder.cgColor
+            guard let state = currentState, let palette = currentPalette else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            rebuildRing(for: state, reduceMotion: lastReduceMotion, triggerOneShot: false, palette: palette)
+            if lastSize != .zero {
+                rebuildSurfaceEffects(for: state, size: lastSize, reduceMotion: lastReduceMotion, triggerOneShot: false, palette: palette)
+            }
+            CATransaction.commit()
+        }
         override init(layer: Any) { super.init(layer: layer) }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -162,6 +186,9 @@ extension Tako {
             ringContainer.isHidden = hideRing
             let ringX: CGFloat = (state == .working || state == .offline) ? 9 : 8
             ringContainer.frame = ringFrame(in: pillRect.size, ringX: ringX)
+            // Not `transform`, which the ring's pop and shake own.
+            let scale = geometry.ringScale
+            ringContainer.sublayerTransform = scale == 1 ? CATransform3DIdentity : CATransform3DMakeScale(scale, scale, 1)
             if sizeChanged || reduceMotionChanged {
                 lastSize = pillRect.size; lastReduceMotion = reduceMotion; layoutGeometries(for: pillRect.size, ringX: ringX)
             }

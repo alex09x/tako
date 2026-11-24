@@ -16,10 +16,10 @@ use std::path::{Path, PathBuf};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 pub fn resolve_home_path(raw: &str) -> PathBuf {
-    if let Some(stripped) = raw.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
+    if let Some(stripped) = raw.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return PathBuf::from(home).join(stripped);
     }
     PathBuf::from(raw)
 }
@@ -53,7 +53,10 @@ pub fn validate_not_symlink(path: &Path) -> Result<(), String> {
     {
         if let Ok(meta) = fs::symlink_metadata(path) {
             if meta.file_type().is_symlink() {
-                return Err(format!("refusing to operate on symlink at {}", path.display()));
+                return Err(format!(
+                    "refusing to operate on symlink at {}",
+                    path.display()
+                ));
             }
             if !meta.is_file() {
                 return Err(format!("expected regular file at {}", path.display()));
@@ -133,7 +136,8 @@ pub fn harden_owner_only_mode(path: &Path) -> Result<(), String> {
                 .metadata()
                 .map_err(|e| format!("cannot verify permissions on {}: {e}", path.display()))?
                 .permissions()
-                .mode() & 0o777;
+                .mode()
+                & 0o777;
             if verified_mode & 0o077 != 0 {
                 return Err(format!(
                     "cannot enforce owner-only permissions on {}: mode is still {:o}",
@@ -171,7 +175,10 @@ pub fn unified_diff(old_text: &str, new_text: &str, label: &str) -> String {
     out += &format!("+++ b/{label}\n");
 
     let mut prefix = 0;
-    while prefix < old_lines.len() && prefix < new_lines.len() && old_lines[prefix] == new_lines[prefix] {
+    while prefix < old_lines.len()
+        && prefix < new_lines.len()
+        && old_lines[prefix] == new_lines[prefix]
+    {
         prefix += 1;
     }
 

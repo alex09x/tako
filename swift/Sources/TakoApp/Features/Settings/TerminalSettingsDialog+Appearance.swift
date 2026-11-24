@@ -18,6 +18,7 @@ extension TerminalSettingsDialog {
     }
     var inheritanceTitle: String {
         if let scope = scopedAppearance?.scope, case .pane = scope { return "Inherit workspace" }
+        if let scope = scopedAppearance?.scope, case .session = scope { return "Inherit workspace" }
         return "Inherit Tako settings"
     }
 

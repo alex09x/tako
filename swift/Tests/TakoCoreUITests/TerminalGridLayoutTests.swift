@@ -23,7 +23,8 @@ final class TerminalGridLayoutTests: XCTestCase {
 
         let invalid = TerminalTheme.parse(config: "window-padding-x = -1\nwindow-padding-y = 1,2,3\n")
         XCTAssertEqual(invalid.padding, TerminalTheme.takoDefault.padding, "invalid values keep the default")
-        XCTAssertEqual(TerminalTheme.takoDefault.padding, TerminalPadding(uniform: 10))
+        // Edge to edge by default: the host owns outer spacing (TerminalTheme).
+        XCTAssertEqual(TerminalTheme.takoDefault.padding, TerminalPadding(uniform: 0))
     }
 
     func testTheGridFitsWholeCellsInsideThePadding() {
@@ -114,6 +115,23 @@ final class TakoTerminalNSViewPaddingTests: XCTestCase {
         )
         XCTAssertEqual(rect.minX, 12 + 16)
         XCTAssertEqual(rect.minY, 100 - 9 - 32)
+    }
+
+    func testDurationGutterFitsEveryColumnAndRelayoutsWhenDisabled() {
+        let view = view("window-padding-x = 12\nwindow-padding-y = 9\n")
+        view.commandDurationsEnabled = true
+        view.layout()
+        view.flushPendingResizeForTesting()
+        let withGutter = view.cols
+        XCTAssertEqual(view.cellOrigin(row: 0, col: 0).x, 44)
+        let last = view.cellOrigin(row: 0, col: withGutter - 1)
+        XCTAssertLessThanOrEqual(last.x + view.cellWidth, view.bounds.width - 12 + 0.001)
+
+        view.commandDurationsEnabled = false
+        view.layout()
+        view.flushPendingResizeForTesting()
+        XCTAssertEqual(view.cellOrigin(row: 0, col: 0).x, 12)
+        XCTAssertGreaterThan(view.cols, withGutter)
     }
 }
 #endif

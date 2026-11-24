@@ -68,6 +68,7 @@ pub extern "C" fn prod_vt_discard_events(vt: *mut ProdVt) {
             return;
         };
         drop(t.take_events());
+        t.discard_program_status_updates();
     })
 }
 

@@ -24,16 +24,26 @@
 
 pub mod checkpoint;
 pub mod checkpoint_v2;
+pub mod program_status;
+pub mod program_status_types;
 pub mod render;
+pub mod replies;
 pub mod snapshot;
 pub mod terminal;
 pub mod types;
 
 pub use checkpoint::*;
 pub use checkpoint_v2::*;
+pub use program_status::*;
+pub use program_status_types::*;
+pub use replies::*;
 pub use snapshot::*;
 pub use terminal::*;
 pub use types::*;
 
+#[cfg(test)]
+mod program_status_lifecycle_tests;
+#[cfg(test)]
+mod program_status_tests;
 #[cfg(test)]
 mod tests;

@@ -26,26 +26,34 @@ extension Tako {
         let surfaceView: SurfaceView
         var isSplit: Bool = false
 
-        func makeNSView(context: Context) -> SurfaceView {
-            surfaceView.autoresizingMask = [.width, .height]
+        func makeNSView(context: Context) -> SurfaceHostingView {
             surfaceView.setContentHuggingPriority(.defaultLow, for: .horizontal)
             surfaceView.setContentHuggingPriority(.defaultLow, for: .vertical)
             surfaceView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             surfaceView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            focusIfNeeded()
+            return SurfaceHostingView(surfaceView: surfaceView)
+        }
+
+        private func focusIfNeeded() {
             DispatchQueue.main.async { [weak surfaceView] in
                 guard let surfaceView, let window = surfaceView.window else { return }
                 let controller = window.windowController as? TerminalController
+                if let pending = controller?.floatingCanvas.pendingFocus,
+                   pending.surfaceId != surfaceView.id {
+                    return
+                }
                 if window.firstResponder == nil || window.firstResponder === window.contentView || window.firstResponder is NSWindow {
                     if controller?.focusedSurface == nil || controller?.focusedSurface === surfaceView {
                         window.makeFirstResponder(surfaceView)
                     }
                 }
             }
-            return surfaceView
         }
 
-        func updateNSView(_ nsView: SurfaceView, context: Context) {
-            nsView.reflowToCurrentBounds()
+        func updateNSView(_ nsView: SurfaceHostingView, context: Context) {
+            if nsView.mount(surfaceView) { focusIfNeeded() }
+            nsView.needsLayout = true
         }
     }
 
@@ -62,6 +70,7 @@ extension Tako {
         @ObservedObject var overlayStore: OverlayStore = .shared
         @ObservedObject var diffReviewStore: DiffReviewStore = .shared
         var isSplit: Bool = false
+        @State private var draggingPane = false
 
         init(surfaceView: SurfaceView, isSplit: Bool = false) {
             self.surfaceView = surfaceView
@@ -76,8 +85,14 @@ extension Tako {
 
         var body: some View {
             ZStack(alignment: .top) {
-                SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    if isSplit {
+                        PaneDragHandle(surfaceView: surfaceView) { draggingPane = $0 }
+                            .frame(height: 14)
+                    }
+                    SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
                 VStack(spacing: 4) {
                     BroadcastInputBannerView(paneId: surfaceView.id)
                     InputOwnershipHeaderView(
@@ -116,6 +131,7 @@ extension Tako {
             .focusedValue(\.takoSurfaceView, surfaceView)
             .focusedValue(\.takoSurfacePwd, surfaceView.pwd ?? "")
             .focusedValue(\.takoSurfaceCellSize, surfaceView.cellSize)
+            .preference(key: DraggingSurfaceKey.self, value: draggingPane ? surfaceView.id : nil)
         }
     }
 
@@ -134,6 +150,7 @@ extension Tako {
         var body: some View {
             HStack(spacing: 6) {
                 TextField("Find", text: $searchState.needle)
+                    .accessibilityIdentifier("TerminalFindField")
                     .textFieldStyle(.plain)
                     .frame(width: 180)
                     .focused($fieldFocused)
@@ -154,7 +171,7 @@ extension Tako {
             }
             .padding(6)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-            .onAppear { fieldFocused = true }
+            .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             .onReceive(NotificationCenter.default.publisher(for: .takoSearchFocus)) { note in
                 if note.object as? SurfaceView === surfaceView { fieldFocused = true }
             }
@@ -241,11 +258,19 @@ extension Tako.SurfaceView: Transferable {
     /// A dragged surface travels as its identifier; the receiving window
     /// looks up the live view rather than moving a serialized copy.
     public static var transferRepresentation: some TransferRepresentation {
-        ProxyRepresentation<Tako.SurfaceView, String>(exporting: { surface in
-            String(describing: surface.id)
-        })
+        DataRepresentation(contentType: .takoSurfaceId) { surface in
+            Data(surface.id.uuidString.utf8)
+        } importing: { data in
+            guard let value = String(data: data, encoding: .utf8), let id = UUID(uuidString: value),
+                  let surface = await MainActor.run(body: { Tako.SurfaceView.find(for: id) }) else {
+                throw PaneTransferError.unavailable
+            }
+            return surface
+        }
     }
 }
+
+private enum PaneTransferError: Error { case unavailable }
 
 // MARK: - Focused values
 

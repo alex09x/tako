@@ -25,15 +25,13 @@ extension Tako {
 
         static let dock = ProgressStyle(rawValue: 1 << 0)
         static let tab = ProgressStyle(rawValue: 1 << 1)
-        static let header = ProgressStyle(rawValue: 1 << 2)
         static let window = ProgressStyle(rawValue: 1 << 3)
 
-        static let all: ProgressStyle = [.dock, .tab, .header, .window]
+        static let all: ProgressStyle = [.dock, .tab, .window]
         static let none: ProgressStyle = []
 
         var showsInDock: Bool { contains(.dock) }
         var showsInTab: Bool { contains(.tab) }
-        var showsInHeader: Bool { contains(.header) }
         var showsInWindow: Bool { contains(.window) }
 
         static func == (lhs: ProgressStyle, rhs: Bool) -> Bool {

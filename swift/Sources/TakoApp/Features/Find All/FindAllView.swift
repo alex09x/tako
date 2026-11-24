@@ -11,6 +11,7 @@ struct FindAllView: View {
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
 
     @State private var selected: Int?
+    @State private var panelID = UUID()
     @FocusState private var fieldFocused: Bool
 
     /// Results in display order, with where each terminal's group starts.
@@ -60,9 +61,9 @@ struct FindAllView: View {
                     .onAppear {
                         DispatchQueue.main.async { fieldFocused = true }
                         // Whatever was found last time may no longer be so.
-                        search.refresh()
+                        search.panelOpened(panelID)
                     }
-                    .onDisappear { search.cancel() }
+                    .onDisappear { search.panelClosed(panelID) }
             }
 
             if let line = statusLine {
@@ -208,7 +209,7 @@ struct FindAllView: View {
     /// The panel stays until the match is selected, so a result that turned
     /// out stale leaves the notice and the refreshed list in view.
     private func open(_ result: CrossSearchResult?) {
-        guard let result else { return }
+        guard let result, search.results.contains(result) else { return }
         search.reveal(result) { selected in
             if selected { close() }
         }

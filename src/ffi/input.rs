@@ -30,14 +30,34 @@ impl TakoCore {
     pub fn feed_with_outcome(&self, bytes: Vec<u8>) -> FfiFeedOutcome {
         let mut engine = lock_recover(&self.inner);
         engine.feed(&bytes);
-        let output = engine.take_output();
-        let events = engine
-            .take_events()
+        let reply_drain = engine.drain_classified_replies(usize::MAX);
+        let total_len: usize = reply_drain.replies.iter().map(|r| r.bytes.len()).sum();
+        let mut output = Vec::with_capacity(total_len);
+        for r in &reply_drain.replies {
+            output.extend_from_slice(&r.bytes);
+        }
+        let replies = reply_drain
+            .replies
             .into_iter()
+            .map(super::program_status_types::FfiClassifiedReply::from)
+            .collect();
+        let status_drain = engine.drain_program_status_updates(usize::MAX);
+        let raw_events = engine.take_events();
+        let events = raw_events
+            .into_iter()
+            .filter(|ev| {
+                !(status_drain.overflow_coalesced
+                    && matches!(ev, crate::terminal::TerminalEvent::ProgramStatusChanged(_)))
+            })
             .map(FfiEvent::from)
             .collect();
         FfiFeedOutcome {
             output,
+            replies,
+            reply_overflow_count: reply_drain.overflow_dropped_count,
+            status_overflow_coalesced: status_drain.overflow_coalesced,
+            status_overflow_from_revision: status_drain.overflow_from_revision,
+            status_resync_snapshot: status_drain.resync_snapshot.map(Into::into),
             events,
             has_damage: engine.has_damage(),
             synchronized_output_active: engine.is_synchronized_output(),
@@ -45,9 +65,14 @@ impl TakoCore {
         }
     }
 
-    /// Drains and returns any queued device-reply bytes.
+    /// Drains and returns any queued device-reply bytes (keeping sticky overflow count intact).
     pub fn take_output(&self) -> Vec<u8> {
         lock_recover(&self.inner).take_output()
+    }
+
+    /// Consumes and resets sticky reply-queue overflow count for legacy `take_output` callers.
+    pub fn take_reply_overflow_count(&self) -> u32 {
+        lock_recover(&self.inner).take_reply_overflow_count()
     }
 
     /// The Kitty keyboard protocol's currently active flags.
@@ -57,7 +82,9 @@ impl TakoCore {
 
     /// Drains queued host-visible events.
     pub fn take_events(&self) -> Vec<FfiEvent> {
-        lock_recover(&self.inner)
+        let mut engine = lock_recover(&self.inner);
+        engine.discard_program_status_updates();
+        engine
             .take_events()
             .into_iter()
             .map(FfiEvent::from)

@@ -33,6 +33,9 @@ impl SkillAdapter {
         if let Some(p) = override_path {
             return PathBuf::from(p);
         }
+        if self.name == "muse" {
+            return crate::hooks::native::muse_root().join("skills/tako/SKILL.md");
+        }
         resolve_home_path(self.skill_path)
     }
 
@@ -44,12 +47,18 @@ impl SkillAdapter {
     /// Whether the agent itself is on this machine: the directory its skill
     /// lives in (`~/.claude`, `~/.codex`...) exists.
     pub fn is_present(&self) -> bool {
+        if self.name == "muse" {
+            return crate::hooks::native::muse_root().is_dir();
+        }
         std::env::var("HOME")
             .map(|home| self.is_present_under(Path::new(&home)))
             .unwrap_or(false)
     }
 
     pub fn is_present_under(&self, home: &Path) -> bool {
+        if self.name == "muse" {
+            return home.join(".config/muse").is_dir();
+        }
         self.skill_path
             .strip_prefix("~/")
             .and_then(|rel| Path::new(rel).components().next())
@@ -63,14 +72,16 @@ impl SkillAdapter {
         }
         #[cfg(unix)]
         {
-            if let Ok(meta) = fs::symlink_metadata(path) {
-                if meta.file_type().is_symlink() || !meta.is_file() {
-                    return false;
-                }
+            if let Ok(meta) = fs::symlink_metadata(path)
+                && (meta.file_type().is_symlink() || !meta.is_file())
+            {
+                return false;
             }
         }
         match fs::read_to_string(path) {
-            Ok(content) => content.contains("Tako Terminal Integration") || content.contains("name: tako"),
+            Ok(content) => {
+                content.contains("Tako Terminal Integration") || content.contains("name: tako")
+            }
             Err(_) => false,
         }
     }
@@ -78,6 +89,20 @@ impl SkillAdapter {
 
 pub fn all_adapters() -> Vec<SkillAdapter> {
     vec![
+        SkillAdapter {
+            name: "qwen",
+            title: "Qwen Code",
+            aliases: &[],
+            skill_path: "~/.qwen/skills/tako/SKILL.md",
+            mcp_config_path: None,
+        },
+        SkillAdapter {
+            name: "muse",
+            title: "Muse",
+            aliases: &[],
+            skill_path: "~/.config/muse/skills/tako/SKILL.md",
+            mcp_config_path: None,
+        },
         SkillAdapter {
             name: "claude",
             title: "Claude Code",

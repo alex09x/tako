@@ -79,6 +79,9 @@ final class TerminalRestorableState: TerminalRestorable {
     var tabIdentifier: String? {
         internalState.tabIdentifier
     }
+    var floatingCanvas: FloatingCanvasSnapshot? {
+        internalState.floatingCanvas
+    }
 
     /// Internal State we use to perform unit tests
     ///
@@ -127,8 +130,12 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
     /// fails to load lazily here, which would make the success path below
     /// permanently unreachable from a test host.
     struct System {
-        var makeController: (Tako.App, SplitTree<Tako.SurfaceView>) -> (TerminalController, NSWindow)? = { app, tree in
+        /// The tab identifier is the saved one: the window must have it while
+        /// it loads (see `TerminalController.restoredTabIdentifier`).
+        var makeController: (Tako.App, SplitTree<Tako.SurfaceView>, String?) -> (TerminalController, NSWindow)? = {
+            app, tree, tabIdentifier in
             let controller = TerminalController(app, withSurfaceTree: tree)
+            controller.restoredTabIdentifier = tabIdentifier
             guard let window = controller.window else { return nil }
             return (controller, window)
         }
@@ -185,7 +192,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // can be found for events from libtako. This uses the low-level
         // createWindow so that AppKit can place the window wherever it should
         // be.
-        guard let (c, window) = system.makeController(appDelegate.tako, state.surfaceTree) else {
+        guard let (c, window) = system.makeController(appDelegate.tako, state.surfaceTree, state.tabIdentifier) else {
             completionHandler(nil, TerminalRestoreError.windowDidNotLoad)
             return
         }
@@ -203,6 +210,13 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             window.stableTabIdentifier = tabId
         }
 
+        c.floatingCanvas.loadRestoredSnapshot(
+            state.floatingCanvas,
+            for: c.surfaceTree,
+            fallbackSize: c.estimatedFloatingCanvasSize()
+        )
+        c.syncSurfaceTreeOcclusionState()
+
         // Setup our restored state on the controller
         // Find the focused surface in surfaceTree
         if let focusedStr = state.focusedSurface {
@@ -212,8 +226,11 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
                 break
             }
 
-            if let view = foundView {
-                c.focusedSurface = view
+            if let view = foundView, !c.isMinimizedInFloatingCanvas(view.id) {
+                // Restored focus is logical: a pane is read once the user
+                // actually focuses it, not because it was focused last time.
+                c.setFocusedSurfaceUnseen(view)
+                c.floatingCanvas.requestPendingFocus(for: view.id)
                 restoreFocus(to: view, inWindow: window)
             }
         }

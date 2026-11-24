@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import Foundation
 
 extension ThemeControlService {
@@ -43,11 +44,13 @@ extension ThemeControlService {
         let effective: TerminalTheme
         let values: [String: String]
         let selected: String?
+        var session: String?
+        if let pane = scope.paneID { session = paneSession(pane) }
         if let local = scope.appearance {
             values = appearances.document.overrides(for: local) ?? [:]
             selected = values["theme"]
             effective = appearances.effectiveTheme(global: global, workspaceID: scope.workspaceID,
-                paneID: scope.paneID, themeSearchPaths: presets.searchPaths)
+                sessionID: session, paneID: scope.paneID, themeSearchPaths: presets.searchPaths)
         } else {
             selected = configuredTheme(in: try readConfiguration())
             var fields: [String: String] = [:]
@@ -63,6 +66,17 @@ extension ThemeControlService {
             "theme": selected.map(JSON.string) ?? .null,
             "overrides": .object(values.mapValues(JSON.string)),
             "effective_config": .string(ThemePresetConfig.configuration(from: effective))
-        ]) { _, new in new }
+        ].merging(scope.paneID == nil ? [:] : ["session_id": session.map(JSON.string) ?? .null]) { old, _ in old }) { _, new in new }
+    }
+
+    /// The owning tab's stable identifier, found through every controller's
+    /// split tree so a pane not mounted in a window still resolves. A pane
+    /// no controller holds (a saved or synthetic target) has none.
+    static func liveSessionIdentity(ofPane id: UUID) -> String? {
+        for window in NSApplication.shared.windows {
+            guard let controller = window.windowController as? BaseTerminalController else { continue }
+            if controller.surfaceTree.contains(where: { $0.id == id }) { return window.stableTabIdentifier }
+        }
+        return nil
     }
 }

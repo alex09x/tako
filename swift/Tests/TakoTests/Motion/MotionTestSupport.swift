@@ -153,6 +153,27 @@ extension CALayer {
     }
 }
 
+/// The dark shell scheme for the length of `body`, whatever the process has:
+/// these fixtures hold dark-design colours (#241C16, the ghost border, the
+/// sixth card's light over the dark body). LivingTokens.isLight is one
+/// process-wide flag; on a host in light mode, any earlier test that applies
+/// DesktopPresentation.shared preferences leaves it light for every test after.
+@MainActor
+func withDarkShell<T>(_ body: () throws -> T) rethrows -> T {
+    let saved = Tako.LivingTokens.isLight
+    Tako.LivingTokens.isLight = false
+    defer { Tako.LivingTokens.isLight = saved }
+    return try body()
+}
+
+@MainActor
+func withDarkShell<T>(_ body: () async throws -> T) async rethrows -> T {
+    let saved = Tako.LivingTokens.isLight
+    Tako.LivingTokens.isLight = false
+    defer { Tako.LivingTokens.isLight = saved }
+    return try await body()
+}
+
 /// Motion on for the length of `body`, whatever the host says: Reduce Motion
 /// off and no window counted as hidden, so a test of motion never passes
 /// by skipping it on a host set to Reduce Motion.
@@ -171,4 +192,24 @@ func withMotionOn<T>(_ body: @MainActor () throws -> T) rethrows -> T {
         motion.recomputeOcclusion()
     }
     return try body()
+}
+
+/// The same process-local policy while an asynchronous probe takes frames.
+/// Restore the real host's accessibility source after the probe, including
+/// probes that explicitly turn reduction back on to verify the paused path.
+@MainActor
+func withMotionOn<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
+    let motion = LivingAnimationState.shared
+    let (reduce, windows) = (motion.reduceMotionSource, motion.windowsToWatch)
+    motion.reduceMotionSource = { false }
+    motion.windowsToWatch = { [] }
+    motion.refreshReduceMotion()
+    motion.recomputeOcclusion()
+    defer {
+        motion.reduceMotionSource = reduce
+        motion.windowsToWatch = windows
+        motion.refreshReduceMotion()
+        motion.recomputeOcclusion()
+    }
+    return try await body()
 }

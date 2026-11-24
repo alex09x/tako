@@ -179,7 +179,6 @@ extension TerminalController {
         // that is running.
         guard let confirmWindow = all
             .first(where: { $0.surfaceTree.contains(where: { $0.needsConfirmClose }) })?
-            .surfaceTree.first(where: { $0.needsConfirmClose })?
             .window
         else {
             closeAllWindowsImmediately()
@@ -220,11 +219,18 @@ extension TerminalController {
         let tabIndex: Int?
         weak var tabGroup: Tako.CustomTabGroup?
         let tabColor: TerminalTabColor
+        let floatingCanvas: FloatingCanvasSnapshot?
     }
 
     convenience init(_ tako: Tako.App, with undoState: UndoState) {
         self.init(tako, withSurfaceTree: undoState.surfaceTree)
         Self.system.attachWindow(self)
+        floatingCanvas.loadRestoredSnapshot(
+            undoState.floatingCanvas,
+            for: surfaceTree,
+            fallbackSize: estimatedFloatingCanvasSize()
+        )
+        syncSurfaceTreeOcclusionState()
 
         // Show the window and restore its frame
         showWindow(nil)
@@ -246,19 +252,13 @@ extension TerminalController {
                 }
             }
 
-            // Restore focus to the previously focused surface
+            // Restore focus to the previously focused visible surface
             if let focusedUUID = undoState.focusedSurface,
-               let focusTarget = surfaceTree.first(where: { $0.id == focusedUUID }) {
-                DispatchQueue.main.async {
-                    Tako.moveFocus(to: focusTarget, from: nil)
-                }
-            } else if let focusedSurface = surfaceTree.first {
-                // No prior focused surface or we can't find it, let's focus
-                // the first.
-                self.focusedSurface = focusedSurface
-                DispatchQueue.main.async {
-                    Tako.moveFocus(to: focusedSurface, from: nil)
-                }
+               let focusTarget = surfaceTree.first(where: { $0.id == focusedUUID }),
+               !isMinimizedInFloatingCanvas(focusTarget.id) {
+                revealAndFocusFloatingPane(focusTarget)
+            } else if let topVisible = topmostVisibleFloatingSurface() {
+                revealAndFocusFloatingPane(topVisible)
             }
         }
     }
@@ -274,7 +274,8 @@ extension TerminalController {
             focusedSurface: focusedSurface?.id,
             tabIndex: tabGroup.windows.firstIndex(of: window),
             tabGroup: tabGroup,
-            tabColor: (window as? TerminalWindow)?.tabColor ?? .none)
+            tabColor: (window as? TerminalWindow)?.tabColor ?? .none,
+            floatingCanvas: usesFloatingCanvas ? floatingCanvas.snapshot() : nil)
     }
 
 }

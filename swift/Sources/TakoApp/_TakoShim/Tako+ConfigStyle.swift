@@ -253,14 +253,27 @@ extension Tako.Config {
         rawValue("scrollbar").flatMap(Scrollbar.init(rawValue:)) ?? .system
     }
 
-    /// Custom entries displayed in command palette popup.
-    ///
-    /// WHY: Command palette dynamically populates from available actions; default to empty list.
-    var commandPaletteEntries: [Tako.Command] { [] }
+    /// Built-in terminal commands, using the same metadata as keybinding settings.
+    /// The shim has no custom command-palette-entry transport yet.
+    var commandPaletteEntries: [Tako.Command] {
+        let commands = KeybindRegistry.allActions.map { item in
+            Tako.Command(
+                title: item.title,
+                description: item.description,
+                action: item.id,
+                actionKey: String(item.id.split(separator: ":", maxSplits: 1)[0]))
+        }
+        // Clear Screen is supported by the surface but has no keybinding metadata.
+        return (commands + [Tako.Command(
+            title: "Clear Screen",
+            action: "clear_screen",
+            actionKey: "clear_screen")]).filter(\.isSupported)
+    }
 
-    /// Terminal command progress indicator style (dock icon / tab progress bar / header / window).
+    /// Terminal command progress indicator style (dock icon / tab progress bar / window).
+    /// Nothing is ever drawn over the terminal itself.
     ///
-    /// The `progress-style` setting can turn each surface off (e.g. `dock,tab,header,window`, `none`, `all`).
+    /// The `progress-style` setting can turn each surface off (e.g. `dock,tab,window`, `none`, `all`).
     var progressStyle: ProgressStyle {
         guard let val = rawValue("progress-style") else { return .all }
         let s = val.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -276,7 +289,8 @@ extension Tako.Config {
             switch part {
             case "dock": style.insert(.dock)
             case "tab", "tabs": style.insert(.tab)
-            case "header", "pane": style.insert(.header)
+            // The line over the terminal is gone; an old config naming it still reads.
+            case "header", "pane": break
             case "window": style.insert(.window)
             default: break
             }

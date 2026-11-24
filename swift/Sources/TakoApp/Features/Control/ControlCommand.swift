@@ -214,6 +214,7 @@ enum ControlCommand {
         }
         _ = try lines(request.args)
         _ = try timeout(request.args)
+        _ = try ControlPaneState.requested(request.args)
         let pane: Tako.SurfaceView
         if case .string = request.args["split"] {
             var args = request.args
@@ -222,8 +223,9 @@ enum ControlCommand {
         } else {
             pane = try ControlLayout.newTab(beside: surface, args: request.args, client: request.client)
         }
+        let created = try ControlPaneState.applyRequested(request.args, to: pane)
         guard request.args["wait"] == .bool(true) else {
-            return reply(.ok(["id": .string(pane.id.uuidString.lowercased())]))
+            return reply(.ok(created))
         }
         try wait(request, pane, reply: reply)
     }

@@ -9,6 +9,7 @@
  */
 
 use super::event_types::FfiEvent;
+use super::program_status_types::FfiClassifiedReply;
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiKey {
@@ -111,9 +112,19 @@ pub struct FfiMouseEvent {
     pub row: u32,
 }
 
+/// Result of feeding a byte batch through [`TakoCore::feed_with_outcome`].
+///
+/// `output` is the flat concatenation of `replies` from this feed turn for
+/// legacy hosts; hosts consuming classified `replies` must write from `replies`
+/// and ignore `output` so replies are never written twice.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct FfiFeedOutcome {
     pub output: Vec<u8>,
+    pub replies: Vec<FfiClassifiedReply>,
+    pub reply_overflow_count: u32,
+    pub status_overflow_coalesced: bool,
+    pub status_overflow_from_revision: u64,
+    pub status_resync_snapshot: Option<super::program_status_types::FfiProgramStatusSnapshot>,
     pub events: Vec<FfiEvent>,
     pub has_damage: bool,
     pub synchronized_output_active: bool,

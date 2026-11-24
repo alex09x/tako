@@ -159,7 +159,7 @@ public enum TerminalSettingRegistry {
             id: "cursor-style-blink",
             title: "Cursor Blinking",
             category: "Terminal",
-            type: .boolean(defaultValue: false),
+            type: .boolean(defaultValue: TerminalTheme.takoDefault.cursorBlink),
             description: "Animate terminal cursor blinking"
         ),
         TerminalSettingItem(
@@ -236,7 +236,7 @@ public enum TerminalSettingRegistry {
             type: .number(defaultValue: 0, min: 0, max: 60, step: 5),
             description: "Window background blur radius in pixels (0 = disabled)"
         ),
-    ] + colorSettings + fontWeightSettings
+    ] + colorSettings + fontWeightSettings + desktopSettings
 
     public static func setting(for id: String) -> TerminalSettingItem? {
         allSettings.first { $0.id == id || $0.aliases.contains(id) }

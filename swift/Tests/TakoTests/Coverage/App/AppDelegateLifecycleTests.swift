@@ -46,21 +46,30 @@ struct AppDelegateLifecycleTests {
     }
 
     @Test func didFinishLaunchingSetsUpTheAppAndDrainsDeferredConfigWork() async {
+        let fixture = AppDelegateWindowFixture()
         let delegate = AppDelegate()
         let original = installDelegate(delegate)
-        defer { restoreDelegate(original) }
+        let notificationProvider = AppDelegate.notificationCenterProvider
+        let confirmOpenURL = TakoTerminalNSView.confirmOpenURL
+        let presentAlert = TakoTerminalNSView.presentAlert
+        let servicesProvider = NSApp.servicesProvider
+        let servicesMenu = NSApp.servicesMenu
+        defer {
+            NotificationCenter.default.removeObserver(delegate)
+            restoreDelegate(original)
+            fixture.restore()
+            AppDelegate.notificationCenterProvider = notificationProvider
+            TakoTerminalNSView.confirmOpenURL = confirmOpenURL
+            TakoTerminalNSView.presentAlert = presentAlert
+            NSApp.servicesProvider = servicesProvider
+            NSApp.servicesMenu = servicesMenu
+        }
 
         // `UNUserNotificationCenter.current()` crashes outright in a bare
         // `swift test` host (no bundle proxy for the process) -- see the
         // seam's doc comment on `AppDelegate.notificationCenterProvider`.
-        // This is deliberately never restored: `applicationDidFinishLaunching`
-        // registers `self` as a `NotificationCenter` observer for
-        // `object: nil` (i.e. every poster), and that registration outlives
-        // this test's `delegate` going out of scope (NotificationCenter
-        // retains block-less observers). A later test's own window posting
-        // e.g. a bell-state change would otherwise route back into this
-        // delegate's `syncDockBadge()` and hit the very crash this seam
-        // exists to avoid.
+        // Remove this delegate's observers before restoring the provider so
+        // later notifications cannot reach a launched test delegate.
         AppDelegate.notificationCenterProvider = { nil }
 
         // Forces `applicationDidFinishLaunching`'s "restore last quit's
@@ -121,40 +130,40 @@ struct AppDelegateLifecycleTests {
     }
 
     @Test func applicationDidBecomeActiveClearsHiddenStateAndOpensAnInitialWindowOnce() {
+        let fixture = AppDelegateWindowFixture()
+        defer { fixture.restore() }
         let delegate = AppDelegate()
         delegate.applicationDidHide(Notification(name: NSApplication.didHideNotification))
         #expect(delegate.hiddenState != nil)
 
-        // First call: clears hiddenState and (since `derivedConfig` defaults to
-        // `initialWindow == true` and this fresh delegate has no windows of its
-        // own yet) opens an initial window. `TerminalController.newWindow`
-        // constructs a real controller (and a real `Tako.SurfaceView`/PTY) but
-        // defers `showWindow` via `scheduleInitialPresentation`
-        // (`DispatchQueue.main.async`), which a bare `swift test` host never
-        // drains -- so this never reaches the excluded `Terminal.xib` nib nor
-        // adds a window to `NSApp.windows` (see ServiceProviderTests' doc
-        // comment for the same guarantee on the same code path).
+        // The hook attaches a fixture-owned window before presentation is queued.
         delegate.applicationDidBecomeActive(
             Notification(name: NSApplication.didBecomeActiveNotification))
         #expect(delegate.hiddenState == nil)
+        #expect(fixture.controllers.count == 1)
 
         // Second call: applicationHasBecomeActive is now true, so this is a
         // no-op past the guard -- just confirms it doesn't crash or re-fire.
         delegate.applicationDidBecomeActive(
             Notification(name: NSApplication.didBecomeActiveNotification))
+        #expect(fixture.controllers.count == 1)
 
-        // `TerminalController.all` reads live off `NSApp.windows`, and (per
-        // the comment above) the window `newWindow` just built never lands
-        // there -- so it's still empty here. Combined with
-        // `applicationHasBecomeActive` now being true, this reaches
-        // `applicationShouldHandleReopen`'s real "open a fresh window" branch.
+        // A still-live initial window is reused. Once our own window is closed,
+        // reopening reaches the fresh-window branch.
+        #expect(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+        fixture.closeWindows()
         #expect(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false) == false)
+        #expect(fixture.controllers.count == 1)
     }
 
     @Test func shouldTerminateAfterLastWindowClosedDefaultsToTrue() {
         _ = NSApplication.shared
         WorkspaceStore.shared.resetForTesting()
-        defer { WorkspaceStore.shared.resetForTesting() }
+        Tako.CustomTabGroup.resetForTesting()
+        defer {
+            Tako.CustomTabGroup.resetForTesting()
+            WorkspaceStore.shared.resetForTesting()
+        }
         let delegate = AppDelegate()
         #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp) == true)
     }
@@ -197,9 +206,8 @@ struct AppDelegateLifecycleTests {
         let delegate = AppDelegate()
         let wasDetaching = SurfaceSession.appIsDetaching
         defer { SurfaceSession.appIsDetaching = wasDetaching }
-        // Deliberately not restored -- see the doc comment on
-        // `didFinishLaunchingSetsUpTheAppAndDrainsDeferredConfigWork` for why
-        // this override must outlive any single test.
+        let notificationProvider = AppDelegate.notificationCenterProvider
+        defer { AppDelegate.notificationCenterProvider = notificationProvider }
         AppDelegate.notificationCenterProvider = { nil }
 
         delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
@@ -230,15 +238,21 @@ struct AppDelegateLifecycleTests {
     }
 
     @Test func openFileOpensADirectoryAsANewTabWithoutConfirmation() {
-        // A directory never sets `requiresConfirm`, so this never shows the
-        // `NSAlert`/`runModal()` a non-directory file path would (see this
-        // file's top-level doc comment for what's deliberately not exercised).
+        // Directories open immediately without a TUI execution confirmation.
+        let fixture = AppDelegateWindowFixture()
         let delegate = AppDelegate()
         let original = installDelegate(delegate)
-        defer { restoreDelegate(original) }
+        defer {
+            restoreDelegate(original)
+            fixture.restore()
+        }
 
         let dir = FileManager.default.temporaryDirectory.path
         #expect(delegate.application(NSApp, openFile: dir))
+        #expect(fixture.controllers.count == 1)
+        #expect(fixture.controllers.allSatisfy { controller in
+            controller.window.map { TerminalDialogView.pending(in: $0) == nil } == true
+        })
     }
 
     @Test func dockMenuReturnsTheManagedMenuAndReopenBuildsItsItems() {

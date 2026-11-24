@@ -24,15 +24,33 @@ class BaseTerminalController: NSWindowController,
     /// The app instance that this terminal view will represent.
     let tako: Tako.App
 
+    private var updatingFocusedSurfaceFromDelegate = false
+    /// False while a focus change is only logical (see `setFocusedSurfaceUnseen`).
+    var focusChangeMarksSeen = true
+
     /// The currently focused surface.
     var focusedSurface: Tako.SurfaceView? {
         didSet {
+            if usesFloatingCanvas, let focusedSurface {
+                floatingCanvas.noteExplicitFocusChange(to: focusedSurface.id)
+                floatingCanvas.bringToFront(focusedSurface.id)
+            }
             syncFocusToSurfaceTree()
+            if usesFloatingCanvas, focusedSurface !== oldValue {
+                objectWillChange.send()
+                if !updatingFocusedSurfaceFromDelegate { bindFocusedSurfaceSubscriptions(previous: oldValue) }
+            }
             if let focusedSurface, focusedSurface != oldValue {
                 focusedSurface.publishEvent(type: "pane_focused", payload: [:])
             }
         }
     }
+
+    /// Whether this controller renders surfaces inside `FloatingTerminalCanvasView`.
+    var usesFloatingCanvas: Bool { false }
+
+    /// Layout state for freely floating, maximized, and minimized panes inside the session canvas.
+    let floatingCanvas = FloatingCanvasStore()
 
     /// The tree of splits within this terminal window.
     @Published var surfaceTree: SplitTree<Tako.SurfaceView> = .init() {
@@ -44,12 +62,21 @@ class BaseTerminalController: NSWindowController,
 
     /// Whether the Find in All Tabs panel is over this window. Closing it
     /// gives the keyboard back to the terminal, as the command palette does;
-    /// otherwise the next keys go nowhere.
+    /// otherwise the next keys go nowhere. Only while this tab is still the
+    /// one shown: a result opened in another tab closes the panel after that
+    /// tab was chosen, and moving focus here would choose this tab again
+    /// (a floating canvas selects its tab to focus a pane). A tab just
+    /// replaced can stay visible a moment before it is ordered out, so being
+    /// visible is not enough; it must still be its group's chosen tab. A
+    /// window in no tab group (looked up, never created here) is its own.
     @Published var findAllIsShowing: Bool = false {
         didSet {
             guard oldValue, !findAllIsShowing else { return }
             DispatchQueue.main.async { [weak self] in
-                Tako.moveFocus(to: self?.focusedSurface)
+                guard let self, let window = self.window, window.isVisible else { return }
+                if let group = Tako.CustomTabGroup.groupsByWindow[ObjectIdentifier(window)],
+                   group.selectedWindow !== window { return }
+                Tako.moveFocus(to: self.focusedSurface)
             }
         }
     }
@@ -64,23 +91,16 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Whether the Session Sidebar panel is showing for this window (B5).
-    @Published var sessionSidebarIsShowing: Bool = SessionSidebarStore.shared.isShowing {
+    /// Whether this terminal window type hosts the permanent Session Sidebar.
+    /// Desktop `TerminalController` windows always show it; `QuickTerminalController` stays separate.
+    var supportsSessionSidebar: Bool { false }
+
+    /// Permanent sidebar state for this window (`true` on desktop windows, `false` on Quick Terminal).
+    @Published var sessionSidebarIsShowing: Bool = false {
         didSet {
-            if SessionSidebarStore.shared.isShowing != sessionSidebarIsShowing {
-                SessionSidebarStore.shared.isShowing = sessionSidebarIsShowing
-            }
-            if let window = self.window {
-                for sibling in Tako.CustomTabGroup.group(for: window).windows where sibling !== window {
-                    if let siblingController = sibling.windowController as? BaseTerminalController,
-                       siblingController.sessionSidebarIsShowing != sessionSidebarIsShowing {
-                        siblingController.sessionSidebarIsShowing = sessionSidebarIsShowing
-                    }
-                }
-            }
-            guard oldValue, !sessionSidebarIsShowing else { return }
-            DispatchQueue.main.async { [weak self] in
-                Tako.moveFocus(to: self?.focusedSurface)
+            let expected = supportsSessionSidebar
+            if sessionSidebarIsShowing != expected {
+                sessionSidebarIsShowing = expected
             }
         }
     }
@@ -182,7 +202,12 @@ class BaseTerminalController: NSWindowController,
     /// An override title for the tab/window set by the user via prompt_tab_title.
     /// When set, this takes precedence over the computed title from the terminal.
     var titleOverride: String? {
-        didSet { applyTitleToWindow() }
+        didSet {
+            applyTitleToWindow()
+            if titleOverride != oldValue {
+                NotificationCenter.default.post(name: .takoTabTitleDidChange, object: self)
+            }
+        }
     }
 
     /// The last computed title from the focused surface (without the override).
@@ -206,8 +231,10 @@ class BaseTerminalController: NSWindowController,
         self.tako = tako
         self.baseDerivedConfig = DerivedConfig(tako.config)
         super.init(window: nil)
+        self.sessionSidebarIsShowing = self.supportsSessionSidebar
         self.surfaceTree = tree ?? .init(view: Tako.SurfaceView(tako, baseConfig: base))
         for view in surfaceTree { view.adopt(by: tako) }
+        configureFloatingCanvasPersistence()
         setupBellNotificationPublisher()
         setupSidebarStatePublisher()
         setupNotificationObservers()
@@ -221,48 +248,40 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Create a new split.
+    /// Create a split; `focus` false (`--no-select`) leaves the keyboard where it is.
     @discardableResult
     func newSplit(
         at oldView: Tako.SurfaceView,
         direction: SplitTree<Tako.SurfaceView>.NewDirection,
-        baseConfig config: Tako.SurfaceConfiguration? = nil
+        baseConfig config: Tako.SurfaceConfiguration? = nil,
+        focus: Bool = true
     ) -> Tako.SurfaceView? {
-        // We can only create new splits for surfaces in our tree.
         guard surfaceTree.root?.node(view: oldView) != nil else { return nil }
-
-        // Create a new surface view
         let newView = Tako.SurfaceView(tako, baseConfig: config)
-
-        // Do the split
         let newTree: SplitTree<Tako.SurfaceView>
         do {
-            newTree = try surfaceTree.inserting(
-                view: newView,
-                at: oldView,
-                direction: direction)
+            newTree = try surfaceTree.inserting(view: newView, at: oldView, direction: direction)
         } catch {
-            // If splitting fails for any reason (it should not), then we just log
-            // and return. The new view we created will be deinitialized and its
-            // no big deal.
             Tako.logger.warning("failed to insert split: \(error, privacy: .public)")
             return nil
         }
 
-        replaceSurfaceTree(
-            newTree,
-            moveFocusTo: newView,
-            moveFocusFrom: oldView,
-            undoAction: "New Split")
-
+        if usesFloatingCanvas {
+            floatingCanvas.setPendingSplitHint(.init(anchorId: oldView.id, newId: newView.id, direction: direction))
+        }
+        replaceSurfaceTree(newTree, moveFocusTo: focus ? newView : nil, moveFocusFrom: oldView, undoAction: "New Split")
         return newView
     }
 
     func focusSurface(_ view: Tako.SurfaceView) {
-        // Check if target surface is in our tree
         guard surfaceTree.contains(view) else { return }
-
-        // Move focus to the target surface and activate the window/app
+        if usesFloatingCanvas {
+            revealAndFocusFloatingPane(view)
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return
+        }
         DispatchQueue.main.async {
             Tako.moveFocus(to: view)
             if let window = view.window {
@@ -276,6 +295,9 @@ class BaseTerminalController: NSWindowController,
 
     func surfaceTreeDidChange(from: SplitTree<Tako.SurfaceView>, to: SplitTree<Tako.SurfaceView>) {
         for view in to { view.adopt(by: tako) }
+        if usesFloatingCanvas {
+            floatingCanvas.sync(with: to, fallbackSize: estimatedFloatingCanvasSize())
+        }
         let added = Set(to).subtracting(Set(from))
         let removed = Set(from).subtracting(Set(to))
         for view in added {
@@ -284,7 +306,6 @@ class BaseTerminalController: NSWindowController,
         for view in removed {
             view.publishEvent(type: "pane_closed", payload: [:])
         }
-        // If our surface tree becomes empty then we have no focused surface.
         if to.isEmpty {
             focusedSurface = nil
         }
@@ -369,38 +390,9 @@ class BaseTerminalController: NSWindowController,
 
     func focusedSurfaceDidChange(to: Tako.SurfaceView?) {
         let lastFocusedSurface = focusedSurface
+        updatingFocusedSurfaceFromDelegate = true
         focusedSurface = to
-
-        if let focused = to {
-            NotificationStore.shared.markRead(surfaceId: focused.id)
-            AttentionManager.shared.markSeen(surfaceId: focused.id)
-        }
-        SessionSidebarStore.shared.objectWillChange.send()
-
-        // Important to cancel any prior subscriptions
-        focusedSurfaceCancellables = []
-
-        // Setup our title listener. If we have a focused surface we always use that.
-        // Otherwise, we try to use our last focused surface. In either case, we only
-        // want to care if the surface is in the tree so we don't listen to titles of
-        // closed surfaces.
-        if let titleSurface = focusedSurface ?? lastFocusedSurface,
-           surfaceTree.contains(titleSurface) {
-            // If we have a surface, we want to listen for title changes.
-            titleSurface.$titleText
-                .combineLatest(titleSurface.$bell)
-                .map { [weak self] in self?.computeTitle(title: $0, bell: $1) ?? "" }
-                .sink { [weak self] in self?.titleDidChange(to: $0) }
-                .store(in: &focusedSurfaceCancellables)
-        } else {
-            // There is no surface to listen to titles for.
-            titleDidChange(to: "👻")
-        }
+        updatingFocusedSurfaceFromDelegate = false
+        bindFocusedSurfaceSubscriptions(previous: lastFocusedSurface)
     }
-
-
-    /// Override this to resync any appearance related properties. This will be called automatically
-    /// when certain window properties change that affect appearance. The list below should be updated
-    /// as we add new things:
-    ///
 }

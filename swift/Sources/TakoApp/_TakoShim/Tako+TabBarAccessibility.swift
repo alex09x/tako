@@ -35,6 +35,8 @@ extension Tako.TabBarView {
         "tab-bar"
     }
 
+    override func isAccessibilityEnabled() -> Bool { true }
+
     override func accessibilityHitTest(_ point: NSPoint) -> Any? {
         guard let children = accessibilityChildren() as? [NSAccessibilityElement] else {
             return self
@@ -54,11 +56,21 @@ extension Tako.TabBarView {
         }
         layoutTabs()
         var elements: [NSAccessibilityElement] = []
+        var previous: [String: TabBarChildAccessibilityElement] = [:]
+        for case let child as TabBarChildAccessibilityElement in cachedAccessibilityChildren {
+            if let id = child.accessibilityIdentifier() { previous[id] = child }
+        }
+        func element(_ id: String) -> TabBarChildAccessibilityElement {
+            let child = previous[id] ?? TabBarChildAccessibilityElement()
+            child.setAccessibilityParent(self)
+            child.setAccessibilityIdentifier(id)
+            child.setAccessibilityEnabled(true)
+            return child
+        }
 
         if showsWorkspacePill {
             let ws = WorkspaceStore.shared.activeWorkspace
-            let wsElem = TabBarChildAccessibilityElement()
-            wsElem.setAccessibilityParent(self)
+            let wsElem = element("workspace-pill")
             wsElem.setAccessibilityRole(.button)
             wsElem.setAccessibilityLabel("Workspace: \(ws.name)")
             wsElem.setAccessibilityTitle(ws.name)
@@ -76,17 +88,14 @@ extension Tako.TabBarView {
         }
 
         for tab in tabs {
-            let tabElem = TabBarChildAccessibilityElement()
-            tabElem.setAccessibilityParent(self)
+            let tabElem = element("tab-\(tab.index)")
             tabElem.setAccessibilityRole(.radioButton)
             let title = titleFor(tab.window)
             tabElem.setAccessibilityTitle(title)
             tabElem.setAccessibilityLabel(title)
             tabElem.setAccessibilityIdentifier("tab-\(tab.index)")
             tabElem.setAccessibilityValue((tab.isActive ? 1 : 0) as NSNumber)
-            if let paintedHex = paintedPillDots[ObjectIdentifier(tab.window)] {
-                tabElem.setAccessibilityHelp("dot:\(paintedHex)")
-            }
+            tabElem.setAccessibilityHelp(paintedPillDots[ObjectIdentifier(tab.window)].map { "dot:\($0)" })
             let localRect = pillRect(for: tab)
             let windowRect = convert(localRect, to: nil)
             tabElem.setAccessibilityFrame(window.convertToScreen(windowRect))
@@ -98,8 +107,7 @@ extension Tako.TabBarView {
             elements.append(tabElem)
         }
 
-        let plusElem = TabBarChildAccessibilityElement()
-        plusElem.setAccessibilityParent(self)
+        let plusElem = element("new-tab-button")
         plusElem.setAccessibilityRole(.button)
         plusElem.setAccessibilityLabel("New Tab")
         plusElem.setAccessibilityTitle("New Tab")

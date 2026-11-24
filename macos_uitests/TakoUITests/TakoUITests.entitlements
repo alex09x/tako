@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ tako — macOS UI test runner permissions
+ Copyright (c) 2026 Alexander Panasenko
+ Contact: alex@prod.codes
+ Author: https://prod.codes/about/
+ Project: https://github.com/alex09x/tako
+ SPDX-License-Identifier: MIT
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Only the isolated UI host's socket (SHA-256 prefix of its bundle ID).
+         The runner's network.client entitlement covers IP, not Unix sockets. -->
+    <key>com.apple.security.temporary-exception.sbpl</key>
+    <array>
+        <string>(allow network-outbound (regex #"^(/private)?/var/folders/[^/]+/[^/]+/T/tako-ctl-75802249693a[.]sock$"))</string>
+    </array>
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+    <array>
+        <string>/private/tmp/tkui/</string>
+    </array>
+    <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+    <array>
+        <string>/Library/Application Support/com.tako-core.terminal.uitest/</string>
+        <string>/Library/Saved Application State/com.tako-core.terminal.uitest.savedState/</string>
+    </array>
+    <key>com.apple.security.temporary-exception.shared-preference.read-write</key>
+    <array>
+        <string>com.tako-core.terminal.uitest</string>
+        <string>TAKO_UI_TESTS</string>
+    </array>
+</dict>
+</plist>

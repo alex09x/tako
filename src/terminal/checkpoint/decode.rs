@@ -162,6 +162,8 @@ pub fn import_traced_reserving(
         (CursorStyle::new(), restored != CursorStyle::new())
     };
 
+    let program_status = super::program_status::read_program_status(&mut r, version)?;
+
     let terminal = Terminal {
         primary,
         alternate,
@@ -227,6 +229,7 @@ pub fn import_traced_reserving(
         evicted_elevated: 0,
         clipboard_policy: ClipboardPolicy::WriteOnly,
         notification_timestamps: VecDeque::new(),
+        program_status,
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))

@@ -19,6 +19,8 @@ pub enum CapabilityScope {
     Layout,
     Signal,
     Overlay,
+    /// Writing the user's config file: only when asked for by name.
+    Config,
 }
 
 impl CapabilityScope {
@@ -29,6 +31,7 @@ impl CapabilityScope {
             Self::Layout => "layout",
             Self::Signal => "signal",
             Self::Overlay => "overlay",
+            Self::Config => "config",
         }
     }
 
@@ -39,8 +42,9 @@ impl CapabilityScope {
             "layout" => Ok(Self::Layout),
             "signal" => Ok(Self::Signal),
             "overlay" => Ok(Self::Overlay),
+            "config" => Ok(Self::Config),
             other => Err(format!(
-                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay"
+                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay, config"
             )),
         }
     }
@@ -59,7 +63,16 @@ impl Capabilities {
         scopes.insert(CapabilityScope::Layout);
         scopes.insert(CapabilityScope::Signal);
         scopes.insert(CapabilityScope::Overlay);
+        scopes.insert(CapabilityScope::Config);
         Self { scopes }
+    }
+
+    /// What `takoctl mcp` grants unless told otherwise: everything but
+    /// writing the user's settings, which is asked for by name.
+    pub fn default_set() -> Self {
+        let mut all = Self::all();
+        all.scopes.remove(&CapabilityScope::Config);
+        all
     }
 
     pub fn parse(s: &str) -> Result<Self, String> {

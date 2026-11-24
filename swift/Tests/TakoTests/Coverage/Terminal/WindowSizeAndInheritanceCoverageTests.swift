@@ -21,7 +21,7 @@ struct WindowSizeAndInheritanceCoverageTests {
     // MARK: - window-width / window-height
 
     @Test func aNewWindowIsSizedToTheConfiguredGridInCells() throws {
-        let (app, file) = try TerminalTestSupport.app(configText: "window-width = 200\nwindow-height = 60")
+        let (app, file) = try TerminalTestSupport.app(configText: "window-width = 80\nwindow-height = 20")
         defer { try? FileManager.default.removeItem(at: file) }
 
         let controller = TerminalController(app, withBaseConfig: nil, withSurfaceTree: nil)
@@ -36,23 +36,38 @@ struct WindowSizeAndInheritanceCoverageTests {
         defer { TerminalTestSupport.tearDown(controller, window) }
 
         let surface = try #require(controller.focusedSurface)
-        // 200 by 60 cells, plus the padding around them.
-        let padding = surface.theme.padding
-        let expected = NSSize(
-            width: surface.cellSize.width * 200 + padding.left + padding.right,
-            height: surface.cellSize.height * 60 + padding.top + padding.bottom)
-        #expect(surface.initialSize == expected)
-        let fitted = TerminalGridLayout(viewSize: expected, cellSize: surface.cellSize, theme: surface.theme)
-        #expect(fitted.cols == 200)
-        #expect(fitted.rows == 60)
+        let contentView = try #require(window.contentView)
+        contentView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        contentView.layoutSubtreeIfNeeded()
+        controller.reflowSurfaces(forcePtyResize: true)
 
-        // The window's content view (a `TerminalViewContainer`) reports the
-        // configured grid as its intrinsic size when it exceeds the size the
-        // terminal itself would naturally take up -- this is what actually
-        // grows the window on screen.
-        let contentSize = try #require(window.contentView?.intrinsicContentSize)
-        #expect(contentSize.width == expected.width)
-        #expect(contentSize.height == expected.height)
+        // A grid small enough to fit the screen without window constraints,
+        // in the padding it really sits in: the theme's with the command-mark gutter.
+        #expect(surface.commandMarksEnabled, "command marks are on by default")
+        let padding = surface.effectivePadding
+        #expect(padding.left >= TakoTerminalNSView.commandMarkGutter)
+        let expected = NSSize(
+            width: surface.cellSize.width * 80 + padding.left + padding.right,
+            height: surface.cellSize.height * 20 + padding.top + padding.bottom)
+        // The window adds the sidebar, the pane header, the card's margin round its
+        // terminal and the card's gap on every side.
+        let sidebarWidth = SessionSidebarWidth.current()
+        let gutter = 2 * DesktopCanvasMetrics.paneGap
+        let inset = FloatingPaneGeometry.bodyInsets
+        let contentSize = window.contentRect(forFrameRect: window.frame).size
+        #expect(contentSize.width == expected.width + sidebarWidth + gutter + inset.left + inset.right)
+        #expect(contentSize.height == expected.height + FloatingPaneGeometry.headerHeight + gutter + inset.top + inset.bottom)
+
+        // Verify the real mounted SurfaceView body dimensions and terminal cell grid,
+        // accounting for the 26pt internal floating pane header above the terminal body.
+        #expect(abs(surface.bounds.width - expected.width) < 1.0)
+        #expect(abs(surface.bounds.height - expected.height) < 1.0)
+        let fitted = surface.fittedGridLayout(for: surface.bounds.size)
+        #expect(fitted.cols == 80)
+        #expect(fitted.rows == 20)
+        #expect(surface.cols == 80)
+        #expect(surface.rows == 20)
     }
 
     @Test func windowWidthAloneWithoutWindowHeightDoesNothing() throws {

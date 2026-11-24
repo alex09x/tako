@@ -11,156 +11,324 @@
 import AppKit
 
 extension TerminalDialogView {
-    // MARK: - Layout & Grid Metrics
+    // MARK: - Look
 
-    var cellHeight: CGFloat { ceil(style.font.ascender - style.font.descender + style.font.leading) }
-
-    /// The font's own advance, not rounded: runs are placed by counting
-    /// cells, and a rounded width drifts from where the glyphs actually end.
-    var cellWidth: CGFloat { ("M" as NSString).size(withAttributes: [.font: style.font]).width }
-
-    var boldFont: NSFont { NSFontManager.shared.convert(style.font, toHaveTrait: .boldFontMask) }
-
-    var buttonsWidth: Int { buttons.reduce(0) { $0 + $1.title.count + 4 } + max(buttons.count - 1, 0) }
-
-    /// The card's size in cells: border, blank, body, blank, buttons, blank,
-    /// hint, border.
-    var columns: Int {
-        let longest = ([title.count + 8, hint.count, buttonsWidth + 2] + lines.map(\.width)).max() ?? 40
-        return min(longest + 6, max(Int(bounds.width / cellWidth) - 4, 24))
+    /// The shell's colours (`app-appearance`), so a question looks like the
+    /// other desktop sheets in light and in dark.
+    enum Palette {
+        static var card: NSColor { Tako.LivingTokens.surfaceActive }
+        static var hairline: NSColor { Tako.LivingTokens.ghostBorder }
+        static var title: NSColor { Tako.LivingTokens.text }
+        static var body: NSColor { Tako.LivingTokens.textInactive }
+        static var muted: NSColor { Tako.LivingTokens.faint }
+        static var field: NSColor { Tako.LivingTokens.body }
+        static var button: NSColor { Tako.LivingTokens.badge }
     }
 
-    /// Body lines that fit: no more than `maxBodyRows`, nor than the window holds.
+    static let cardRadius: CGFloat = 12
+    static let padding: CGFloat = 20
+    static let iconSize: CGFloat = 28
+    /// Where the title and the body start: past the icon tile.
+    static let textInset: CGFloat = padding + iconSize + 12
+    static let topInset: CGFloat = 18
+    static let buttonHeight: CGFloat = 28
+    static let minimumWidth: CGFloat = 440
+    static let titleFont = NSFont.systemFont(ofSize: 15, weight: .semibold)
+    static let bodyFont = NSFont.systemFont(ofSize: 13)
+    static let boldFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    static let hintFont = NSFont.systemFont(ofSize: 11)
+    static let buttonFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+    // MARK: - Layout
+
+    /// The height of one body row, in the interface font.
+    var cellHeight: CGFloat { ceil(Self.bodyFont.ascender - Self.bodyFont.descender + Self.bodyFont.leading) + 4 }
+
+    /// Code keeps the terminal's font, a point smaller than the text around it.
+    var codeFont: NSFont { NSFont(descriptor: style.font.fontDescriptor, size: 12) ?? style.font }
+
+    private func attributes(_ kind: TUIText.Run.Kind) -> [NSAttributedString.Key: Any] {
+        switch kind {
+        case .plain: [.font: Self.bodyFont, .foregroundColor: Palette.body]
+        case .bold: [.font: Self.boldFont, .foregroundColor: Palette.title]
+        case .heading: [.font: Self.boldFont, .foregroundColor: TakoTUI.claw]
+        case .bullet: [.font: Self.bodyFont, .foregroundColor: TakoTUI.ember]
+        case .muted: [.font: Self.bodyFont, .foregroundColor: Palette.muted]
+        case .code: [.font: codeFont, .foregroundColor: Palette.title]
+        case .link: [.font: Self.bodyFont, .foregroundColor: TakoTUI.claw,
+                     .underlineStyle: NSUnderlineStyle.single.rawValue]
+        }
+    }
+
+    private func width(_ text: String, _ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: attributes).width)
+    }
+
+    private var spaceWidth: CGFloat { (" " as NSString).size(withAttributes: [.font: Self.bodyFont]).width }
+
+    func width(of line: TUIText.Line) -> CGFloat {
+        CGFloat(line.indent) * spaceWidth + line.runs.reduce(0) { $0 + width($1.text, attributes($1.kind)) }
+    }
+
+    // MARK: - Body rows
+
+    /// The body as it is drawn: the caller's lines, wrapped again to the
+    /// card's real width. Callers wrap by character count, which bounds
+    /// nothing in a proportional font or a narrow window.
+    struct BodyLayout {
+        var cardWidth: CGFloat
+        var hasField: Bool
+        var rows: [TUIText.Line]
+        /// The first drawn row of each of the caller's lines.
+        var starts: [Int]
+    }
+
+    static let scrollGutter: CGFloat = 10
+
+    /// The widest the body may be drawn in a card `cardWidth` wide.
+    func bodyWidth(inCard cardWidth: CGFloat) -> CGFloat {
+        max(cardWidth - Self.textInset - Self.padding - Self.scrollGutter, 40)
+    }
+
+    var cardWidth: CGFloat {
+        let body: CGFloat
+        if let known = naturalBodyWidth { body = known } else {
+            body = lines.map(width(of:)).max() ?? 0
+            naturalBodyWidth = body
+        }
+        let needed = [
+            Self.textInset + body + Self.padding + Self.scrollGutter,
+            Self.textInset + width(title, [.font: Self.titleFont]) + Self.padding,
+            Self.padding * 2 + buttonsWidth,
+            Self.minimumWidth,
+        ].max() ?? Self.minimumWidth
+        return min(needed, max(bounds.width - 32, 240))
+    }
+
+    var bodyLayout: BodyLayout {
+        let cardWidth = cardWidth
+        let hasField = field != nil
+        if let cached = layoutCache, cached.cardWidth == cardWidth, cached.hasField == hasField { return cached }
+        let available = bodyWidth(inCard: cardWidth)
+        var rows: [TUIText.Line] = [], starts: [Int] = []
+        for (index, line) in lines.enumerated() {
+            starts.append(rows.count)
+            // The field's own line is not body text: the field has its own
+            // slot under the body (see `fieldSlot`).
+            if hasField, index == fieldRow { continue }
+            rows.append(contentsOf: reflow(line, to: available))
+        }
+        let layout = BodyLayout(cardWidth: cardWidth, hasField: hasField, rows: rows, starts: starts)
+        layoutCache = layout
+        return layout
+    }
+
+    /// Words with the spaces that follow them, so a row breaks after a space.
+    private func pieces(_ text: String) -> [String] {
+        var result: [String] = [], current = "", afterSpace = false
+        for character in text {
+            if character != " ", afterSpace {
+                result.append(current)
+                current = ""
+            }
+            afterSpace = character == " "
+            current.append(character)
+        }
+        if !current.isEmpty { result.append(current) }
+        return result
+    }
+
+    /// `line` on as many rows as `available` points need: broken between
+    /// words, and inside a word longer than a row. Every character is kept
+    /// and each run keeps its style.
+    private func reflow(_ line: TUIText.Line, to available: CGFloat) -> [TUIText.Line] {
+        guard width(of: line) > available else { return [line] }
+        let indent = CGFloat(line.indent) * spaceWidth
+        var rows: [TUIText.Line] = [], current: [TUIText.Run] = [], used = indent
+        func flush() {
+            rows.append(TUIText.Line(indent: line.indent, runs: current))
+            current = []
+            used = indent
+        }
+        func add(_ text: String, _ kind: TUIText.Run.Kind, _ advance: CGFloat) {
+            if let last = current.last, last.kind == kind {
+                current[current.count - 1].text += text
+            } else {
+                current.append(TUIText.Run(text: text, kind: kind))
+            }
+            used += advance
+        }
+        for run in line.runs {
+            let attributes = attributes(run.kind)
+            for var piece in pieces(run.text) {
+                if used + width(piece, attributes) > available, !current.isEmpty { flush() }
+                while used + width(piece, attributes) > available, piece.count > 1 {
+                    var head = ""
+                    for character in piece {
+                        if !head.isEmpty, used + width(head + String(character), attributes) > available { break }
+                        head.append(character)
+                    }
+                    guard head.count < piece.count else { break }
+                    add(head, run.kind, 0)
+                    flush()
+                    piece = String(piece.dropFirst(head.count))
+                }
+                add(piece, run.kind, width(piece, attributes))
+            }
+        }
+        if !current.isEmpty || rows.isEmpty { flush() }
+        return rows
+    }
+
+    func buttonWidth(_ button: DialogButton) -> CGFloat {
+        max(width(button.title, [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]) + 28, 72)
+    }
+
+    private var buttonsWidth: CGFloat {
+        buttons.reduce(0) { $0 + buttonWidth($1) } + CGFloat(max(buttons.count - 1, 0)) * 8
+    }
+
+    /// The input of a text question sits in its own slot between the body
+    /// and the buttons, so a long label scrolls above it and it can never
+    /// reach the buttons or leave the card.
+    var fieldSlot: CGFloat { field == nil ? 0 : cellHeight + 14 }
+
+    /// Body lines that fit: no more than `maxBodyRows`, nor than the window
+    /// holds -- at least one, the rest is reached by scrolling.
     var visibleRows: Int {
-        let fit = Int(bounds.height / cellHeight) - 9
-        return max(1, min(lines.count, Self.maxBodyRows, max(fit, 3)))
+        let chrome = Self.topInset + Self.iconSize + 6 + fieldSlot + 14 + Self.buttonHeight + 16
+        let fit = Int((bounds.height - chrome - 32) / cellHeight)
+        return max(1, min(bodyLayout.rows.count, Self.maxBodyRows, fit))
     }
 
-    var maxOffset: Int { max(lines.count - visibleRows, 0) }
+    var maxOffset: Int { max(bodyLayout.rows.count - visibleRows, 0) }
 
-    var rows: Int { visibleRows + 7 }
-
-    /// The top-left of the cell at `column`, `row` of the card, which sits on
-    /// whole cells in the middle of the window.
-    func cell(_ column: Int, _ row: Int) -> NSPoint {
-        let left = floor((bounds.width / cellWidth - CGFloat(columns)) / 2) * cellWidth
-        let top = max(floor((bounds.height / cellHeight - CGFloat(rows)) / 2), 0) * cellHeight
-        return NSPoint(x: left + CGFloat(column) * cellWidth, y: top + CGFloat(row) * cellHeight)
-    }
-
+    /// The card, in the middle of the window: as wide as its longest line,
+    /// its title or its buttons ask for, never narrower than the other
+    /// sheets' cards nor wider than the window allows.
     var cardRect: NSRect {
-        let origin = cell(0, 0)
-        return NSRect(x: origin.x, y: origin.y, width: CGFloat(columns) * cellWidth, height: CGFloat(rows) * cellHeight)
+        let cardWidth = cardWidth
+        let cardHeight = Self.topInset + Self.iconSize + 6 + CGFloat(visibleRows) * cellHeight
+            + fieldSlot + 14 + Self.buttonHeight + 16
+        return NSRect(x: floor((bounds.width - cardWidth) / 2), y: max(floor((bounds.height - cardHeight) / 2), 0),
+                      width: cardWidth, height: cardHeight)
     }
+
+    /// The top-left of body row `row` (0 is the first visible one).
+    func bodyOrigin(row: Int) -> NSPoint {
+        let card = cardRect
+        return NSPoint(x: card.minX + Self.textInset,
+                       y: card.minY + Self.topInset + Self.iconSize + 6 + CGFloat(row) * cellHeight)
+    }
+
+    private var buttonRowY: CGFloat { cardRect.maxY - 16 - Self.buttonHeight }
 
     override func layout() {
         super.layout()
-        // On the buttons row, right-aligned, a cell apart.
-        var column = columns - 3
+        // Right-aligned on the last row, the action outermost.
+        var right = cardRect.maxX - Self.padding
         for button in buttons.reversed() {
-            let width = button.title.count + 4
-            column -= width
-            let origin = cell(column, rows - 4)
-            button.frame = NSRect(x: origin.x, y: origin.y, width: CGFloat(width) * cellWidth, height: cellHeight)
-            column -= 1
+            let buttonWidth = buttonWidth(button)
+            button.frame = NSRect(x: right - buttonWidth, y: buttonRowY, width: buttonWidth, height: Self.buttonHeight)
+            right -= buttonWidth + 8
         }
         if let field {
-            // The field on its row, the whole width inside the frame's padding.
-            let origin = cell(3, 2 + fieldRow - offset)
-            field.frame = NSRect(x: origin.x - cellWidth / 2, y: origin.y,
-                                 width: CGFloat(columns - 5) * cellWidth, height: cellHeight)
+            // Under the body's last visible row, whatever the body scrolls to.
+            let origin = bodyOrigin(row: visibleRows)
+            field.frame = NSRect(x: origin.x, y: origin.y + 7,
+                                 width: cardRect.maxX - Self.padding - origin.x, height: cellHeight + 2)
         }
     }
 
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        // The card of the desktop sheets (Settings, Set Up Tako): a rounded
+        // panel in the shell's colours with a hairline and a soft shadow.
         let card = cardRect
-        style.background.setFill()
-        card.fill()
-
-        // The colour of column `c`, from one accent to the other across the card.
-        let gradient = NSGradient(starting: style.accent, ending: style.accentEnd)
-        func shade(_ column: Int) -> NSColor {
-            gradient?.interpolatedColor(atLocation: CGFloat(column) / CGFloat(max(columns - 1, 1))) ?? style.accent
-        }
-
-        // The frame, drawn as the terminal draws box-drawing characters:
-        // lines through the middle of the edge cells, corners rounded by half
-        // a cell -- ╭─╮ │ ╰─╯ -- clipped to the shaded gradient.
-        let inset = NSRect(x: card.minX + cellWidth / 2, y: card.minY + cellHeight / 2,
-                           width: card.width - cellWidth, height: card.height - cellHeight)
-        let radius = min(cellWidth, cellHeight) / 2
-        let frame = NSBezierPath(roundedRect: inset, xRadius: radius, yRadius: radius)
+        let panel = NSBezierPath(roundedRect: card, xRadius: Self.cardRadius, yRadius: Self.cardRadius)
         NSGraphicsContext.saveGraphicsState()
-        let stroke = frame.cgPath.copy(strokingWithWidth: 1.25, lineCap: .butt, lineJoin: .round, miterLimit: 1)
-        NSBezierPath(cgPath: stroke).addClip()
-        gradient?.draw(in: card, angle: 0)
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
+        shadow.shadowBlurRadius = 30
+        shadow.shadowOffset = NSSize(width: 0, height: -12)
+        shadow.set()
+        Palette.card.setFill()
+        panel.fill()
         NSGraphicsContext.restoreGraphicsState()
+        Palette.hairline.setStroke()
+        let edge = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: Self.cardRadius, yRadius: Self.cardRadius)
+        edge.lineWidth = 1
+        edge.stroke()
 
-        // The title on a gap in the top border, then hatching to the corner:
-        // ╭─ Close Terminal? ╱╱╱╱╱╱╱╱╮
-        let titleStart = 2
-        let gap = cell(titleStart, 0)
-        style.background.setFill()
-        NSRect(x: gap.x, y: gap.y, width: CGFloat(columns - titleStart - 2) * cellWidth, height: cellHeight).fill()
-        draw(title, column: titleStart + 1, row: 0, font: boldFont, color: TakoTUI.claw)
-        let hatchStart = titleStart + title.count + 2
-        if hatchStart < columns - 2 {
-            for column in hatchStart..<(columns - 2) {
-                draw("╱", column: column, row: 0, font: style.font, color: shade(column))
-            }
-        }
+        // The icon tile: red for a destructive question, Claw otherwise.
+        let destructive = buttons.contains(where: \.isDestructive)
+        let tint = destructive ? TakoTUI.danger : TakoTUI.claw
+        let tile = NSRect(x: card.minX + Self.padding, y: card.minY + Self.topInset,
+                          width: Self.iconSize, height: Self.iconSize)
+        tint.withAlphaComponent(0.15).setFill()
+        NSBezierPath(roundedRect: tile, xRadius: 8, yRadius: 8).fill()
+        let glyph = destructive ? "!" : (buttons.count > 1 ? "?" : "i")
+        let glyphAttributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 15, weight: .bold),
+                                                              .foregroundColor: tint]
+        let glyphSize = (glyph as NSString).size(withAttributes: glyphAttributes)
+        (glyph as NSString).draw(at: NSPoint(x: tile.midX - glyphSize.width / 2, y: tile.midY - glyphSize.height / 2),
+                                 withAttributes: glyphAttributes)
 
+        // The title beside it, in the interface font.
+        let titleAttributes: [NSAttributedString.Key: Any] = [.font: Self.titleFont, .foregroundColor: Palette.title]
+        let titleSize = (title as NSString).size(withAttributes: titleAttributes)
+        (title as NSString).draw(at: NSPoint(x: card.minX + Self.textInset, y: tile.midY - titleSize.height / 2),
+                                 withAttributes: titleAttributes)
+
+        let rows = bodyLayout.rows
         offset = min(offset, maxOffset)
-        for (index, line) in lines[offset..<min(offset + visibleRows, lines.count)].enumerated() {
-            var column = 3 + line.indent
+        for (index, line) in rows[offset..<min(offset + visibleRows, rows.count)].enumerated() {
+            let origin = bodyOrigin(row: index)
+            var x = origin.x + CGFloat(line.indent) * spaceWidth
             for run in line.runs {
-                draw(run, column: column, row: 2 + index)
-                column += run.text.count
+                x += draw(run, at: NSPoint(x: x, y: origin.y))
             }
         }
-        // Where the view is in a body that scrolls: a thumb on the right
-        // edge of the frame, in Ember.
+        // Where the view is in a body that scrolls: a thumb on the right edge.
         if maxOffset > 0 {
-            let track = NSRect(x: card.maxX - cellWidth / 2 - 1.5, y: cell(0, 2).y,
+            let track = NSRect(x: card.maxX - 10, y: bodyOrigin(row: 0).y,
                                width: 3, height: CGFloat(visibleRows) * cellHeight)
-            let thumbHeight = max(track.height * CGFloat(visibleRows) / CGFloat(lines.count), cellHeight)
+            let thumbHeight = max(track.height * CGFloat(visibleRows) / CGFloat(rows.count), cellHeight)
             let thumbY = track.minY + (track.height - thumbHeight) * CGFloat(offset) / CGFloat(maxOffset)
-            TakoTUI.ember.setFill()
+            Palette.hairline.setFill()
             NSBezierPath(roundedRect: NSRect(x: track.minX, y: thumbY, width: track.width, height: thumbHeight),
                          xRadius: 1.5, yRadius: 1.5).fill()
         }
-        draw(hint, column: 3, row: rows - 2, font: style.font, color: style.muted)
-    }
 
-    private func draw(_ run: TUIText.Run, column: Int, row: Int) {
-        let origin = cell(column, row)
-        var attributes: [NSAttributedString.Key: Any]
-        switch run.kind {
-        case .plain: attributes = [.font: style.font, .foregroundColor: TakoTUI.soft]
-        case .bold: attributes = [.font: boldFont, .foregroundColor: TakoTUI.bright]
-        case .heading: attributes = [.font: boldFont, .foregroundColor: TakoTUI.claw]
-        case .bullet: attributes = [.font: style.font, .foregroundColor: TakoTUI.ember]
-        case .muted: attributes = [.font: style.font, .foregroundColor: style.muted]
-        case .code:
-            TakoTUI.field.setFill()
-            NSRect(x: origin.x, y: origin.y, width: CGFloat(run.text.count) * cellWidth, height: cellHeight).fill()
-            attributes = [.font: style.font, .foregroundColor: TakoTUI.claw]
-        case .link:
-            attributes = [.font: style.font, .foregroundColor: TakoTUI.claw,
-                          .underlineStyle: NSUnderlineStyle.single.rawValue]
+        // The keys, quietly, left of the buttons; cut where the buttons begin.
+        let hintAttributes: [NSAttributedString.Key: Any] = [.font: Self.hintFont, .foregroundColor: Palette.muted]
+        let hint = maxOffset > 0 && !hint.hasPrefix("↑↓") ? "↑↓ scroll · " + hint : hint
+        let hintSize = (hint as NSString).size(withAttributes: hintAttributes)
+        let room = card.width - Self.padding * 2 - buttonsWidth - 12
+        if room > 40 {
+            NSGraphicsContext.saveGraphicsState()
+            NSRect(x: card.minX + Self.padding, y: buttonRowY, width: room, height: Self.buttonHeight).clip()
+            (hint as NSString).draw(at: NSPoint(x: card.minX + Self.padding,
+                                                y: buttonRowY + (Self.buttonHeight - hintSize.height) / 2),
+                                    withAttributes: hintAttributes)
+            NSGraphicsContext.restoreGraphicsState()
         }
-        let height = (run.text as NSString).size(withAttributes: attributes).height
-        (run.text as NSString).draw(at: NSPoint(x: origin.x, y: origin.y + (cellHeight - height) / 2),
-                                    withAttributes: attributes)
     }
 
-    private func draw(_ text: String, column: Int, row: Int, font: NSFont, color: NSColor) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        let origin = cell(column, row)
-        let height = (text as NSString).size(withAttributes: attributes).height
-        (text as NSString).draw(at: NSPoint(x: origin.x, y: origin.y + (cellHeight - height) / 2),
-                                withAttributes: attributes)
+    /// Draws `run` at `point` on its row and returns how far it advanced.
+    private func draw(_ run: TUIText.Run, at point: NSPoint) -> CGFloat {
+        let attributes = attributes(run.kind)
+        let size = (run.text as NSString).size(withAttributes: attributes)
+        let advance = ceil(size.width)
+        if run.kind == .code {
+            Palette.field.setFill()
+            NSBezierPath(roundedRect: NSRect(x: point.x - 2, y: point.y + 1, width: advance + 4, height: cellHeight - 2),
+                         xRadius: 4, yRadius: 4).fill()
+        }
+        (run.text as NSString).draw(at: NSPoint(x: point.x, y: point.y + (cellHeight - size.height) / 2),
+                                    withAttributes: attributes)
+        return advance
     }
 }

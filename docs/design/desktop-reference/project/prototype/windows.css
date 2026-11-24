@@ -1,0 +1,9 @@
+/* Tako desktop prototype — floating-pane toggle in the pane header: the SF Symbol rectangle.on.rectangle (AppKit export),
+   tinted through a mask so it follows the theme; pressed state = floating. One control, no text label. */
+.wb.fl{position:relative}
+.wb.fl::after{content:'';position:absolute;inset:-3px}
+.wb.fl .sym{width:16px;height:16px;background:currentColor;-webkit-mask:url(icons/rectangle.on.rectangle.png) center/contain no-repeat;mask:url(icons/rectangle.on.rectangle.png) center/contain no-repeat}
+.wb.fl.on{color:var(--claw);background:rgba(255,122,61,.14)}
+.wb.fl.on:hover{background:rgba(255,122,61,.22);color:var(--claw)}
+.wb:focus-visible{outline:none;box-shadow:0 0 0 1.5px var(--claw);opacity:1}
+.fw-btns:focus-within{opacity:1}

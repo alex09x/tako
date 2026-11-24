@@ -66,6 +66,11 @@ pub const PROD_VT_ERR_DIMENSION_OUT_OF_BOUNDS: c_int = -9;
 pub const PROD_VT_ERR_ALLOCATION_LIMIT: c_int = -10;
 /// The container exceeds the wire cap, on export or on import.
 pub const PROD_VT_ERR_TOO_LARGE: c_int = -11;
+/// One or more terminal replies exceeded the bounded FIFO reply queue.
+pub const PROD_VT_ERR_REPLY_OVERFLOW: c_int = -12;
+
+/// Version of the additive `OSC 7501` Program Status + classified reply C ABI.
+pub const PROD_VT_PROGRAM_STATUS_ABI_VERSION: u32 = 1;
 
 /// Header and geometry of a checkpoint, as one C-visible record.
 #[repr(C)]

@@ -36,7 +36,7 @@ extension TakoTerminalNSView {
             updateStickyHeaderHover(false)
             NSCursor.arrow.set()
         }
-        refreshHoveredLink(commandHeld: event.modifierFlags.contains(.command))
+        refreshHoveredLinkForMouseMovement(at: point, commandHeld: event.modifierFlags.contains(.command))
         if point.x < gridLayout.left, let cell = mouseCell, let markInfo = gutterCommandMarksByRow[cell.row] {
             var tooltipLines: [String] = []
             let statusStr: String = {

@@ -1,0 +1,19 @@
+/* main path vs ideas; the «Сверка с Tako 526» table in the spec */
+body:not(.ideas) .dbtn.idea { display: none; }
+.notes .rt-n { margin: 4px 0 8px; font-size: 11px; opacity: .75; }
+/* the spec panel is narrow: each row reads as a small card — item, mechanism, status */
+.notes table.rt, .notes .rt tbody, .notes .rt tr, .notes .rt td { display: block; width: auto; }
+.notes table.rt { font-size: 11px; margin-bottom: 14px; }
+.notes .rt tr:first-child { display: none; }
+.notes .rt tr { padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.1); }
+.notes .rt td { padding: 1px 0; }
+.notes .rt td:first-child { font-weight: 600; }
+.notes .rt td:nth-child(2) { opacity: .75; }
+.notes .rt td.ok { color: #2E7D3A; }
+.notes .rt td.part { color: #8A5A00; }
+.notes .rt td.idea { color: #C2410C; }
+.notes .rt td.ask { color: #B42318; }
+/* access cards inside the 600 pt settings window: the text keeps its width, actions move under it */
+.setwin .pc { flex-wrap: wrap; row-gap: 6px; }
+.setwin .pc .pt { min-width: 220px; }
+.setwin .pc .pa { margin-left: auto; }

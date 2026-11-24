@@ -77,6 +77,14 @@ extension TerminalWindow {
     }
 
     func tabBarDidDisappear() {
+        // Tako has its own strip. Reintroducing this native accessory makes
+        // AppKit paint an opaque titlebar above that strip, including on Tahoe.
+        guard tabbingMode != .disallowed else {
+            if let index = titlebarAccessoryViewControllers.firstIndex(of: resetZoomAccessory) {
+                removeTitlebarAccessoryViewController(at: index)
+            }
+            return
+        }
         if styleMask.contains(.titled) {
             if titlebarAccessoryViewControllers.firstIndex(of: resetZoomAccessory) == nil {
                 addTitlebarAccessoryViewController(resetZoomAccessory)

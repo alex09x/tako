@@ -10,8 +10,8 @@
 
 import Foundation
 
-/// The cursor's blink, on the Mac and the phone alike (Terminal UI: "мигание
-/// 1.2s"; Mobile UI: "мигание 1.2s (60% on / 40% off)").
+/// The cursor's blink, on the Mac and the phone alike (Terminal UI: "blink
+/// 1.2s"; Mobile UI: "blink 1.2s (60% on / 40% off)").
 public enum CursorBlink {
     public static let period: TimeInterval = 1.2
     public static let litShare = 0.6

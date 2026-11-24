@@ -181,6 +181,11 @@ impl Terminal {
 
         if params[0] == b"3008" {
             self.handle_osc_3008(params);
+            return;
+        }
+
+        if params[0] == b"7501" {
+            self.handle_osc_7501(params, bell_terminated);
         }
     }
 }

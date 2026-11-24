@@ -113,11 +113,7 @@ extension Tako.SurfaceView {
                 ? bounds.size
                 : (window?.contentView?.bounds.size ?? initialSize ?? .zero)
             if candidateSize.width > 0 && candidateSize.height > 0 {
-                let fitted = TerminalGridLayout(
-                    viewSize: candidateSize,
-                    cellSize: CGSize(width: cellWidth, height: cellHeight),
-                    theme: theme
-                )
+                let fitted = fittedGridLayout(for: candidateSize)
                 if fitted.cols > 0 && fitted.rows > 0 {
                     initialCols = fitted.cols
                     initialRows = fitted.rows
@@ -169,12 +165,16 @@ extension Tako.SurfaceView {
                 }
                 if Tako.MetalTerminalHost.requiresSynchronousMainApplication(
                     output: outcome.output,
-                    events: outcome.events
+                    events: outcome.events,
+                    replyOverflowCount: outcome.replyOverflowCount,
+                    statusOverflowCoalesced: outcome.statusOverflowCoalesced
                 ) {
                     DispatchQueue.main.sync {
                         // Replies go to the process that asked; effects only
                         // while it is still this terminal's process.
-                        if !outcome.output.isEmpty { started?.write(outcome.output) }
+                        self.deliverFeedReplies(outcome) { bytes in
+                            started?.write(bytes)
+                        }
                         guard self.currentProcess === started else { return }
                         for event in outcome.events {
                             switch event {
@@ -190,8 +190,7 @@ extension Tako.SurfaceView {
                                 }
                                 self.publishEvent(type: "cwd", payload: ["cwd": .string(self.pwd ?? url)])
                             case .titleChanged(let title):
-                                self.title = title
-                                self.onTitleChange?(self)
+                                self.applyTerminalTitle(title)
                                 self.publishEvent(type: "title", payload: ["title": .string(title)])
                             case .clipboardSet(let text):
                                 NSPasteboard.general.clearContents()
@@ -230,6 +229,7 @@ extension Tako.SurfaceView {
                             case let .notificationClose(id, reportClose):
                                 self.closeStructuredNotification(id: id, reportClose: reportClose)
                             case .progress(let state, let value):
+                                guard !self.crab.osc7501StatusActive else { break }
                                 self.crab.progressReported(state: state, value: value)
                                 self.progressReport = state == 0 ? nil : .init(
                                     state: state == 2 ? .error : (state == 3 ? .indeterminate : (state == 4 ? .pause : .set)),
@@ -272,8 +272,12 @@ extension Tako.SurfaceView {
                                 self.crab.isFocused = self.isBeingLookedAt
                                 let kind = self.crab.commandKind ?? .batch
                                 self.crab.commandEnded(exitCode: exitCode)
-                                self.progressReport = nil
-                                self.updateProgressBar(state: .none, progress: nil)
+                                if let statusSnap = self.crab.lastProgramStatusSnapshot, statusSnap.effective != nil {
+                                    self.applyProgramStatusProgressBar(from: statusSnap)
+                                } else {
+                                    self.progressReport = nil
+                                    self.updateProgressBar(state: .none, progress: nil)
+                                }
                                 (NSApp.delegate as? AppDelegate)?.setDockBadge()
                                 Tako.TabBarController.refreshAll()
                                 self.commandEnded(exitCode: exitCode, kind: kind)
@@ -317,7 +321,22 @@ extension Tako.SurfaceView {
                             case .contextPush, .contextPop, .contextClear:
                                 self.updateContextState()
                                 self.publishEvent(type: "context", payload: self.currentContextPayload())
+                            case .programStatusChanged(let ffiUpdate, let ffiSnapshot):
+                                self.applyProgramStatusEvent(
+                                    .updated(
+                                        TerminalProgramStatusUpdate(ffi: ffiUpdate),
+                                        snapshot: TerminalProgramStatusSnapshot(ffi: ffiSnapshot)
+                                    )
+                                )
                             }
+                        }
+                        if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
+                            self.applyProgramStatusEvent(
+                                .overflowCoalesced(
+                                    fromRevision: outcome.statusOverflowFromRevision,
+                                    snapshot: TerminalProgramStatusSnapshot(ffi: ffiResync)
+                                )
+                            )
                         }
                     }
                 }
@@ -368,29 +387,4 @@ extension Tako.SurfaceView {
                 "active_tint": core.activeTint().map(JSON.string) ?? .null,
             ]
         }
-
-        /// Paints a saved screen, then the line that says where it ends.
-
-        func afterPendingOutput(_ work: @escaping () -> Void) {
-            parserQueue.async(execute: work)
-        }
-
-        /// Encoded with the surface: whether its shell lived in a persistent
-        /// session, so a restored terminal with no record of one is known to
-        /// have lost it rather than never had it.
-        /// What Return does while the terminal waits on its session.
-
-        /// Set as soon as the terminal's shell is meant to live in a session
-        /// -- and kept when reaching it fails, so the saved window still says so.
-
-        public func close() {
-            BroadcastInputStore.shared.paneClosed(id)
-            InputOwnershipStore.shared.remove(paneId: id)
-            // Its overlay goes with it: whoever waits on a form there is told,
-            // and the file watcher stops.
-            OverlayStore.shared.closeOverlay(paneId: id)
-            SecureInput.shared.removeScoped(ObjectIdentifier(self))
-            pty?.terminate()
-        }
-
 }

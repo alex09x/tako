@@ -1,0 +1,93 @@
+# Set up Tako
+
+Tako opens its setup guide after the first terminal window is ready. All steps
+are optional. **Finish later** remembers the current step; use **Tako → Set Up
+Tako…** or **Settings (⌘,) → Setup…** to return. Closing the guide leaves your
+terminal and running programs in place.
+
+If no terminal window is open, explicitly choosing **Set Up Tako…** opens a
+clean terminal for the guide. Automatic setup waits for the first usable
+terminal window; it respects `initial-window = false`.
+
+## Appearance
+
+Choose a color preset to preview it immediately. Colors save automatically;
+your terminal font, size and layout stay as configured. Edit full themes and
+typography in **Settings**. Workspace and pane overrides retain their priority.
+
+## Command line
+
+**Install takoctl** links this app's bundled CLI into a writable bin directory.
+It preserves unrelated programs. Add that directory to your shell's `PATH` if needed.
+
+```sh
+takoctl split right
+takoctl workspace list
+takoctl theme list
+```
+
+## AI agents
+
+Choose detected agents and press **Connect selected**. Tako installs its hooks
+and skill, preserves unrelated configuration, and reports each connection's status.
+Already connected agents are checked without reinstalling them.
+
+## Permissions
+
+The setup step shows six access cards with a short purpose and current action.
+Click a card to request, check or configure access. App control is a secondary
+link; agents and notifications keep their own setup steps.
+
+| Action | What happens |
+| --- | --- |
+| **Your files** | Checks Desktop, Documents and Downloads; macOS may request access. |
+| **Protected files** | Opens Full Disk Access and shows this app's draggable icon on the same setup page. |
+| **Notifications** | Requests task alerts, or opens Settings after a previous denial. |
+| **Microphone** | Uses the native consent dialog, or Settings after denial. |
+| **Local Network** | Attempts Apple's no-traffic UDP consent trigger; an attempt never means permission was granted. |
+| **System Audio** | Explains the recording-time request and opens its Settings page; playback needs no recording access. |
+| **Screen Recording / Automation** | Requests screen access, or explains app-specific automation setup. |
+
+The protected-files action opens Settings directly, without a second guide
+window or Back button. Drag the inline app icon into Full Disk Access and turn
+its switch on. Select this application bundle, not an arbitrary shell or zmx
+process. The icon's context menu keeps **Copy app path** and **Show app in Finder**
+available as fallbacks. Reopen the app only if macOS asks. Cards
+show a checkmark only for access the app can actually verify; an attempted
+request or opened Settings page is never treated as a grant.
+
+The file check opens and closes directory handles without reading file names
+or contents. Results apply to Tako and each tested folder; they do not establish
+Full Disk Access or access for every terminal program.
+
+Microphone and screen requests use system consent APIs without recording.
+Permissions without a public status API remain managed in macOS Settings.
+
+## Notifications
+
+**Enable notifications** requests alerts, sounds and badges. **Send test notification**
+submits one test and checks for that exact request in macOS Notification Center.
+Delivery is reported only after a matching receipt; acceptance alone is labeled
+unconfirmed. Repeated tests replace only previous setup tests, preserving task alerts.
+
+macOS may hide banners during Focus or screen sharing even when app notifications
+are enabled. The guide links to Settings; it never changes global privacy settings
+or bypasses suppression automatically. Banners also require an enabled alert style.
+
+## Returning to setup
+
+Skipping optional integrations does not prevent ordinary terminal use. Opening
+setup does not request access. File checks and
+permission requests require an explicit action. Camera access is not requested.
+Tako renders screenshots of its own terminal content without reading other
+apps' screens.
+
+Setup progress records navigation and explicit choices. Installed components
+and permissions are checked again rather than inferred from a previous click.
+Existing “Don't Ask Again” choices are preserved; a previous agent decline
+leaves agents unselected until you choose them.
+Explicit agent selections, including unchecking every agent, are remembered
+when you finish later or close and reopen the guide.
+
+After finishing or dismissing the guide, it does not reopen automatically on
+every launch. Release notes remain a separate notice for later app versions.

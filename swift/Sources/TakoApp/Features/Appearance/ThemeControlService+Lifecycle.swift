@@ -17,6 +17,7 @@ extension ThemeControlService {
         result += appearances.references(toPreset: name).map { scope in
             switch scope {
             case .workspace(let id): return "workspace:\(id.uuidString.lowercased())"
+            case .session(let id): return "session:\(id.lowercased())"
             case .pane(let id): return "pane:\(id.uuidString.lowercased())"
             }
         }

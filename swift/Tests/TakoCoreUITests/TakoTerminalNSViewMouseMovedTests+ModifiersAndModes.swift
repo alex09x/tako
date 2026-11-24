@@ -124,7 +124,7 @@ extension TakoTerminalNSViewMouseMovedTests {
                 let reports = parseSGRReports(delegate.inputDataReceived)
                 XCTAssertEqual(reports.count, 1, "Expected exactly 1 report for modifier: \(label)")
                 guard reports.count == 1 else { continue }
-                XCTAssertEqual(reports[0], "\u{1b}[<\(expectedButtonCode);7;4M", "Incorrect code for modifier: \(label)")
+                XCTAssertEqual(reports[0], "\u{1b}[<\(expectedButtonCode);\(sgrColumn(50, in: view));4M", "Incorrect code for modifier: \(label)")
 
                 XCTAssertEqual(spy.receivedEvents.count, 0, "Expected 0 spy events for modifier: \(label)")
             }
@@ -190,7 +190,7 @@ extension TakoTerminalNSViewMouseMovedTests {
             let onReports = parseSGRReports(delegate.inputDataReceived)
             XCTAssertEqual(onReports.count, 1)
             guard onReports.count == 1 else { return }
-            XCTAssertEqual(onReports[0], "\u{1b}[<35;7;4M")
+            XCTAssertEqual(onReports[0], "\u{1b}[<35;\(sgrColumn(50, in: view));4M")
             XCTAssertEqual(spy.receivedEvents.count, 0)
 
             // --- Phase 3: Leave Reporting Mode (?1003l?1006l) ---

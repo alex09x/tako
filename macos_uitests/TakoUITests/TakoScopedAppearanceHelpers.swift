@@ -13,7 +13,7 @@ import XCTest
 
 @MainActor final class TakoScopedAppearanceHelpers {
     enum ObservationError: Error { case unavailable(String) }
-    static let bundleID = "com.tako-core.terminal.uitest"
+    static let bundleID = TakoCustomConfigCase.testBundleID
     let testRoot: URL
     let configFile: URL
     let defaultsSuite: String
@@ -31,7 +31,7 @@ import XCTest
     init() throws {
         testRoot = FileManager.default.temporaryDirectory.appendingPathComponent("tako-ui-\(UUID().uuidString)")
         configFile = testRoot.appendingPathComponent("config")
-        defaultsSuite = "TAKO_UI_TESTS_SCOPED_\(UUID().uuidString)"
+        defaultsSuite = "\(TakoCustomConfigCase.defaultsSuiteName)_SCOPED_\(UUID().uuidString)"
         support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(Self.bundleID)
         savedSupport = testRoot.appendingPathComponent("previous-test-support")
         previousApp = NSWorkspace.shared.frontmostApplication
@@ -71,7 +71,7 @@ import XCTest
         application.launch()
         self.app = application
         XCTAssertTrue(application.windows.firstMatch.waitForExistence(timeout: 10))
-        let terminal = application.groups["Terminal pane"].firstMatch
+        let terminal = Self.terminalPane(in: application)
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
         primaryPaneID = try identifyPane(terminal, title: "Scope Primary", slot: "primary")
         return application
@@ -159,6 +159,14 @@ import XCTest
         let dialog = app.groups["TerminalSettingsDialog"]
         XCTAssertTrue(dialog.waitForExistence(timeout: 5))
         return dialog
+    }
+
+    /// The first terminal on the floating canvas: its `terminal` text view, the surface the
+    /// split tree's "Terminal pane" group used to wrap. Canvas panes are `FloatingPane-<uuid>`
+    /// groups with a header, so the text view, not the group, is what holds only the terminal.
+    static func terminalPane(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["FloatingTerminalCanvas"].firstMatch
+            .textViews.matching(identifier: "terminal").firstMatch
     }
 
     static func leafPanes(in app: XCUIApplication) -> [XCUIElement] {

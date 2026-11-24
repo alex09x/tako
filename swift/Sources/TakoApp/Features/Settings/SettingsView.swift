@@ -37,6 +37,9 @@ public struct SettingsView: View {
                         TerminalSettingsDialog.show(in: window, tab: .keybindings)
                     }
                 }
+                Button("Set Up Tako…") {
+                    SetupCoordinator.shared.show(app: appDelegate.tako)
+                }
             }
         }
         .padding(24)

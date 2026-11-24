@@ -41,6 +41,23 @@ extension TakoScopedAppearanceHelpers {
         guard let cg = screenshot.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             throw ObservationError.unavailable("Screenshot image unavailable")
         }
+        let (bounds, mask) = try glyphInk(in: cg)
+        return GlyphObservation(bounds: bounds, pixels: mask, screenshot: screenshot)
+    }
+
+    /// The bottom-right sample `samplePixelColor` takes, from an image instead of the screen.
+    static func samplePixelColor(from cg: CGImage) -> NSColor? {
+        guard let context = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        let offset = (Int(Double(cg.height) * 0.98) * cg.width + Int(Double(cg.width) * 0.98)) * 4
+        return NSColor(srgbRed: CGFloat(data[offset]) / 255, green: CGFloat(data[offset + 1]) / 255,
+                       blue: CGFloat(data[offset + 2]) / 255, alpha: 1)
+    }
+
+    /// The "ALPHABET" witness's bright ink in `cg`: its bounds and a 0/1 mask.
+    static func glyphInk(in cg: CGImage) throws -> (bounds: CGRect, pixels: Data) {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
@@ -85,6 +102,6 @@ extension TakoScopedAppearanceHelpers {
                 mask.append(light > 128 ? 1 : 0)
             }
         }
-        return GlyphObservation(bounds: bounds, pixels: mask, screenshot: screenshot)
+        return (bounds, mask)
     }
 }

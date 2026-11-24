@@ -104,7 +104,8 @@ struct TerminalSettingsTests {
         #expect(dialog.filteredSettingItems.allSatisfy {
             $0.id.localizedCaseInsensitiveContains("workspace") ||
             $0.title.localizedCaseInsensitiveContains("workspace") ||
-            $0.category.localizedCaseInsensitiveContains("workspace")
+            $0.category.localizedCaseInsensitiveContains("workspace") ||
+            $0.description.localizedCaseInsensitiveContains("workspace")
         })
 
         dialog.filterItems("")

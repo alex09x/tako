@@ -100,8 +100,14 @@ struct ScopedAppearanceDialogTests {
         let original = surface.theme
         let first = UUID(), second = UUID()
         var destination = first
-        let observation = SurfaceAppearanceObservation(surface: surface, store: store, workspaceID: { destination })
+        var scopeLookups = 0
+        let observation = SurfaceAppearanceObservation(surface: surface, store: store, workspaceID: {
+            scopeLookups += 1
+            return destination
+        })
         defer { withExtendedLifetime(observation) {} }
+        NotificationCenter.default.post(name: .takoTabsDidChange, object: nil)
+        #expect(scopeLookups == 0, "an empty style store needs no window lookup on tab changes")
         // Notifications from mutations reach the same runtime path as the UI.
         try store.setValue("#123456", for: "background", scope: .workspace(first))
         #expect(surface.core === core)

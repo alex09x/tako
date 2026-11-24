@@ -10,9 +10,9 @@
 
 use super::super::events::TerminalEvent;
 use super::super::state::Terminal;
-use super::super::types::{
-    ClipboardPolicy, GraphicsPlacement, MAX_INLINE_IMAGE_PIXEL_DIM, MAX_INLINE_IMAGE_ROW_SPAN,
-};
+use super::super::types::{ClipboardPolicy, GraphicsPlacement};
+use super::osc_iterm_size::{Dim, InlineBox, inline_box};
+use crate::graphics::PlacementOptions;
 
 impl Terminal {
     pub(crate) fn handle_osc_1337(&mut self, params: &[&[u8]]) {
@@ -23,14 +23,16 @@ impl Terminal {
                 let payload_bytes = &joined[colon_idx + 1..];
                 let args_str = String::from_utf8_lossy(args_bytes);
                 let mut is_inline = false;
-                let mut width_arg: Option<String> = None;
-                let mut height_arg: Option<String> = None;
+                let mut width_arg: Option<Dim> = None;
+                let mut height_arg: Option<Dim> = None;
                 for part in args_str.split(';') {
                     if let Some((k, v)) = part.split_once('=') {
                         match k.trim() {
                             "inline" => is_inline = v.trim() == "1",
-                            "width" => width_arg = Some(v.trim().to_string()),
-                            "height" => height_arg = Some(v.trim().to_string()),
+                            "width" => width_arg = Dim::parse(v.trim()),
+                            "height" => height_arg = Dim::parse(v.trim()),
+                            // preserveAspectRatio=0 (stretch) is not supported:
+                            // the image is always fitted, see osc_iterm_size.
                             _ => {}
                         }
                     }
@@ -65,69 +67,25 @@ impl Terminal {
                                 10
                             };
 
-                            let mut pixel_w = detected_w.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                            let mut pixel_h = detected_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                            let mut rows_span = None;
-
-                            if let Some(ref h) = height_arg {
-                                if let Some(px) =
-                                    h.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
-                                {
-                                    let px = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                    pixel_h = px;
-                                    rows_span = Some(
-                                        ((px.saturating_add(cell_h).saturating_sub(1)) / cell_h)
-                                            .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
-                                            .max(1)
-                                            as usize,
-                                    );
-                                } else if let Ok(cells) = h.parse::<usize>() {
-                                    let cells = cells.min(MAX_INLINE_IMAGE_ROW_SPAN);
-                                    rows_span = Some(cells.max(1));
-                                    if pixel_h == 0 {
-                                        pixel_h = (cells as u32)
-                                            .saturating_mul(cell_h)
-                                            .min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                    }
-                                }
-                            }
-                            if let Some(ref w) = width_arg {
-                                if let Some(px) =
-                                    w.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
-                                {
-                                    pixel_w = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                } else if let Ok(cells) = w.parse::<usize>() {
-                                    pixel_w = (cells as u32)
-                                        .saturating_mul(cell_w)
-                                        .min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                }
-                            }
-
-                            if pixel_w == 0 && pixel_h > 0 && detected_h > 0 {
-                                pixel_w = ((detected_w as u64 * pixel_h as u64) / detected_h as u64)
-                                    .min(MAX_INLINE_IMAGE_PIXEL_DIM as u64)
-                                    as u32;
-                            } else if pixel_h == 0 && pixel_w > 0 && detected_w > 0 {
-                                pixel_h = ((detected_h as u64 * pixel_w as u64) / detected_w as u64)
-                                    .min(MAX_INLINE_IMAGE_PIXEL_DIM as u64)
-                                    as u32;
-                            }
-
-                            let r_span = rows_span.unwrap_or_else(|| {
-                                if pixel_h > 0 {
-                                    ((pixel_h.saturating_add(cell_h).saturating_sub(1)) / cell_h)
-                                        .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
-                                        .max(1) as usize
-                                } else {
-                                    1
-                                }
-                            });
+                            // The image keeps the size it is encoded at -- what the
+                            // decoders check and the memory caps count; the size
+                            // asked for is the placement's cell box.
+                            let InlineBox {
+                                columns,
+                                rows,
+                                advance,
+                            } = inline_box(
+                                (detected_w, detected_h),
+                                width_arg,
+                                height_arg,
+                                (cell_w, cell_h),
+                            );
 
                             if let Ok((image_id, placement_id)) =
                                 self.graphics.store_and_place_raw_image(
                                     crate::graphics::ImageFormat::Png,
-                                    pixel_w,
-                                    pixel_h,
+                                    detected_w,
+                                    detected_h,
                                     image_data,
                                 )
                             {
@@ -138,13 +96,17 @@ impl Terminal {
                                     placement_id,
                                     row: place_row,
                                     col: place_col,
-                                    options: Default::default(),
+                                    options: PlacementOptions {
+                                        columns,
+                                        rows,
+                                        ..Default::default()
+                                    },
                                     screen: self.active,
                                     line: self.graphics_live_top().saturating_add(place_row as i64),
                                     clip_top_rows: 0,
                                     clip_bottom_rows: 0,
                                 });
-                                for _ in 0..r_span {
+                                for _ in 0..advance {
                                     self.line_feed();
                                 }
                                 self.cursor.col = 0;

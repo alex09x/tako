@@ -25,6 +25,7 @@ use crate::title_stack::TitleStack;
 
 use super::commands::CommandLog;
 use super::events::{ContextFrame, TerminalEvent};
+use super::program_status::ProgramStatusTable;
 use super::types::{
     ClipboardPolicy, Cursor, DcsKind, GraphemeWidthMethod, GraphicsPlacement, InFlightOsc99,
     ProtectedMode, ScreenBuffer, SemanticContent,
@@ -154,6 +155,8 @@ pub struct Terminal {
     pub(crate) clipboard_policy: ClipboardPolicy,
     /// Sliding window timestamps of recent desktop notifications for rate-limiting (Track G4).
     pub(crate) notification_timestamps: VecDeque<Instant>,
+    /// Structured Program Status records and bounded update drain (`OSC 7501`).
+    pub(crate) program_status: ProgramStatusTable,
 }
 
 impl Terminal {
@@ -263,6 +266,7 @@ impl Terminal {
             evicted_elevated: 0,
             clipboard_policy: ClipboardPolicy::WriteOnly,
             notification_timestamps: VecDeque::new(),
+            program_status: ProgramStatusTable::new(),
         }
     }
 

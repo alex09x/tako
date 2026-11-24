@@ -83,8 +83,9 @@ extension TerminalRenderer {
             for (col, cell) in cells.prefix(cols).enumerated() {
                 guard let color = marginColor(of: cell) else { continue }
                 context.setFillColor(color)
+                let width = metrics.cellWidth + (left == 0 && top < 0.001 && col == cols - 1 ? right : 0)
                 context.fill(CGRect(
-                    x: left + CGFloat(col) * metrics.cellWidth, y: y, width: metrics.cellWidth, height: height
+                    x: left + CGFloat(col) * metrics.cellWidth, y: y, width: width, height: height
                 ))
             }
         }

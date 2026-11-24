@@ -181,6 +181,11 @@ struct SidebarPaneSignature: Equatable {
         crabProgress = s.crab.progress
         unread = s.crab.unread
         statusText = s.crab.statusText
-        live = s.crab.live
+        // A stream's rate and its burst count change every second it prints:
+        // no row shows the rate, and the ring's layer takes the bursts
+        // straight from the pane (`StatusLayerHostView.watchPulses`). Passed
+        // on here, each second of one ssh's output rebuilt the whole sidebar
+        // and laid the window out again: ~50 ms of the main thread a second.
+        live = s.crab.live.map { var face = $0; face.linesPerSecond = 0; face.pulses = 0; return face }
     }
 }

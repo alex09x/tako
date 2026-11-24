@@ -15,6 +15,12 @@ import TakoKit
 extension SessionSidebarRowView {
     // MARK: - Helpers
 
+    var isNavSelected: Bool { selectedIndex == index }
+    var isTabActive: Bool { item.isSelected }
+    var state: Tako.SurfaceState { item.surfaceState }
+    /// The second line's ordinary colour (`sidebar-secondary-text`).
+    private var quiet: Color { Color(nsColor: secondaryText.color) }
+
     var sessionTitleColor: Color {
         if state == .offline {
             return Color(nsColor: T.faint)
@@ -30,6 +36,32 @@ extension SessionSidebarRowView {
             return Color(nsColor: T.surfaceHover)
         }
         return Color.clear
+    }
+
+    /// The session's workspace, grouped by status: its colour (the automatic
+    /// one when none was chosen) and its name on hover and for VoiceOver.
+    func workspaceBadge(_ ws: SidebarStatusBucket.WorkspaceBadge) -> some View {
+        Circle()
+            .fill(Color(nsColor: T.workspaceColor(for: ws.color)))
+            .frame(width: 6, height: 6)
+            .help(ws.name)
+            .accessibilityElement()
+            .accessibilityLabel("Workspace \(ws.name)")
+            .accessibilityIdentifier("SidebarRowWorkspace-\(ws.id.uuidString.lowercased())")
+    }
+
+    func closeRowButton(action: @escaping () -> Void, isChild: Bool) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 8.5, weight: .semibold))
+                .foregroundColor(Color(nsColor: T.dim))
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("SessionSidebarCloseButton")
+        .accessibilityLabel(isChild ? "Close pane" : "Close session")
+        .help(isChild ? "Close pane" : "Close session")
     }
 
     @ViewBuilder
@@ -52,7 +84,7 @@ extension SessionSidebarRowView {
         // Sessions UI 5a: a live program says where it runs while its
         // output arrives, and how long it has been quiet otherwise.
         if let text = item.liveSecondLine {
-            return (text, Color(nsColor: T.dim), state == .live(flowing: true) ? .middle : .tail)
+            return (text, quiet, state == .live(flowing: true) ? .middle : .tail)
         }
 
         // §5.5: For failed session, show error message / exit info in #D54E53 if available
@@ -72,10 +104,10 @@ extension SessionSidebarRowView {
             parts.append(ports.map { ":\($0)" }.joined(separator: ", "))
         }
         if parts.isEmpty, let notif = item.latestNotification, !notif.isEmpty {
-            return (notif, Color(nsColor: T.dim), .tail)
+            return (notif, quiet, .tail)
         }
         guard !parts.isEmpty else { return nil }
-        return (parts.joined(separator: " · "), Color(nsColor: T.dim), .middle)
+        return (parts.joined(separator: " · "), quiet, .middle)
     }
 
     @ViewBuilder
@@ -91,7 +123,6 @@ extension SessionSidebarRowView {
                 .foregroundColor(Color(nsColor: T.textActive))
                 .onKeyPress(.escape) {
                     editingItemId = nil
-                    isPresented = false
                     return .handled
                 }
 

@@ -34,6 +34,7 @@ extension TerminalParserCoordinator {
             }
             lock.unlock()
 
+            var completedLifecycle: ProgramStatusLifecycleRequest?
             switch work {
             case .bytes(let batch):
                 TakoLog.feed.debug("batch \(batch.count)B thread=\(Thread.isMainThread ? "main" : "parser")")
@@ -48,6 +49,9 @@ extension TerminalParserCoordinator {
                 performImport(request)
             case .resize(let request):
                 performResize(request)
+            case .programStatusLifecycle(let request):
+                performProgramStatusLifecycle(request)
+                completedLifecycle = request
             }
 
             lock.lock()
@@ -57,6 +61,7 @@ extension TerminalParserCoordinator {
             if schedule {
                 mainDispatch { [self] in applyPendingOutcomes(holdingToken: true) }
             }
+            completedLifecycle?.complete()
         }
     }
 
@@ -73,15 +78,26 @@ extension TerminalParserCoordinator {
                 payloadLength: Int(info.payloadLen),
                 epoch: core.stateEpoch()
             )
+            let restoredStatus = TerminalProgramStatusSnapshot(ffi: core.programStatusSnapshot())
 
             lock.lock()
             let before = pendingApplications.count
             pendingApplications.removeAll { item in
-                if case .outcome(let outcome) = item { return outcome.epoch != restore.epoch }
-                return false
+                switch item {
+                case .outcome(let outcome):
+                    return outcome.epoch != restore.epoch
+                case .programStatusLifecycle(_, let itemEpoch, let lifecycleReq):
+                    if itemEpoch != restore.epoch {
+                        lifecycleReq.markPublished()
+                        return true
+                    }
+                    return false
+                default:
+                    return false
+                }
             }
             outcomesSuppressed += before - pendingApplications.count
-            pendingApplications.append(.restored(restore, request))
+            pendingApplications.append(.restored(restore, restoredStatus, request))
             checkpointImports += 1
             lock.unlock()
 
@@ -109,13 +125,34 @@ extension TerminalParserCoordinator {
         request.complete()
     }
 
+    private func performProgramStatusLifecycle(_ request: ProgramStatusLifecycleRequest) {
+        let applied = core.applyProgramStatusLifecycle(lifecycle: request.lifecycle)
+        let event: TerminalProgramStatusEvent?
+        let epoch: UInt64
+        if let applied {
+            event = .updated(
+                TerminalProgramStatusUpdate(ffi: applied.update),
+                snapshot: TerminalProgramStatusSnapshot(ffi: applied.snapshot)
+            )
+            epoch = applied.epoch
+        } else {
+            event = nil
+            epoch = core.stateEpoch()
+        }
+        lock.lock()
+        pendingApplications.append(
+            .programStatusLifecycle(event: event, epoch: epoch, request: request)
+        )
+        lock.unlock()
+    }
+
     /// Cut the head of the pending queue at the batch bound, or hand back the
     /// barrier sitting at its front. Never returns an empty batch while work
     /// remains, so a pass always makes progress.
     private func takeNextWorkLocked() -> PendingWork? {
         while let head = pendingWork.first {
             switch head {
-            case .importCheckpoint, .resize:
+            case .importCheckpoint, .resize, .programStatusLifecycle:
                 pendingWork.removeFirst()
                 return head
             case .bytes(let buffer):

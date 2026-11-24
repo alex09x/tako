@@ -135,9 +135,15 @@ function __tako_setup --on-event fish_prompt -d "Setup tako integration"
     end
 
     # Setup prompt marking
+    # Fish 4 marks commands itself (133;C;cmdline_url and 133;D;status). Ours
+    # on top told Tako every command ended two or three times; from fish 4
+    # Tako only adds the prompt mark (with click_events from 4.1).
+    set -g __tako_marks_commands (test "$fish_major" -lt 4; and echo 1; or echo 0)
+
     function __tako_mark_prompt_start --on-event fish_prompt --on-event fish_posterror
-        # If we never got the output end event, then we need to send it now.
-        if test "$__tako_prompt_state" != prompt-start
+        # A command started and never reported its end (no postexec): end it
+        # now. Not after an ordinary postexec, which already said D;status.
+        if test "$__tako_marks_commands" = 1 -a "$__tako_prompt_state" = pre-exec
             echo -en "\e]133;D\a"
         end
 
@@ -155,12 +161,15 @@ function __tako_setup --on-event fish_prompt -d "Setup tako integration"
     # the line is not on the screen between two marks for Tako to read.
     function __tako_mark_output_start --on-event fish_preexec
         set --global __tako_prompt_state pre-exec
-        printf '\e]133;C;cmdline_url=%s\a' (string escape --style=url -- $argv[1])
+        test "$__tako_marks_commands" = 1
+        and printf '\e]133;C;cmdline_url=%s\a' (string escape --style=url -- $argv[1])
     end
 
     function __tako_mark_output_end --on-event fish_postexec
+        set --local last $status
         set --global __tako_prompt_state post-exec
-        echo -en "\e]133;D;$status\a"
+        test "$__tako_marks_commands" = 1
+        and echo -en "\e]133;D;$last\a"
     end
 
     # Report pwd. This is actually built-in to fish but only for terminals

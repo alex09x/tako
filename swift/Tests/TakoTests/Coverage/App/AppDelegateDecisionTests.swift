@@ -64,19 +64,41 @@ struct AppDelegateDecisionTests {
         #expect(config.waitAfterCommand)
     }
 
-    @Test func openingAFileTheUserDoesNotAllowOpensNothing() throws {
+    @Test func openingAFileTheUserDoesNotAllowOpensNothing() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("tako-\(UUID().uuidString).sh")
         try "echo hi\n".write(to: file, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: file) }
+        let fixture = AppDelegateWindowFixture()
+        defer { fixture.restore() }
         let delegate = AppDelegate()
-        var asked: String?
-        delegate.runModalAlert = { alert in
-            asked = alert.messageText
-            return .alertSecondButtonReturn
-        }
+        let host = TerminalController.newWindow(delegate.tako)
+        host.cancelPendingInitialPresentation()
+        let window = try #require(host.window)
+        window.makeKeyAndOrderFront(nil)
+        let surfacesBefore = host.surfaceTree.count
 
-        #expect(!delegate.application(NSApplication.shared, openFile: file.path))
-        #expect(asked?.contains(file.path) == true)
+        // Acceptance means the request was queued, not that execution was allowed.
+        #expect(delegate.application(NSApplication.shared, openFile: file.path))
+        let deadline = Date().addingTimeInterval(3)
+        while TerminalDialogView.pending(in: window) == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let question = try #require(TerminalDialogView.pending(in: window))
+        guard case .string(let text)? = question.summary["text"] else {
+            Issue.record("The file confirmation has no text")
+            return
+        }
+        #expect(text.replacingOccurrences(of: "\n", with: "").contains(file.path))
+        #expect(fixture.controllers.count == 1)
+        #expect(question.press("Cancel"))
+
+        // Let the suspended file-open task consume the actual TUI answer.
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(TerminalDialogView.pending(in: window) == nil)
+        #expect(fixture.controllers.count == 1)
+        #expect(host.surfaceTree.count == surfacesBefore)
+        #expect(host.window === window)
     }
 
     @Test func theDockBadgeFollowsTheNotificationSettings() {
@@ -101,7 +123,16 @@ struct AppDelegateQuitConfirmationTests {
                 styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             controller.window = window
-            controller.surfaceTree.forEach { $0.confirmCloseSurface = .always }
+            // These windows bypass view mounting, which normally starts the PTY.
+            // `always` still requires a live process; an exited/nil PTY never asks.
+            #expect(!controller.surfaceTree.isEmpty)
+            controller.surfaceTree.forEach { surface in
+                surface.confirmCloseSurface = .always
+                surface.pty = PTY(cols: 80, rows: 24,
+                                  workingDirectory: NSTemporaryDirectory(),
+                                  program: ["/bin/sleep", "60"])
+                #expect(surface.pty?.alive == true)
+            }
             window.orderFrontRegardless()
             return controller
         }
@@ -109,8 +140,14 @@ struct AppDelegateQuitConfirmationTests {
 
     private func close(_ controllers: [TerminalController]) {
         for controller in controllers {
+            controller.cancelPendingInitialPresentation()
             controller.surfaceTree.forEach { $0.confirmCloseSurface = .never; $0.pty?.terminate() }
-            controller.window?.close()
+            if let window = controller.window {
+                TerminalDialogView.pending(in: window)?.withdraw()
+                Tako.CustomTabGroup.close(window)
+                window.close()
+                window.windowController = nil
+            }
         }
     }
 
@@ -153,7 +190,7 @@ struct AppDelegateQuitConfirmationTests {
         #expect(controllers.allSatisfy { !$0.windowCanBeClosedWithoutConfirmation() })
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
-        guard onlyTheseAreBusy(controllers) else { return }
+        try #require(onlyTheseAreBusy(controllers))
 
         #expect(delegate.terminate() == .terminateLater)
         let question = try #require(await waitForQuestion())
@@ -181,7 +218,7 @@ struct AppDelegateQuitConfirmationTests {
 
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
-        guard onlyTheseAreBusy(controllers) else { return }
+        try #require(onlyTheseAreBusy(controllers))
         #expect(delegate.terminate() == .terminateLater)
 
         #expect(await eventually { TerminalDialogView.pending(in: window) != nil })
@@ -200,7 +237,7 @@ struct AppDelegateQuitConfirmationTests {
 
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
-        guard onlyTheseAreBusy(controllers) else { return }
+        try #require(onlyTheseAreBusy(controllers))
         #expect(delegate.terminate() == .terminateLater)
 
         #expect(await eventually { TerminalDialogView.pending(in: window) != nil })
@@ -221,7 +258,7 @@ struct AppDelegateQuitConfirmationTests {
 
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
-        guard onlyTheseAreBusy(controllers) else { return }
+        try #require(onlyTheseAreBusy(controllers))
         #expect(delegate.terminate() == .terminateLater)
         #expect(try #require(await waitForQuestion()).press("Review Windows…"))
 
@@ -245,7 +282,7 @@ struct AppDelegateQuitConfirmationTests {
 
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
-        guard onlyTheseAreBusy(controllers) else { return }
+        try #require(onlyTheseAreBusy(controllers))
         #expect(delegate.terminate() == .terminateLater)
         #expect(try #require(await waitForQuestion()).press("Review Windows…"))
         #expect(try #require(await waitForQuestion()).press("Cancel"))

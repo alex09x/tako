@@ -137,12 +137,13 @@ struct SurfaceWrapperCoverageTests {
     }
 
 
-    /// A dragged surface travels as its identifier, not as a copy of itself.
+    /// The dedicated surface-id transfer carries UTF-8, not a generic text
+    /// representation or a serialized copy of the live view.
     @available(macOS 15.2, *)
     @Test func aDraggedSurfaceExportsItsIdentifierAsText() async throws {
         let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 50, height: 50))
         defer { surface.close() }
-        let data = try await surface.exported(as: .utf8PlainText)
+        let data = try await surface.exported(as: .takoSurfaceId)
         #expect(String(decoding: data, as: UTF8.self) == String(describing: surface.id))
     }
 

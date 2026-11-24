@@ -98,11 +98,7 @@ extension TakoTerminalNSView {
                 ? bounds.size
                 : (window?.contentView?.bounds.size ?? .zero)
             if availableSize.width > 0 && availableSize.height > 0 {
-                let fitted = TerminalGridLayout(
-                    viewSize: availableSize,
-                    cellSize: CGSize(width: cellWidth, height: cellHeight),
-                    theme: theme
-                )
+                let fitted = fittedGridLayout(for: availableSize)
                 if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
                     scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
                 }
@@ -129,11 +125,7 @@ extension TakoTerminalNSView {
             applyMetalLayerGeometry()
         }
 
-        let fitted = TerminalGridLayout(
-            viewSize: newSize,
-            cellSize: CGSize(width: cellWidth, height: cellHeight),
-            theme: theme
-        )
+        let fitted = fittedGridLayout(for: newSize)
         scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
     }
 
@@ -147,11 +139,7 @@ extension TakoTerminalNSView {
 
         let availableSize = bounds.size
         if availableSize.width > 0 && availableSize.height > 0 {
-            let fitted = TerminalGridLayout(
-                viewSize: availableSize,
-                cellSize: CGSize(width: cellWidth, height: cellHeight),
-                theme: theme
-            )
+            let fitted = fittedGridLayout(for: availableSize)
             if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
                 if !hasCompletedInitialLayout {
                     hasCompletedInitialLayout = true
@@ -177,11 +165,7 @@ extension TakoTerminalNSView {
         pendingResizeWorkItem?.cancel()
         let availableSize = bounds.size
         if availableSize.width > 0 && availableSize.height > 0 {
-            let fitted = TerminalGridLayout(
-                viewSize: availableSize,
-                cellSize: CGSize(width: cellWidth, height: cellHeight),
-                theme: theme
-            )
+            let fitted = fittedGridLayout(for: availableSize)
             if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
                 pendingGridSize = nil
                 TakoLog.resize.info("resize \(cols)×\(rows) → \(fitted.cols)×\(fitted.rows)")

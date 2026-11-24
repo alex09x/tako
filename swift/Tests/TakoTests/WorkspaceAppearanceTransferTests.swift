@@ -38,15 +38,17 @@ import Testing
         #expect(first.theme.fontSize == 19)
         #expect(scene.store.moveTab(tabID, to: scene.legal.id, around: scene.anchor,
             workspaceStore: scene.workspaces, appearanceStore: styles))
-        #expect(styles.value(for: "theme", scope: .pane(first.id)) == "Source")
+        #expect(styles.value(for: "theme", scope: .session(tabID)) == "Source")
+        #expect(styles.document.overrides(for: .pane(first.id)) == nil, "Pane records keep their owner")
         #expect(first.theme.background == TerminalTheme.parseColor("#123456") && first.theme.fontSize == 19)
         #expect(first.theme.palette[1] == TerminalTheme.parseColor("#f01234"))
         #expect(own.theme.background == TerminalTheme.parseColor("#abcdef") && own.theme.fontSize == 23)
         #expect(styles.document.overrides(for: .pane(own.id)) == ["theme": "Own", "foreground": "#010203"])
         #expect(first.id == identity && first.core === core && first.pty === pty)
         let loaded = ScopedAppearanceStore(fileURL: styles.fileURL, themeSearchPaths: [themes.path])
-        #expect(loaded.effectiveTheme(global: .takoDefault, workspaceID: scene.legal.id, paneID: identity).fontSize == 19)
-        try styles.reset(.pane(identity))
+        #expect(loaded.effectiveTheme(global: .takoDefault, workspaceID: scene.legal.id, sessionID: tabID,
+                                      paneID: identity).fontSize == 19)
+        try styles.reset(.session(tabID))
         #expect(first.theme.fontSize == 11, "Explicit Inherit adopts the destination after the move")
     }
 

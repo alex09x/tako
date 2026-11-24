@@ -51,7 +51,8 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
     searchable but not grouped by command.
 
 - **Native macOS Experience**:
-  - Native tabs, split panes (horizontal & vertical), Quick Terminal dropdown.
+  - Permanent session sidebar and floating terminal panes with drag, resize, maximize and a minimize shelf.
+  - Quick Terminal dropdown.
   - Scriptable from the command line: `takoctl` drives tabs, splits, input and output over a local socket.
   - Window transparency and customizable titlebar styling.
 
@@ -59,6 +60,16 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
   - Shared view layer: `TakoTerminalNSView` for macOS (AppKit) and `TakoTerminalView` for iOS (UIKit).
 
 ---
+
+## Desktop Navigation
+
+The left sidebar lists workspaces and sessions and stays open. Its search button opens the session filter; Escape clears and closes the filter. <kbd>Cmd</kbd> + <kbd>T</kbd> creates a session. Inside a session, <kbd>Cmd</kbd> + <kbd>D</kbd> or <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> splits the current terminal: the new one joins the session grid beside it (right or below). To take a terminal out of the grid, use **Float Terminal**, a button in its header and an item of the header's right-click menu; a floating terminal moves freely above the grid (drag its header to move it, its edges or corners to resize it), and **Return to Grid** puts it back.
+
+**Move to Tab** moves terminals into another tab of the same workspace, their processes still running. For one terminal it is a button in the terminal's header, an item of the header's right-click menu, and **Move Terminal to Tab** in the sidebar's context menu for that terminal; while the terminal shares its tab with others, the same menu also offers **New Tab**, which takes it out of the split into a tab of its own. On a session in the sidebar, **Move to Tab** moves the whole session: every terminal of it joins the other tab, and the emptied tab closes.
+
+Each pane has minimize, maximize/restore and close controls. Minimized panes collect as capsules at the lower right, keep their processes running and continue showing status. Click a capsule to restore its position and keyboard focus. Maximizing fills the right workspace; double-clicking the pane header also toggles maximize/restore. Transitions respect macOS Reduce Motion.
+
+<kbd>Cmd</kbd> + <kbd>W</kbd> closes the focused pane, <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>W</kbd> closes the session, and <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>W</kbd> closes its window group. Closing the last pane leaves a **New Terminal** action in the workspace. Pane placement and presentation state return with restored sessions. `session-persistence = true` keeps the shell processes alive across an application quit.
 
 ## Quick Start: Building the macOS App
 
@@ -113,6 +124,9 @@ Run the checks affected by a change on your configured test Mac:
 `TAKO_MAC` selects the test host. `scripts/ci.sh` is the explicit full
 multi-stage release gate; it is separate from these targeted checks.
 
+GitHub Mac CI and candidate/signing workflows are documented in
+[CI and release delivery](docs/ci-and-releases.md).
+
 Tako ships with an end-to-end integration test runner that exercises real macOS events, PTY streams, and Metal presentation callbacks:
 
 ```bash
@@ -142,8 +156,13 @@ macapp self-test: ok
 
 To run the Rust engine test suite:
 ```bash
-cargo test
+mitts test
 ```
+
+Rust builds, tests, lint and coverage use the latest stable [Mitts](https://mittsbuild.com/).
+Install it with `curl -fsSL https://mittsbuild.com/install.sh | MITTS_INSTALL_ROOT="$HOME/.local" sh` and add
+`~/.local/bin` to `PATH`. Unsupported commands or options stop the affected
+check and are reported to Mitts; build scripts do not fall back to Cargo.
 
 The Swift suites need the engine built locally first:
 ```bash
@@ -154,6 +173,10 @@ The Swift suites need the engine built locally first:
 ---
 
 ## Configuration
+
+On first launch, Tako offers a setup guide for appearance, `takoctl`, agent
+connections and optional notifications. Skip any step and return through
+**Tako → Set Up Tako…** or **Settings → Setup…**. See the [setup guide](docs/setup.md).
 
 Tako reads its configuration from `~/.config/tako/config`. 
 

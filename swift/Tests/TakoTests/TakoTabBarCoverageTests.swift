@@ -242,6 +242,27 @@ struct TabBarViewCoverageTests {
         #expect(bar.trackingAreas.count == 1)
     }
 
+    @Test func accessibilityQueriesRetainLiveEnabledChildIdentities() throws {
+        let window = makeWindow(title: "AX identity")
+        defer { Tako.CustomTabGroup.leave(window) }
+        let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .pill
+        mount(bar, in: window)
+        let first = try #require(bar.accessibilityChildren() as? [NSAccessibilityElement])
+        let second = try #require(bar.accessibilityChildren() as? [NSAccessibilityElement])
+        #expect(!first.isEmpty)
+        #expect(first.count == second.count)
+        for child in first {
+            let current = try #require(second.first { $0.accessibilityIdentifier() == child.accessibilityIdentifier() })
+            #expect(current === child)
+            #expect(current.isAccessibilityEnabled())
+            #expect(current.accessibilityParent() as? Tako.TabBarView === bar)
+            let frame = current.accessibilityFrame()
+            let hit = bar.accessibilityHitTest(NSPoint(x: frame.midX, y: frame.midY)) as? NSAccessibilityElement
+            #expect(hit === current)
+        }
+    }
+
     func click(_ bar: Tako.TabBarView, at point: NSPoint, in window: NSWindow, clickCount: Int = 1) {
         let event = NSEvent.mouseEvent(
             with: .leftMouseDown,

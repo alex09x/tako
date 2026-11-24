@@ -111,18 +111,60 @@ final class ResizeRequest: BarrierPublication, @unchecked Sendable {
     func wait() { done.wait() }
 }
 
+/// A pending ordered `OSC 7501` lifecycle transition (`processExited`,
+/// `interrupted`, or `acknowledged`).
+final class ProgramStatusLifecycleRequest: BarrierPublication, @unchecked Sendable {
+    let lifecycle: FfiProgramStatusLifecycle
+    private let lock = NSLock()
+    private let done = DispatchSemaphore(value: 0)
+    private var completed = false
+    private var published = false
+
+    init(lifecycle: FfiProgramStatusLifecycle) {
+        self.lifecycle = lifecycle
+    }
+
+    var isPublished: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return published
+    }
+
+    func markPublished() {
+        lock.lock()
+        published = true
+        lock.unlock()
+    }
+
+    func complete() {
+        lock.lock()
+        guard !completed else { lock.unlock(); return }
+        completed = true
+        lock.unlock()
+        done.signal()
+    }
+
+    func wait() { done.wait() }
+}
+
 /// One FIFO for everything the engine is driven by, bytes and barriers
 /// alike.
 enum PendingWork {
     case bytes(Data)
     case importCheckpoint(ImportRequest)
     case resize(ResizeRequest)
+    case programStatusLifecycle(ProgramStatusLifecycleRequest)
 }
 
 /// What Main is owed, in the order the parser produced it.
 enum PendingApplication {
     case outcome(FfiFeedOutcome)
-    case restored(TerminalCheckpointRestore, ImportRequest)
+    case restored(TerminalCheckpointRestore, TerminalProgramStatusSnapshot, ImportRequest)
     case rejectedImport(ImportRequest)
     case resized(cols: Int, rows: Int, request: ResizeRequest)
+    case programStatusLifecycle(
+        event: TerminalProgramStatusEvent?,
+        epoch: UInt64,
+        request: ProgramStatusLifecycleRequest
+    )
 }

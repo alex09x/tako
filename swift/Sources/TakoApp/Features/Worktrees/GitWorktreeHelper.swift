@@ -38,6 +38,12 @@ enum GitWorktreeHelper {
         env["GIT_ASKPASS"] = "/bin/echo"
         process.environment = env
 
+        // Waits without running the caller's run loop: `waitUntilExit()` spins
+        // it, and SwiftUI views call this while they update. Their update
+        // cycle re-entered from inside itself and crashed the app.
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+
         do {
             try process.run()
 
@@ -59,7 +65,7 @@ enum GitWorktreeHelper {
                 group.leave()
             }
 
-            process.waitUntilExit()
+            exited.wait()
             group.wait()
 
             let stdout = String(data: outData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

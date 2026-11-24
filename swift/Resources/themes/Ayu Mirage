@@ -1,0 +1,25 @@
+# tako-preset-version: 1
+# Palette adapted from the approved desktop design catalog.
+font-family = Menlo
+font-size = 12.5
+background = #1F2430
+foreground = #CCCAC2
+cursor-color = #CCCAC2
+selection-background = #73D0FF
+selection-foreground = #1F2430
+palette = 0=#1F2430
+palette = 1=#F28779
+palette = 2=#D5FF80
+palette = 3=#FFD173
+palette = 4=#73D0FF
+palette = 5=#DFBFFF
+palette = 6=#95E6CB
+palette = 7=#CCCAC2
+palette = 8=#7E7F80
+palette = 9=#F28779
+palette = 10=#D5FF80
+palette = 11=#FFD173
+palette = 12=#73D0FF
+palette = 13=#DFBFFF
+palette = 14=#95E6CB
+palette = 15=#CCCAC2

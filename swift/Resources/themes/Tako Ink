@@ -1,0 +1,27 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
+window-padding-x = 0
+window-padding-y = 0
+# Tako Ink — a deep obsidian and crisp sumi ink dark terminal palette.
+background = #0d0e12
+foreground = #eaedf2
+cursor-color = #ff4d5a
+selection-background = #202534
+selection-foreground = #fafbfe
+palette = 0=#0d0e12
+palette = 1=#e35252
+palette = 2=#5ab074
+palette = 3=#df9d41
+palette = 4=#588de4
+palette = 5=#ae6ce0
+palette = 6=#48b2b5
+palette = 7=#d3d8e0
+palette = 8=#5c6374
+palette = 9=#f26868
+palette = 10=#74cca0
+palette = 11=#f0b55d
+palette = 12=#75a4f0
+palette = 13=#c387ec
+palette = 14=#66cecf
+palette = 15=#fafbfe

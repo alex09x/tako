@@ -15,6 +15,8 @@ mod legacy;
 mod types;
 
 #[cfg(test)]
+mod report_all_tests;
+#[cfg(test)]
 mod tests;
 
 pub use control::ctrl_seq;

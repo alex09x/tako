@@ -17,7 +17,6 @@ import Foundation
 @MainActor
 enum AgentHooksTool {
     static let declinedKey = "TakoAgentHooksInstallDeclined"
-
     struct AgentInfo: Identifiable, Sendable {
         let id: String
         let name: String
@@ -63,37 +62,35 @@ enum AgentHooksTool {
     }
 
     /// Checks which agents exist on the host and whether Tako hooks are configured.
-    static func detectAgents(baseDir: String? = nil) -> [AgentInfo] {
+    static func detectAgents(baseDir: String? = nil, checkNativeStatus: Bool = true) -> [AgentInfo] {
         let fm = FileManager.default
         let effectiveBase = resolvedBaseDir(baseDir)
         let home = effectiveBase ?? fm.homeDirectoryForCurrentUser.path
 
-        // Antigravity (agy)
+        // Antigravity (agy) — native OSC 7501 status; configured once no legacy Tako status hooks remain
         let agyHooksFile = (home as NSString).appendingPathComponent(".gemini/config/hooks.json")
         let agyInstalled = fm.fileExists(atPath: agyHooksFile) || (effectiveBase == nil && binaryExists("agy"))
-        let agyConfigured = isAntigravityConfigured(filePath: agyHooksFile)
+        let agyConfigured = !hasLegacyOwnedStatusHooks(for: "antigravity", baseDir: effectiveBase)
 
-        // Gemini CLI
+        // Gemini CLI — hook-based status
         let geminiSettings = (home as NSString).appendingPathComponent(".gemini/settings.json")
         let geminiInstalled = fm.fileExists(atPath: geminiSettings) || (effectiveBase == nil && binaryExists("gemini"))
         let geminiConfigured = isGeminiConfigured(filePath: geminiSettings)
 
-        // Claude Code
+        // Claude Code — native OSC 7501 status
         let claudeDir = (home as NSString).appendingPathComponent(".claude")
-        let claudeSettings = (claudeDir as NSString).appendingPathComponent("settings.json")
         let claudeInstalled = fm.fileExists(atPath: claudeDir) || (effectiveBase == nil && binaryExists("claude"))
-        let claudeConfigured = isClaudeConfigured(filePath: claudeSettings)
+        let claudeConfigured = !hasLegacyOwnedStatusHooks(for: "claude", baseDir: effectiveBase)
 
-        // Codex CLI
+        // Codex CLI — native OSC 7501 status
         let codexDir: String
         if effectiveBase == nil, let envCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !envCodexHome.isEmpty {
             codexDir = envCodexHome
         } else {
             codexDir = (home as NSString).appendingPathComponent(".codex")
         }
-        let codexHooksFile = (codexDir as NSString).appendingPathComponent("hooks.json")
         let codexInstalled = fm.fileExists(atPath: codexDir) || (effectiveBase == nil && binaryExists("codex"))
-        let codexConfigured = isCodexConfigured(filePath: codexHooksFile)
+        let codexConfigured = !hasLegacyOwnedStatusHooks(for: "codex", baseDir: effectiveBase)
 
         var list: [AgentInfo] = []
         if agyInstalled {
@@ -108,35 +105,16 @@ enum AgentHooksTool {
         if codexInstalled {
             list.append(AgentInfo(id: "codex", name: "Codex CLI", isDetected: true, isConfigured: codexConfigured))
         }
+        for (id, name) in [("qwen", "Qwen Code"), ("muse", "Muse Code")] {
+            let root = SetupAgentService.nativeRoot(id, baseDir: effectiveBase)
+            var isDirectory: ObjCBool = false
+            let exists = fm.fileExists(atPath: root, isDirectory: &isDirectory) && isDirectory.boolValue
+            if exists || (effectiveBase == nil && (binaryExists(id) || SetupAgentService.nativeExecutableExists(id))) {
+                let configured = checkNativeStatus ? !hasLegacyOwnedStatusHooks(for: id, baseDir: effectiveBase) : true
+                list.append(AgentInfo(id: id, name: name, isDetected: true, isConfigured: configured))
+            }
+        }
         return list
-    }
-
-    static func isClaudeConfigured(filePath: String) -> Bool {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = root["hooks"] as? [String: Any] else { return false }
-        let hasPrompt = hasMatcherHook(in: hooks["UserPromptSubmit"], commandKey: "takoctl status set working") ||
-                        hasMatcherHook(in: hooks["UserPromptSubmit"], commandKey: "tako-hook claude user_prompt_submit")
-        let hasStop = hasMatcherHook(in: hooks["Stop"], commandKey: "takoctl status set idle") ||
-                      hasMatcherHook(in: hooks["Stop"], commandKey: "takoctl status set done") ||
-                      hasMatcherHook(in: hooks["Stop"], commandKey: "tako-hook claude stop")
-        return hasPrompt && hasStop
-    }
-
-    static func isCodexConfigured(filePath: String) -> Bool {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = root["hooks"] as? [String: Any] else { return false }
-        let hasPrompt = hasMatcherHook(in: hooks["UserPromptSubmit"], commandKey: "takoctl status set working --target") ||
-                        hasMatcherHook(in: hooks["UserPromptSubmit"], commandKey: "tako-hook codex user_prompt_submit")
-        let hasStop = hasMatcherHook(in: hooks["Stop"], commandKey: "takoctl status set done --target") ||
-                      hasMatcherHook(in: hooks["Stop"], commandKey: "tako-hook codex stop")
-        let hasApproval = hasMatcherHook(in: hooks["PermissionRequest"], commandKey: "takoctl status set needs_approval --target") ||
-                          hasMatcherHook(in: hooks["PermissionRequest"], commandKey: "tako-hook codex permission_request")
-        // Without Interrupt a turn stopped with Esc stays working forever.
-        let hasInterrupt = hasMatcherHook(in: hooks["Interrupt"], commandKey: "takoctl status set idle --target") ||
-                           hasMatcherHook(in: hooks["Interrupt"], commandKey: "tako-hook codex interrupt")
-        return hasPrompt && hasStop && hasApproval && hasInterrupt
     }
 
     static func isGeminiConfigured(filePath: String) -> Bool {
@@ -146,19 +124,6 @@ enum AgentHooksTool {
         let hasBefore = hasMatcherHook(in: hooks["BeforeAgent"], commandKey: "takoctl status set working")
         let hasAfter = hasMatcherHook(in: hooks["AfterAgent"], commandKey: "takoctl status set idle")
         return hasBefore && hasAfter
-    }
-
-    static func isAntigravityConfigured(filePath: String) -> Bool {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tako = root["tako-status"] as? [String: Any],
-              (tako["enabled"] as? Bool) != false else { return false }
-        let hasPre = hasDirectHook(in: tako["PreInvocation"], commandKey: "takoctl status set working") ||
-                     hasDirectHook(in: tako["PreInvocation"], commandKey: "tako-hook agy pre_invocation")
-        let hasStop = hasDirectHook(in: tako["Stop"], commandKey: "takoctl status set idle") ||
-                      hasDirectHook(in: tako["Stop"], commandKey: "takoctl status set done") ||
-                      hasDirectHook(in: tako["Stop"], commandKey: "tako-hook agy stop")
-        return hasPre && hasStop
     }
 
     private static func hasMatcherHook(in container: Any?, commandKey: String) -> Bool {
@@ -172,14 +137,6 @@ enum AgentHooksTool {
                 }
             }
             return false
-        }
-    }
-
-    private static func hasDirectHook(in container: Any?, commandKey: String) -> Bool {
-        guard let list = container as? [[String: Any]] else { return false }
-        return list.contains { item in
-            if (item["enabled"] as? Bool) == false { return false }
-            return commandMatches(item["command"] as? String, key: commandKey)
         }
     }
 
@@ -208,7 +165,7 @@ enum AgentHooksTool {
 
     /// Install hooks for targeted or all unconfigured agents.
     @discardableResult
-    static func installHooks(for agentIds: [String]? = nil, baseDir: String? = nil) -> InstallReport {
+    static func installHooks(for agentIds: [String]? = nil, baseDir: String? = nil, includeSkills: Bool = true) -> InstallReport {
         let agents = detectAgents(baseDir: baseDir)
         var report = InstallReport()
 
@@ -217,20 +174,27 @@ enum AgentHooksTool {
         } ?? agents
 
         for agent in targets {
+            if usesNativeOsc7501Status(agent.id) {
+                let hadLegacy = !agent.isConfigured
+                if cleanupLegacyStatusHooks(for: agent.id, baseDir: baseDir) {
+                    if hadLegacy {
+                        report.newlyInstalled.append(agent.name)
+                    } else {
+                        report.alreadyConfigured.append(agent.name)
+                    }
+                } else {
+                    report.failed.append(agent.name)
+                }
+                continue
+            }
             if agent.isConfigured {
                 report.alreadyConfigured.append(agent.name)
                 continue
             }
             let success: Bool
             switch agent.id {
-            case "antigravity":
-                success = installAntigravityHooks(baseDir: baseDir)
             case "gemini":
                 success = installGeminiHooks(baseDir: baseDir)
-            case "claude":
-                success = installClaudeHooks(baseDir: baseDir)
-            case "codex":
-                success = installCodexHooks(baseDir: baseDir)
             default:
                 success = false
             }
@@ -246,7 +210,10 @@ enum AgentHooksTool {
             }
         }
         // An agent that is hooked but never told about Tako cannot use it: the skill goes in with the hooks.
-        if baseDir == nil { installSkills(for: targets.map(\.id)) }
+        if includeSkills {
+            for id in targets.map(\.id) where ["qwen", "muse"].contains(id) { SetupAgentService.installNativeSkill(id, baseDir: resolvedBaseDir(baseDir)) }
+            if baseDir == nil { installSkills(for: targets.map(\.id).filter { !["qwen", "muse"].contains($0) }) }
+        }
         return report
     }
 
@@ -256,6 +223,7 @@ enum AgentHooksTool {
         let ctl = dir.appendingPathComponent("takoctl")
         guard FileManager.default.isExecutableFile(atPath: ctl.path) else { return }
         for id in agentIds {
+            if ["qwen", "muse"].contains(id) { SetupAgentService.installNativeSkill(id, baseDir: resolvedBaseDir(nil)); continue }
             let process = Process()
             process.executableURL = ctl
             process.arguments = ["skills", "install", id == "antigravity" ? "gemini" : id, "--yes"]
@@ -266,7 +234,7 @@ enum AgentHooksTool {
         }
     }
 
-    /// At launch: offers to connect detected AI coding agents if any are unconfigured
+    /// Offers to connect detected AI coding agents if any are unconfigured
     /// using Tako's signature in-terminal TUI dialog (`TerminalDialogView`).
     static func offerAtLaunch(
         theme: TerminalTheme?,

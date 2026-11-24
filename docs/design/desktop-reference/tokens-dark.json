@@ -1,0 +1,186 @@
+{
+ "vars": {
+  "--bg": "#100d0b",
+  "--term": "#14100e",
+  "--text": "#ede6df",
+  "--card": "#231f1d",
+  "--hover": "#1a1715",
+  "--hover2": "#2e2a27",
+  "--field": "#120f0d",
+  "--line": "#24211e",
+  "--line2": "#312e2b",
+  "--sub": "#b1aba6",
+  "--dim": "#8a8480",
+  "--mute": "#686460",
+  "--deep": "#4e4a46",
+  "--ember": "#F4581C",
+  "--claw": "#FF7A3D",
+  "--ok": "#b5bd68",
+  "--err": "#d54e53",
+  "--yellow": "#f0c674",
+  "--blue": "#81a2be",
+  "--purple": "#b294bb",
+  "--pop": "#241C16",
+  "--pophover": "#30261E",
+  "--st-work": "#f4581c",
+  "--st-wait": "#ff7a3d",
+  "--st-done": "#7bd88f",
+  "--st-err": "#d54e53",
+  "--st-idle": "#8a7f76",
+  "--mono": "'JetBrains Mono',ui-monospace,monospace",
+  "--ui": "-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"Helvetica Neue\",system-ui,sans-serif",
+  "--grot": "'Space Grotesk',system-ui,sans-serif"
+ },
+ "sidebar": {
+  "w": 248,
+  "h": 880,
+  "paddingTop": "0px",
+  "paddingLeft": "0px",
+  "fontFamily": "\"Space Grotesk\", system-ui, sans-serif",
+  "fontSize": "16px"
+ },
+ "sbRow": {
+  "w": 232,
+  "h": 46,
+  "height": "46px",
+  "borderRadius": "8px",
+  "padding": "5px 5px 5px 3px",
+  "fontSize": "16px",
+  "fontWeight": "400"
+ },
+ "sbKid": {
+  "w": 200,
+  "h": 23,
+  "height": "23px",
+  "fontSize": "16px"
+ },
+ "pane": {
+  "w": 508,
+  "h": 864,
+  "borderRadius": "10px",
+  "boxShadow": "rgb(49, 53, 62) 0px 0px 0px 1px"
+ },
+ "paneHeader": {
+  "w": 506,
+  "h": 28,
+  "height": "28px",
+  "fontSize": "16px",
+  "fontFamily": "\"Space Grotesk\", system-ui, sans-serif",
+  "padding": "0px 10px"
+ },
+ "paneBody": {
+  "w": 506,
+  "h": 834,
+  "fontSize": "13px",
+  "fontFamily": "Menlo, monospace, monospace",
+  "lineHeight": "20.15px",
+  "padding": "6px 12px 10px"
+ },
+ "headerBtn": {
+  "w": 22,
+  "h": 22,
+  "width": "22px",
+  "height": "22px",
+  "borderRadius": "5px"
+ },
+ "floatIcon": {
+  "w": 16,
+  "h": 16,
+  "width": "16px",
+  "height": "16px"
+ },
+ "shelfCapsule": {
+  "w": 144.2,
+  "h": 30,
+  "height": "30px",
+  "borderRadius": "8px",
+  "fontSize": "16px"
+ },
+ "ring": {
+  "w": 10,
+  "h": 10,
+  "width": "10px",
+  "height": "10px"
+ },
+ "settings": {
+  "w": 820,
+  "h": 700,
+  "borderRadius": "12px",
+  "fontFamily": "-apple-system, \"system-ui\", \"SF Pro Text\", system-ui, sans-serif",
+  "fontSize": "13px",
+  "lineHeight": "18.2px"
+ },
+ "settingsSide": {
+  "w": 232,
+  "h": 700,
+  "width": "232px",
+  "padding": "12px 8px"
+ },
+ "settingsNav": {
+  "w": 215,
+  "h": 32,
+  "height": "32px",
+  "borderRadius": "7px",
+  "fontSize": "13px"
+ },
+ "settingsTitle": {
+  "w": 122.8,
+  "h": 20,
+  "fontSize": "17px",
+  "fontWeight": "600"
+ },
+ "settingsRow": {
+  "w": 540,
+  "h": 57,
+  "padding": "10px 0px",
+  "gap": "16px"
+ },
+ "settingsPage": {
+  "w": 588,
+  "h": 557,
+  "padding": "16px 24px 24px"
+ },
+ "settingsFooter": {
+  "w": 588,
+  "h": 52,
+  "minHeight": "52px",
+  "padding": "8px 16px 8px 24px"
+ },
+ "button": {
+  "w": 107.1,
+  "h": 28,
+  "height": "28px",
+  "borderRadius": "7px",
+  "padding": "0px 12px",
+  "fontSize": "13px"
+ },
+ "segment": null,
+ "input": {
+  "w": 424.9,
+  "h": 28,
+  "height": "28px",
+  "borderRadius": "7px",
+  "fontSize": "13px"
+ },
+ "themeCard": {
+  "w": 174.7,
+  "h": 138.3,
+  "borderRadius": "10px",
+  "padding": "4px"
+ },
+ "themeMini": {
+  "w": 166.7,
+  "h": 72,
+  "height": "72px",
+  "borderRadius": "7px",
+  "fontSize": "10px"
+ },
+ "preview": {
+  "w": 540,
+  "h": 155.5,
+  "borderRadius": "10px",
+  "padding": "12px 14px",
+  "fontSize": "13px",
+  "lineHeight": "19.5px"
+ }
+}

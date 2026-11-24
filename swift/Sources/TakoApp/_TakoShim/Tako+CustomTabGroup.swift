@@ -34,6 +34,10 @@ extension Tako {
         weak var pendingOrderOutWindow: NSWindow?
         var lastSelectedWindowByWorkspace: [UUID: NSWindow] = [:]
         var focusGeneration: Int = 0
+        /// The presentation turn can be controlled in the race fixtures.
+        var deferPresentationWork: (@escaping () -> Void) -> Void = { work in
+            DispatchQueue.main.async(execute: work)
+        }
         /// Test override for workspace window frame synchronization.
         var syncWindowFrameOverride: Bool?
         var syncWindowFrame: Bool {

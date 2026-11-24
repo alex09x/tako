@@ -14,6 +14,7 @@ mod reflow;
 mod region;
 mod resize;
 mod scroll;
+mod snapshot;
 
 use crate::grid::*;
 

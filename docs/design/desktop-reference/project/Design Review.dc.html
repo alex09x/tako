@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#EDE8E2; font-family:'Space Grotesk',sans-serif; color:#1A1512; }
+  a { color:#C23E0E; } a:hover { color:#F4581C; }
+</style>
+</helmet>
+<div style="max-width:1040px;margin:0 auto;padding:56px 40px 80px;display:flex;flex-direction:column;gap:40px">
+
+  <div style="border-bottom:2px solid #1A1512;padding-bottom:20px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">TAKOCORE / РЕВЬЮ №1 · СБОРКА 2026-08-04 (АРХИВ — НИЖЕ)</div>
+    <div style="font-size:34px;font-weight:700;margin-top:6px">Разбор скриншотов — задачи программисту</div>
+    <div style="font-size:15px;color:#6B6259;margin-top:8px">Все размеры в pt (@1x). Цвета — hex из бренда. Приоритет: <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#D54E53">П1</span> ломает вид · <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#C99000">П2</span> заметно · <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#8A7F76">П3</span> полировка</div>
+  </div>
+
+  
+  <div style="border-bottom:2px solid #1A1512;padding-bottom:20px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">РЕВЬЮ №2 · СБОРКА 2026-08-05 · СКРИНЫ r2-01…r2-05</div>
+    <div style="font-size:28px;font-weight:700;margin-top:6px">Что всё ещё не так — полный список</div>
+    <div style="font-size:14px;color:#6B6259;margin-top:6px">Зачтено: разделители сплитов появились, паддинг окна есть, курсор стал ember-блоком, свотчи с рамкой, таймер в табе живой, формат «6.5s» &lt;10s верный, эмодзи и box-drawing ок, 1 вкладка → заголовок по центру. Дальше — только косяки.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#D54E53;color:#FAF7F2;padding:3px 10px;border-radius:6px">П1</span><span style="font-size:20px;font-weight:700">Вкладки (r2-03, r2-04) — всё ещё нативные macOS, спека не применена</span></div>
+    <img src="review/r2-03.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="tabs running v2">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. Растянуты на всю ширину.</b> Три таба делят весь бар. Спека: ширина по контенту, clamp 120–220px, прижаты влево от x=90, справа пустота (drag окна). Это главный визуальный косяк — NSTabBar так не умеет, нужен свой NSView (см. «Таб-бар — спека до пикселя»).</div>
+      <div><b>2. Порядок внутри таба перевёрнут.</b> Сейчас: заголовок по центру, краб и таймер справа. Спека: слева направо — краб 15×15 → gap 8 → заголовок → gap 8 → таймер. Ничего не центрировать.</div>
+      <div><b>3. Цвета нативные, не наши.</b> Активная — светло-серая (системная), фоновые темнее. Спека: активная #241C16 + полоса 2px #F4581C по нижней кромке (полосы нет вообще), фоновые прозрачные на #14100E, текст #B7ACA1. Активная сейчас СВЕТЛЕЕ фона терминала — выглядит чужой.</div>
+      <div><b>4. ⌘1 ⌘2 ⌘3 горят постоянно.</b> Спека: бейдж-цифры видны только пока физически зажат ⌘ (появление с задержкой 150ms), поверх краба, mono 10px на #352B23 r4. Постоянные «⌘N» справа — убрать.</div>
+      <div><b>5. Разделители табов — на всю высоту бара.</b> Спека: 1×12px #2A211B по вертикальному центру, только между фоновыми.</div>
+      <div><b>6. Заголовки «~» у всех трёх.</b> Если все три сессии реально в home — формально верно, но для скринов и теста сделай разные cwd; правило: basename(cwd), ssh → host, OSC 0/2 переопределяет.</div>
+      <div><b>7. Нет ✕ на ховере.</b> 16×16, хит 24×24, справа в табе; ховер таба #1F1915.</div>
+      <div><b>8. Нет кнопок ◫ и + в углу.</b> Сейчас только тусклый системный «+» в самом углу. Спека: две кнопки 28×28 r7, y=5, от правого края 8, gap 4, глифы SF Symbols 13/15pt #8A7F76, ховер #241C16.</div>
+      <div><b>9. Высота бара.</b> Померить: должно быть ровно 38px, таб 28px прижат к низу, под баром 1px #2A211B.</div></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#D54E53;color:#FAF7F2;padding:3px 10px;border-radius:6px">П1</span><span style="font-size:20px;font-weight:700">Промпт (r2-01, r2-04) — показывает юзера вместо каталога</span></div>
+    <img src="review/r2-04.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="prompt v2">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. «alex09x» — это basename($HOME), формально каталог. Но home обязан сокращаться до «~».</b> Правило: cwd == $HOME → «~»; внутри home → basename («tako-core»); ssh → host. То же для заголовка вкладки (там «~» уже правильно — значит, логика тайтла и промпта разошлась, унифицировать в одну функцию).</div>
+      <div><b>2. Скобка-уголок не та.</b> Рисуется фигурная «⎰»-образная. Спека: ╭ (U+256D) и ╰ (U+2570), цвет #8A7F76.</div>
+      <div><b>3. Символ ввода.</b> Выглядит как «)». Должен быть ❯ U+276F ember (проверить, что не подменяется шрифтом; если fish — set fish_prompt, наш хук и так его ставит).</div>
+      <div><b>4. Мета успеха: «· 20s · ✓» — галочку убрать.</b> Спека: успех = только длительность #8A7F76; ✘ + код красным — только при ошибке. Галочка — шум.</div>
+      <div><b>5. Формат «20.0s» в выводе — ок (это программа), но мета промпта и таб обязаны показывать «20s»</b> (10–59s → целые; &lt;10s → одна десятая; ≥60 → «1m 23s»).</div>
+      <div><b>6. Пустая строка перед ╭ есть — зачтено.</b></div></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#D54E53;color:#FAF7F2;padding:3px 10px;border-radius:6px">П1</span><span style="font-size:20px;font-weight:700">Сплиты (r2-05) — линия есть, фокуса нет</span></div>
+    <img src="review/r2-05.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="splits v2">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. Не видно, какая панель в фокусе.</b> Все три одинаковые, во всех курсор-контур. Спека: фокусная — обычный фон #1A1512 + мигающий ЗАЛИТЫЙ ember-блок; нефокусные — фон #17120F, текст alpha 0.75, курсор контур 1px без мигания. Сейчас залитого курсора нет ни в одной.</div>
+      <div><b>2. Цвет линии.</b> Похожа на системный серый ~#3A3A3A. Должно: 1px #2A211B (тёплый, чуть светлее фона).</div>
+      <div><b>3. Отступ контента от линии.</b> Слева от вертикальной линии текст впритык («Welcome to fish…» x≈10 от линии — ок), но проверить: window-padding 10px должен работать и внутри панелей от каждого края.</div></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#C99000;color:#FAF7F2;padding:3px 10px;border-radius:6px">П2</span><span style="font-size:20px;font-weight:700">Атрибуты и палитра (r2-01)</span></div>
+    <img src="review/r2-01.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="attrs v2">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. inverse не инвертирует.</b> Слово «inverse» выглядит как обычный текст. SGR 7 обязан поменять fg↔bg (блок светлого фона с тёмным текстом). Проверить в рендерере флаг INVERSE до выборки цветов.</div>
+      <div><b>2. Bright-ряд свотчей не видно.</b> printf печатает 40–47m и 100–107m, а на экране одна полоса. Вторая строка должна рендериться такими же квадратами с рамкой rgba(250,247,242,0.15).</div>
+      <div><b>3. dim слишком тёмный?</b> «dim» едва читается. SGR 2 = fg с alpha ~0.55 на нашем фоне, не 0.3.</div>
+      <div><b>4. Лигатуры.</b> Разлеплены — для терминала это ПРАВИЛЬНО (курсор по ячейкам), решение зафиксировано: лигатуры не включаем. Пункт из README закрыт.</div></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#C99000;color:#FAF7F2;padding:3px 10px;border-radius:6px">П2</span><span style="font-size:20px;font-weight:700">CJK (r2-02) + ответы на вопросы из README</span></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. CJK: перестать растягивать на 1.2.</b> Ещё раз, окончательно: ячейка = ровно 2 клетки, глиф PingFang НАТУРАЛЬНОГО размера по центру пары. Пустые поля по бокам — норма (так iTerm2/Ghostty). Стретч искажает иероглифы и ломает вертикальный ритм. На r2-02 всё ещё видно растяжение.</div>
+      <div><b>2. Крестик: да, ✘ U+2718.</b> Везде: мета промпта, вкладки. ✗ U+2717 в JetBrains Mono подменяется — не использовать.</div>
+      <div><b>3. Box-drawing — зачтено,</b> скругления ╭╮╰╯ стыкуются чисто.</div></div>
+  </div>
+
+  <div style="background:#14100E;border-radius:16px;padding:24px 28px;display:flex;flex-direction:column;gap:10px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;letter-spacing:0.08em;font-weight:700">НУЖНЫ СКРИНШОТЫ ДЛЯ СЛЕДУЮЩЕГО РЕВЬЮ</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF;line-height:1.9">
+      <div>1. Вкладки: 3 таба с РАЗНЫМИ cwd (~, ~/tako-core, ssh) — и тот же кадр с зажатым ⌘</div>
+      <div>2. Вкладки: ховер на фоновом табе (курсор на нём, виден ✕)</div>
+      <div>3. Промпт в git-репозитории (видна ветка) + промпт после команды с ошибкой (exit ≠ 0)</div>
+      <div>4. Сплиты: курсор виден в фокусной панели (кликнуть в неё перед снимком) — проверяем залитый блок и dim остальных</div>
+      <div>5. printf с bright-фонами отдельной строкой: printf '\033[100m  \033[101m  …' — проверяем второй ряд свотчей</div>
+      <div>6. echo с SGR 7: printf '\033[7m inverse \033[0m' крупно</div>
+      <div>7. CJK после фикса: та же строка 你好世界 — сравню ритм</div>
+      <div>8. Светлая тема, когда будет — окно целиком</div>
+      <div>9. iOS: список сессий + сессия с клавиатурой (с прошлого раза так и не переснято)</div>
+      <div>10. Иконка в доке рядом с другими приложениями (реальный размер)</div>
+    </div>
+    <div style="height:8px"></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;letter-spacing:0.08em;font-weight:700">ЧЕКЛИСТ №2 — ЧТО ДОДЕЛАТЬ, ПО ПОРЯДКУ</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF;line-height:1.9">
+      <div>□ Свой таб-бар вместо NSTabBar: табы 120–220 влево, активная #241C16 + полоса 2px ember, порядок краб→имя→таймер</div>
+      <div>□ ⌘-цифры только при зажатом ⌘; ✕ на ховере; разделители 1×12; кнопки ◫/+ 28×28 в углу</div>
+      <div>□ Промпт: $HOME → «~» (одна функция с тайтлом вкладки); уголки ╭ ╰ U+256D/U+2570; ❯ U+276F; мета успеха без ✓</div>
+      <div>□ Сплиты: фокус = залитый мигающий курсор; нефокус = #17120F + текст 75% + курсор-контур; линия #2A211B</div>
+      <div>□ SGR 7 inverse; bright-ряд свотчей; dim alpha 0.55</div>
+      <div>□ CJK: глиф натуральный по центру 2 клеток, стретч убрать</div>
+      <div>□ Из их же списка: светлая тема, меню краба, drag табов, «+N ▾», Space Grotesk в About/настройках</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#D54E53;color:#FAF7F2;padding:3px 10px;border-radius:6px">П1</span><span style="font-size:20px;font-weight:700">Вкладки (05, 06) — переделать по спеке</span></div>
+    <img src="review/05.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="tabs running">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. Ширина.</b> Сейчас 3 вкладки растянуты на весь бар. Надо: ширина по контенту, clamp 120–220pt, прижаты влево, первый таб на x=90 (78 светофоры + 12). Справа от последней — пустота (drag окна).</div>
+      <div><b>2. Заголовок.</b> Сейчас: полная команда `cd ~/CLionProjects/…` и «/». Надо: basename(cwd) → «tako-core»; cwd=«/» или «~» → показывать «~»; ssh → host. OSC 0/2 переопределяет. «/» как заголовок запрещён.</div>
+      <div><b>3. Краб.</b> Сейчас справа и мыльный. Надо: слева от текста, ровно 15×15 или 16×16 (только целые px, без масштабирования), gap до текста 8.</div>
+      <div><b>4. ⌘1…⌘3.</b> Сейчас видны всегда. Надо: появляются только пока физически зажат ⌘ (задержка 150ms), бейдж поверх краба: mono 10pt на #352B23, радиус 4. Отпустил — исчезли.</div>
+      <div><b>5. Активная вкладка.</b> Надо: фон #241C16, текст #FAF7F2 (weight 500), полоса 2pt #F4581C по нижней кромке, радиус 8pt только сверху. Фоновые: прозрачные, текст #B7ACA1. Ховер: #1F1915 + ✕ 16×16 (хит 24×24). Разделитель между фоновыми: 1×12pt #2A211B по центру, у активной — нет.</div>
+      <div><b>6. Таймер.</b> «7s» — после заголовка, mono 10pt #8A7F76, gap 8; показывать при >3s.</div>
+      <div><b>7. Геометрия бара.</b> Высота 38pt, вкладка 28pt прижата к низу, под баром линия 1pt #2A211B. Фон бара #14100E (не системный серый), фон терминала #1A1512. Кнопка «+» 28×28pt, отступ от правого края 8, ховер-фон #241C16 r7.</div>
+    </div>
+    <img src="review/06.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="tabs after">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>8. Кнопки в углу.</b> ◫ и + строго 28×28 r7, глифы SF Symbols (rectangle.split.2x1 13pt medium / plus 15pt semibold) #8A7F76, ховер #241C16 (80ms), нажатие #2A211B, y=5, от правого края 8, gap 4. Тултипы через 800ms. При 1 вкладке бар скрыт вместе с кнопками.</div>
+      <div><b>9. Вкладки исчезли совсем.</b> На 06 бар пустой: ни табов, ни заголовка. Правило: >1 вкладки — бар с табами всегда виден; ровно 1 — таб-стрип скрыт, но по центру тайтлбара заголовок (basename cwd, SF Pro 13 semibold #B8BCC2). Пустого бара не бывает.</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#D54E53;color:#FAF7F2;padding:3px 10px;border-radius:6px">П1</span><span style="font-size:20px;font-weight:700">Сплиты (07)</span></div>
+    <img src="review/07.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="splits">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. Разделители.</b> 1pt #2A211B между панелями (dividerThickness уже = 1 в SplitContainerView — сейчас зазор красится фоном, надо цветом линии).</div>
+      <div><b>2. Расфокус.</b> Неактивная панель: фон #17120F (на шаг темнее #1A1512), текст с alpha 0.75; курсор в ней — контур 1pt без заливки, не мигает. Фокусная — обычная + мигающий ember-курсор.</div>
+      <div><b>3. Промпт-каталог «/".</b> В правой панели промпт показывает «/» — то же правило, что для вкладок: «~» или последние 2 сегмента.</div>
+      <div><b>4. Цвет уголков.</b> ╭ и ╰ в промпте должны быть #8A7F76 (сейчас местами ember — сливаются с ❯).</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#D54E53;color:#FAF7F2;padding:3px 10px;border-radius:6px">П1</span><span style="font-size:20px;font-weight:700">Иконки (10, 11) — краб сломан</span></div>
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <img src="review/10.png" style="width:200px;border-radius:10px;border:1px solid #DDD5CB" alt="macos icon">
+      <img src="review/11.png" style="width:200px;border-radius:10px;border:1px solid #DDD5CB" alt="ios icon">
+      <div style="width:200px;height:200px;border-radius:36px;background:linear-gradient(160deg,#2A211B,#120F0D);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 120 120" width="130" height="130"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g><g fill="#120F0D"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g></svg>
+      </div>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div>Эталон — третий квадрат (и `assets/takocore-mark.svg` в архиве). Сетка краба 10×7 ячеек, ячейка 10, шаг 11, радиус ячейки 2:</div>
+      <div><b>macOS (10):</b> потеряна верхняя строка тела (r3: колонки 2–7 все заполнены), глаза должны быть ЗАЛИВКОЙ цвета фона #120F0D в строке r4 (колонки 3 и 6), а не контурными квадратами. Клешни #FF7A3D, тело #F4581C. Ширина знака = 65% плашки (на 1024 — 665px). Фон — градиент 160° #2A211B→#120F0D.</div>
+      <div><b>iOS (11):</b> тело краба вообще не нарисовано — остались клешни и глаза на ember-фоне. Тело на iOS-иконке — монохром #FAF7F2 (весь краб один цвет, глаза — «дырки» цвета фона). Фон — градиент 160° #FF7A3D→#C23E0E. Тот же масштаб 65%.</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#C99000;color:#FAF7F2;padding:3px 10px;border-radius:6px">П2</span><span style="font-size:20px;font-weight:700">iOS: список сессий (08)</span></div>
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <img src="review/08.png" style="width:300px;border-radius:14px;border:1px solid #DDD5CB" alt="ios list">
+      <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+        <div><b>1. Вордмарка.</b> «TAKO CORE» в две строки — нельзя. Одна строка: TAKO белым + CORE ember, mono 800, 20pt, letter-spacing 0.6. Краб слева 26×26 (у тебя он растянут по ширине — держать квадрат, целые px), gap 12. Блок: отступ сверху от статус-бара 18, слева 20.</div>
+        <div><b>2. Карточки вместо строк.</b> Каждая сессия — карточка: фон #1F1915, рамка 1pt #2A211B, радиус 14, паддинг 16, между карточками 10, от краёв экрана 16. Заголовок 14pt #FAF7F2, подпись 12pt #8A7F76, gap 3. Стрелка «›» #8A7F76 справа.</div>
+        <div><b>3. Точки статуса.</b> 8×8, по левому краю карточки: живая — #7BD88F, offline — #8A7F76, реконнект — #FF7A3D. Сейчас все серые — local жива, должна быть зелёной. (Дальше вместо точки — краб-индикатор 15×15 из спеки.)</div>
+        <div><b>4. «Новая сессия».</b> Не текстовая строка, а кнопка: 52pt высоты, градиент 160° #F4581C→#C23E0E, радиус 14, текст 15pt 700 #FAF7F2, прижата к низу экрана (отступ 16, над home indicator).</div>
+        <div><b>5. Размеры текста.</b> Сейчас заголовки ~20pt+ — много. По спеке выше: 14/12.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#C99000;color:#FAF7F2;padding:3px 10px;border-radius:6px">П2</span><span style="font-size:20px;font-weight:700">iOS: сессия (09)</span></div>
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <img src="review/09.png" style="width:300px;border-radius:14px;border:1px solid #DDD5CB" alt="ios session">
+      <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+        <div><b>1. Шапка.</b> Высота 48pt, низ 1pt #2A211B. Состав слева направо: «‹» ember 20pt (gap 12) → краб 18×18 → имя 13pt #FAF7F2 («local · fish») → точка статуса 7×7 → справа «＋» 18pt #8A7F76. Путь «~/tako-core · демо» в шапку не влезает — убрать (cwd виден в промпте по OSC 7 при желании, но по дизайну на мобиле промпт минимальный).</div>
+        <div><b>2. Промпт.</b> На мобиле — только «❯» ember + ввод, без двухстрочного контекста (место дорого, контекст в шапке). Сейчас рисуется ╭ prod-1 git:(main) — убрать.</div>
+        <div><b>3. Курсор.</b> Блок #F4581C размером в ячейку, мигание 1.2s (60% on / 40% off). Сейчас серо-белый.</div>
+        <div><b>4. Клавиши.</b> Геометрия верная (44pt ✓). Правки: фон #2E251E (не нейтральный серый), радиус 9, глифы: ⌃ (U+2303) вместо «^», ⇥ (U+21E5) вместо «→»; «paste» — текст 12pt #FF7A3D на фоне #3A2A1E. Зажатый модификатор (⌃ липкий) — глиф ember + фон #241C16 с внутр. тенью.</div>
+        <div><b>5. Данные.</b> Шапка говорит local·fish, контент — prod-1 (демо, ок — но в релизе заголовок обязан совпадать с сессией).</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#8A7F76;color:#FAF7F2;padding:3px 10px;border-radius:6px">П3</span><span style="font-size:20px;font-weight:700">Промпт и мелочь (01–04)</span></div>
+    <img src="review/01.png" style="width:100%;border-radius:10px;border:1px solid #DDD5CB" alt="colors">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. Курсор.</b> Везде тонкая белая палка. Надо: блок цвета #F4581C шириной в ячейку, мигание 1.2s (60/40). В полях промпта после ❯ — сразу за последним символом.</div>
+      <div><b>2. Ветка в промпте.</b> «main» сейчас синий — по дизайну #B294BB (magenta Tomorrow). Каталог #FF7A3D, «git:( )» и уголки ╭╰ — #8A7F76, ❯ — #F4581C (после ошибки — #D54E53 вместе с кодом «✘ 1»).</div>
+      <div><b>3. Отбивка промпта.</b> Перед ╭-строкой одна пустая строка после вывода команды (сейчас впритык).</div>
+      <div><b>4. ANSI-свотчи (01).</b> Нулевой чёрный квадрат невидим — рисовать свотчи с рамкой 1px rgba(250,247,242,0.15). Это только про демо-скрипт.</div>
+      <div><b>5. Крестик.</b> Да, бери ✘ U+2718 (в JetBrains Mono есть) вместо ✗ — по всему UI: промпт-мета, вкладки.</div>
+      <div><b>6. CJK.</b> Не растягивать глифы до 1.2 — искажает иероглифы. Правильно: ячейка остаётся 2 клетки, глиф PingFang рисуется натуральным размером по центру пары клеток (пустые поля по бокам — норма, так делают iTerm2/Ghostty).</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#8A7F76;color:#FAF7F2;padding:3px 10px;border-radius:6px">П3</span><span style="font-size:20px;font-weight:700">Второй проход — что упустил сначала</span></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#4A4238;line-height:1.75;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+      <div><b>1. Заголовок окна (01–04).</b> В тайтлбаре «~/C/tako-core» — то же правило, что для вкладок: basename → «tako-core». Сокращалка путей «~/C/…» не нужна нигде.</div>
+      <div><b>2. Паддинг терминала.</b> Контент прилипает к краям: window-padding 10pt со всех сторон (в TerminalTheme сейчас 2).</div>
+      <div><b>3. Формат таймера.</b> Единый: &lt;10s → одна десятая («4.0s»), 10–59s → целые («26s», не «26.5s» как на 06), ≥60 → «1m 23s». И во вкладке, и в промпт-мете.</div>
+      <div><b>4. Краб на фоновых вкладках (05).</b> Все три краба одинаково-оранжевые. Фоновые idle-сессии — двухтоновый краб в покое; бежит только тот, у кого реально идёт команда.</div>
+      <div><b>5. «+» в баре.</b> Клик — новая вкладка с cwd активной; правый клик/долгое нажатие — меню «новый ssh-хост…». Ховер #241C16 r7.</div>
+      <div><b>6. Точка статуса в шапке iOS-сессии (09).</b> Серая при живой local-сессии — цвет по состоянию, как в списке.</div>
+      <div><b>7. Свотчи BRT (01).</b> Вторая строка ярких цветов без квадратов — если это демо-скрипт, дорисовать вторую полосу, обе с рамкой rgba(250,247,242,0.15).</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:13px;background:#1A1512;color:#FAF7F2;padding:3px 10px;border-radius:6px">ПОВЕДЕНИЕ</span><span style="font-size:20px;font-weight:700">Приёмка руками — чего на скринах не видно</span></div>
+    <div style="display:flex;gap:14px;align-items:stretch">
+      <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#4A4238;line-height:1.8;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+        <div style="font-weight:700;color:#C23E0E;margin-bottom:6px">DESKTOP</div>
+        <div>· новая вкладка наследует cwd активной (из OSC 7); появление 160ms ease-out, закрытие 140ms</div>
+        <div>· закрытие вкладки с живым процессом → диалог «Закрыть сессию?» (из UI kit); ⌘⇧Z 5s возвращает вкладку с живым pty</div>
+        <div>· пустой таб-бар: drag окна; двойной клик — zoom</div>
+        <div>· переключение вкладок: контент мгновенно, ember-полоса едет 120ms; ⌃Tab по кругу, ⌘1…9 прямо</div>
+        <div>· bell/OSC 9 в фоновой вкладке: краб подпрыгивает один раз + точка; в активной — ничего</div>
+        <div>· выделение: 2×клик слово, 3×клик строка, ⌥-drag прямоугольник; цвет rgba(244,88,28,0.3)</div>
+        <div>· OSC 8 ссылки: подчёркивание на ховере, ⌘+клик открывает</div>
+        <div>· resize окна: reflow мягких переносов (в движке готов), промпт-блок не ломается</div>
+        <div>· курсор: мигает 1.2s (60/40); мигание останавливается во время ввода; расфокус окна — контур</div>
+        <div>· IME (中文/한글): композиция подчёркнута на подложке selection-цвета (drawMarkedText готов)</div>
+        <div>· reduce motion: краб и полоса не анимируются, только цвет</div>
+      </div>
+      <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#4A4238;line-height:1.8;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px">
+        <div style="font-weight:700;color:#C23E0E;margin-bottom:6px">iOS</div>
+        <div>· ⌃ и ⇥ — липкие: горят ember до следующего символа; удержание ↑/↓ — автоповтор; лёгкий haptic на каждую клавишу</div>
+        <div>· тап по терминалу — клавиатура; свайп вниз по терминалу — спрятать</div>
+        <div>· long-press — выделение с лупой и хэндлами; пинч — размер шрифта 10–20pt с шагом 1</div>
+        <div>· скролл — история; резиновый отскок у краёв; тап по статус-бару — к низу</div>
+        <div>· список: свайп карточки влево — disconnect/удалить (красная зона); long-press — меню (переименовать · reconnect · удалить)</div>
+        <div>· обрыв ssh: карточка и шапка — краб-призрак + «reconnect»; экран сессии сохранён</div>
+        <div>· OSC 9/777 при приложении в фоне — локальный push с именем сессии</div>
+        <div>· «＋» в шапке сессии — шит выбора поверх, текущая сессия не прерывается; хит-зоны всех кнопок шапки ≥44pt</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#14100E;border-radius:16px;padding:24px 28px;display:flex;flex-direction:column;gap:10px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#FF7A3D;letter-spacing:0.08em;font-weight:700">ЧЕКЛИСТ ДЛЯ ПРОГРАММИСТА — ПО ПОРЯДКУ</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#EDE6DF;line-height:1.9">
+      <div>□ Вкладки: natural width 120–220, влево, x=90; заголовок = basename(cwd), «/» запрещён</div>
+      <div>□ Активная вкладка: #241C16 + полоса 2pt #F4581C; ховер #1F1915 + ✕; ⌘-цифры только при зажатом ⌘</div>
+      <div>□ Кнопки бара ◫/+: 28×28 r7, y=5, отступ 8, gap 4; SF Symbols 13/15pt #8A7F76, ховер #241C16, нажатие #2A211B</div>
+      <div>□ 1 вкладка → бар скрыт, заголовок по центру; пустой бар невозможен</div>
+      <div>□ Краб: целые 15×15/16×16 слева, таймер 10pt #8A7F76 после текста</div>
+      <div>□ Сплиты: линия 1pt #2A211B; расфокус #17120F + текст 75% + курсор-контур</div>
+      <div>□ Курсор: блок #F4581C, мигание 1.2s — mac и iOS</div>
+      <div>□ Иконки: пересобрать по assets/takocore-mark.svg (глаза — заливка фоном; iOS — тело #FAF7F2)</div>
+      <div>□ iOS список: карточки #1F1915 r14, вордмарка одной строкой, кнопка «новая сессия» 52pt ember</div>
+      <div>□ iOS сессия: шапка 48pt по спеке, промпт — только ❯, глифы ⌃ и ⇥</div>
+      <div>□ Промпт: ветка #B294BB, уголки #8A7F76, пустая строка перед блоком, ✘ U+2718</div>
+      <div>□ Заголовок окна = basename; window-padding 10pt; таймер «4.0s / 26s / 1m 23s»</div>
+      <div>□ Поведение: липкие ⌃/⇥ + haptic, пинч-шрифт, свайпы списка, диалог закрытия, ⌘⇧Z, push при OSC 9</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

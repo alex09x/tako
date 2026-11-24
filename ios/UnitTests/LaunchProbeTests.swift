@@ -215,10 +215,14 @@ final class LaunchProbeTests: XCTestCase {
         let docs = try XCTUnwrap(FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask).first)
         let dump = docs.appendingPathComponent("dump.txt")
+        let ready = docs.appendingPathComponent("dump.ready")
         try? FileManager.default.removeItem(at: dump)
+        try? FileManager.default.removeItem(at: ready)
+        defer { try? FileManager.default.removeItem(at: ready) }
 
         LaunchOptions.arguments = ["TakoCore", "-takoSend", "hi", "-takoDump", "0.2"]
         LaunchProbe.armIfAsked(session: session)
+        XCTAssertEqual(try String(contentsOf: ready, encoding: .utf8), "armed\n")
 
         let sent = await pollUntil(timeout: 3) { mounted.delegate.sentInputs.count == 2 }
         XCTAssertTrue(sent)

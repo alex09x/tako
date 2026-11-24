@@ -12,6 +12,7 @@ import Foundation
 
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
+import Darwin
 import QuartzCore
 
 extension TakoTerminalNSView {
@@ -37,10 +38,10 @@ extension TakoTerminalNSView {
 
         var highlightItems: [(rect: CGRect, color: CGColor, style: TerminalRegexTrigger.HighlightStyle)] = []
 
-        let deadline = DispatchTime.now() + .milliseconds(8)
+        let deadline = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) + 8_000_000
 
         for screenRow in 0..<screenRows {
-            if DispatchTime.now() > deadline {
+            if clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) > deadline {
                 break
             }
             let retainedRow = UInt64(max(0, topVisible + screenRow))
@@ -55,7 +56,7 @@ extension TakoTerminalNSView {
             let scanRange = NSRange(location: 0, length: inspectedLength)
 
             for trigger in regexTriggers {
-                if DispatchTime.now() > deadline {
+                if clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) > deadline {
                     break
                 }
                 if disabledTriggerIDs.contains(trigger.id) {
@@ -64,7 +65,7 @@ extension TakoTerminalNSView {
                 guard let regex = trigger.regex else { continue }
                 
                 var matchCount = 0
-                let matchStart = DispatchTime.now()
+                let matchStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
 
                 regex.enumerateMatches(in: lineText, options: [], range: scanRange) { matchResult, _, stop in
                     guard let match = matchResult, match.range.length > 0 else { return }
@@ -100,7 +101,8 @@ extension TakoTerminalNSView {
                     }
                 }
 
-                let elapsedNs = DispatchTime.now().uptimeNanoseconds - matchStart.uptimeNanoseconds
+                // Descheduling the UI thread is not expensive regex work.
+                let elapsedNs = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - matchStart
                 if elapsedNs > 2_000_000 { // 2ms per-match budget
                     disabledTriggerIDs.insert(trigger.id)
                 }

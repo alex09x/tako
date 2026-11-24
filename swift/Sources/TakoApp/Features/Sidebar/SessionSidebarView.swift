@@ -18,12 +18,15 @@ struct SessionSidebarView: View {
     let containingWindow: NSWindow?
     let backgroundColor: Color
     let newSessionShortcut: KeyboardShortcut?
+    let windowIsPresented: Bool
 
     @ObservedObject var store: SessionSidebarStore
     @ObservedObject var workspaceStore: WorkspaceStore
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
-    @ObservedObject private var animState = LivingAnimationState.shared
+    @ObservedObject var animState = LivingAnimationState.shared
+    /// Sidebar counter settings (`sidebar-count-*`); the scheme comes from `.shellScheme()`.
+    @ObservedObject var presentation = DesktopPresentation.shared
 
     typealias T = Tako.LivingTokens
 
@@ -32,10 +35,16 @@ struct SessionSidebarView: View {
     /// click selects the tab itself, and a cursor left on another row would
     /// read as a second selection.
     @State var showsArrowCursor = false
-    @State private var editingItemId: String? = nil
-    @State private var editingDescriptionText: String = ""
-    @FocusState private var isSearchFocused: Bool
-    @FocusState private var isListFocused: Bool
+    @State var isSearchExpanded = false
+    @State var searchFocusToken: Int = 0
+    @State private var chromeRevision: Int = 0
+#if DEBUG
+    static var onContentBuildForTesting: ((NSWindow?) -> Void)?
+#endif
+    @State var editingItemId: String? = nil
+    @State var editingDescriptionText: String = ""
+    @FocusState var isSearchFocused: Bool
+    @FocusState var isListFocused: Bool
 
     @State private var hostingWindow: NSWindow?
 
@@ -45,7 +54,8 @@ struct SessionSidebarView: View {
         backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
         newSessionShortcut: KeyboardShortcut? = Tako.Config.defaultKeyboardShortcuts["new_tab"],
         store: SessionSidebarStore = .shared,
-        workspaceStore: WorkspaceStore = .shared
+        workspaceStore: WorkspaceStore = .shared,
+        windowIsPresented: Bool = true
     ) {
         self._isPresented = isPresented
         self.containingWindow = containingWindow
@@ -53,21 +63,26 @@ struct SessionSidebarView: View {
         self.newSessionShortcut = newSessionShortcut
         self.store = store
         self.workspaceStore = workspaceStore
+        self.windowIsPresented = windowIsPresented
     }
 
     var targetWindow: NSWindow? {
         containingWindow ?? hostingWindow ?? NSApp?.keyWindow
     }
 
-    private var filterNeedsAttention: Bool {
+    var filterNeedsAttention: Bool {
         store.filterNeedsAttention(for: targetWindow)
     }
 
-    private var filterText: String {
+    var filterText: String {
         store.filterText(for: targetWindow)
     }
 
-    private var filterTextBinding: Binding<String> {
+    var showsFilterControls: Bool {
+        isSearchExpanded || !filterText.isEmpty || filterNeedsAttention
+    }
+
+    var filterTextBinding: Binding<String> {
         Binding(
             get: { store.filterText(for: targetWindow) },
             set: { store.setFilterText($0, for: targetWindow) }
@@ -75,11 +90,15 @@ struct SessionSidebarView: View {
     }
 
     private var workspaceGroups: [SessionSidebarWorkspaceGroup] {
-        store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore)
+        store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore,
+                              ignoringWorkspaceCollapse: presentation.preferences.sidebarGrouping == .status)
     }
 
+    /// The rows in the order shown, which the arrow keys walk.
     var items: [SessionSidebarItem] {
-        workspaceGroups.flatMap(\.items)
+        let groups = workspaceGroups
+        guard presentation.preferences.sidebarGrouping == .status else { return groups.flatMap(\.items) }
+        return SidebarStatusBucket.buckets(from: groups).flatMap { $0.rows.map(\.item) }
     }
 
     private static func sessionCount(_ groups: [SessionSidebarWorkspaceGroup], _ items: [SessionSidebarItem]) -> Int {
@@ -94,7 +113,7 @@ struct SessionSidebarView: View {
     }
 
     /// No animation frames anywhere: the window is hidden or the app away.
-    private var motionPaused: Bool {
+    var motionPaused: Bool {
         Self.motionPaused(timelinePaused: animState.isTimelinePaused, isPresented: isPresented)
     }
 
@@ -113,49 +132,97 @@ struct SessionSidebarView: View {
     // The list is built once per change, not per animation frame: only the
     // rings and rows that move redraw on their own (`SessionSidebarRowView`).
     public var body: some View {
-        let groups = workspaceGroups
-        let flatItems = groups.flatMap(\.items)
+#if DEBUG
+        let _ = windowIsPresented ? Self.onContentBuildForTesting?(containingWindow) : nil
+#endif
+        let _ = chromeRevision
+        // Keep the native search editor mounted; only the expensive list is
+        // suspended. Tab selection retains its existing terminal-focus policy.
+        let groups = windowIsPresented ? workspaceGroups : []
+        // Grouped by status, the arrow keys walk the rows in the order shown.
+        let buckets = presentation.preferences.sidebarGrouping == .status ? SidebarStatusBucket.buckets(from: groups) : nil
+        let flatItems = buckets.map { $0.flatMap { $0.rows.map(\.item) } } ?? groups.flatMap(\.items)
+        let totalSessions = Self.sessionCount(groups, flatItems)
+        let waitingCount = Self.attentionCount(groups, flatItems)
+        let counts = windowIsPresented ? store.attentionCounts(for: targetWindow, preferences: presentation.preferences,
+                                                               workspaceStore: workspaceStore) : SidebarAttentionCounts()
+
         VStack(spacing: 0) {
-            headerView(sessionCount: Self.sessionCount(groups, flatItems))
-            searchAndSegmentsBar(attentionCount: Self.attentionCount(groups, flatItems))
-            tabListView(groups: groups, flatItems: flatItems)
-            footerView
-        }
-        .contextMenu {
-            Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
-            Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
+            headerView(sessionCount: totalSessions, attentionCount: waitingCount)
+            searchBar
+            if SidebarChromeMetrics.showsSegments(style: presentation.preferences.sidebarStyle,
+                                                  grouping: presentation.preferences.sidebarGrouping) {
+                segmentsRow(attentionCount: waitingCount, counts: counts)
+            }
+
+            VStack(spacing: 0) {
+                if windowIsPresented { tabListView(groups: groups, buckets: buckets, flatItems: flatItems) }
+            }
+            // Rows carry the reference's own 8 pt margins (A01 `.row`, `.ws`).
+            .padding(.horizontal, 0)
+            .padding(.top, 4)
+            .padding(.bottom, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contextMenu {
+                Button("New Session") { store.createNewTab(in: targetWindow) }
+                Divider()
+                Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
+                Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(6)
+        // No rule on the trailing edge: the sidebar and the canvas are one
+        // surface, the cards alone mark where the terminals begin.
         .background(backgroundColor)
-        .overlay {
-            RoundedRectangle(cornerRadius: 3)
-                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
-                .padding(6)
-                .allowsHitTesting(false)
+        .environment(\.sidebarStyle, presentation.preferences.sidebarStyle)
+        .onChange(of: presentation.preferences.sidebarLook) { _, _ in
+            store.dropHiddenAttentionFilter(presentation.preferences, for: targetWindow)
         }
-        .onKeyPress(.escape) {
-            isPresented = false
-            return .handled
-        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("SessionSidebar")
         .onAppear {
             if hostingWindow == nil {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow
             }
             followActiveTab()
-            isListFocused = true
+            store.dropHiddenAttentionFilter(presentation.preferences, for: targetWindow)
+            if windowIsPresented && !(containingWindow?.firstResponder is Tako.SurfaceView) { isListFocused = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            guard windowIsPresented else { return }
+            chromeRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            guard windowIsPresented else { return }
+            chromeRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fullscreenDidExit)) { _ in
+            guard windowIsPresented else { return }
+            chromeRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notif in
+            guard windowIsPresented else { return }
+            if let win = notif.object as? NSWindow, win === targetWindow {
+                chromeRevision &+= 1
+            }
         }
         // Each tab is a window with a sidebar of its own; the one on screen
         // must not keep an arrow-key cursor left from when it was last shown,
         // or a second row looks chosen. The cursor goes where the active
-        // tab goes.
-        .onChange(of: flatItems.firstIndex(where: { $0.isSelected })) { _, _ in
-            followActiveTab()
-        }
+        // tab goes, and otherwise stays on its row when rows reorder.
+        .modifier(SidebarCursorKeeper(ids: flatItems.map(\.id), activeId: flatItems.first(where: { $0.isSelected })?.id,
+                                      enabled: windowIsPresented, selectedIndex: $selectedIndex,
+                                      followActive: followActiveTab))
         .onReceive(NotificationCenter.default.publisher(for: .takoNotificationStoreDidChange)) { _ in
+            guard windowIsPresented else { return }
+            store.objectWillChange.send()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .takoTabTitleDidChange)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
+            guard windowIsPresented else { return }
             guard let win = notif.object as? NSWindow else { return }
             if let bound = containingWindow {
                 let group = Tako.CustomTabGroup.group(for: bound)
@@ -168,147 +235,42 @@ struct SessionSidebarView: View {
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoNewTab)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoCloseTab)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoMoveTab)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoPresentTerminal)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoSubagentHierarchyDidChange)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
-    }
-
-    // MARK: - Header (§5.1)
-
-    private func headerView(sessionCount: Int) -> some View {
-        HStack(spacing: 8) {
-            Text("Sessions")
-                .font(T.headerFont(size: 13))
-                .foregroundColor(Color(nsColor: T.textActive))
-                .accessibilityIdentifier("SessionSidebarHeader")
-
-            Spacer()
-
-            Text("\(sessionCount)")
-                .font(Font(T.monoFont(size: 10, weight: .medium)))
-                .foregroundColor(Color(nsColor: T.dim))
-        }
-        .frame(height: 17)
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .contentShape(Rectangle())
-        .contextMenu {
-            Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
-            Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
-        }
-    }
-
-    // MARK: - Search & Segments (§5.2, §5.3)
-
-    private func searchAndSegmentsBar(attentionCount: Int) -> some View {
-        VStack(spacing: 0) {
-            // Search input: margin 0 12 8, h 26, r 7, bg #1A1512, border 1 #2A211B, padding 0 9
-            HStack(spacing: 7) {
-                Text("⌕")
-                    .font(Font(T.monoFont(size: 11)))
-                    .foregroundColor(Color(nsColor: T.faint))
-
-                ZStack(alignment: .leading) {
-                    if filterText.isEmpty {
-                        Text("Filter sessions…")
-                            .font(Font(T.monoFont(size: 11)))
-                            .foregroundColor(Color(nsColor: T.faint))
-                            .allowsHitTesting(false)
-                    }
-                    TextField("", text: filterTextBinding)
-                        .textFieldStyle(.plain)
-                        .font(Font(T.monoFont(size: 11)))
-                        .foregroundColor(Color(nsColor: T.textActive))
-                        .focused($isSearchFocused)
-                        .onKeyPress(.escape) {
-                            isPresented = false
-                            return .handled
-                        }
-                }
-
-                if !filterText.isEmpty {
-                    Button(action: { store.setFilterText("", for: targetWindow) }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(nsColor: T.dim))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 9)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 7).fill(Color(nsColor: T.chrome)))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color(nsColor: T.hairline), lineWidth: 1))
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-
-            // Segments: margin 0 12 6, gap 4. Two segments h 22, r 6, padding 0 8, mono 10: "All" and "◎ Needs you · N"
-            HStack(spacing: 4) {
-                segmentButton(isActive: !filterNeedsAttention) {
-                    store.setFilterNeedsAttention(false, for: targetWindow)
-                } content: {
-                    Text("All")
-                        .font(Font(T.monoFont(size: 10, weight: .regular)))
-                }
-
-                segmentButton(isActive: filterNeedsAttention) {
-                    store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow)
-                } content: {
-                    HStack(spacing: 6) {
-                        // It pulses only while something waits for you; with
-                        // nothing waiting it rests. Core Animation runs it, as
-                        // a pill's ring: a SwiftUI clock in this row laid the
-                        // sidebar out every frame -- in every tab's window --
-                        // whenever a tab in the background was at work.
-                        let ringRests = Self.headerRingRests(reduceMotion: animState.reduceMotion, waiting: attentionCount)
-                        SidebarStatusLayerView(
-                            state: .waiting, ringCenter: nil, cornerRadius: 0,
-                            reduceMotion: ringRests, paused: motionPaused, pulses: 0,
-                            ringOnly: StatusRingSize.extraSmall.rawValue)
-                            .frame(width: StatusRingSize.extraSmall.rawValue, height: StatusRingSize.extraSmall.rawValue)
-                        Text("Needs you · \(attentionCount)")
-                            .font(Font(T.monoFont(size: 10, weight: .regular)))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-                }
-
-                Spacer(minLength: 4)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
-        }
-    }
-
-    private func segmentButton<Content: View>(
-        isActive: Bool, action: @escaping () -> Void, @ViewBuilder content: () -> Content
-    ) -> some View {
-        Button(action: action) {
-            content()
-                .foregroundColor(Color(nsColor: isActive ? T.textActive : T.dim))
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(RoundedRectangle(cornerRadius: 6).fill(isActive ? Color(nsColor: T.surfaceActive) : Color.clear))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isActive ? Color(nsColor: T.hairline) : Color.clear, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
+        .shellScheme()
     }
 
     // MARK: - Tab List (§5.4 - §5.7)
 
-    private func tabListView(groups: [SessionSidebarWorkspaceGroup], flatItems: [SessionSidebarItem]) -> some View {
+    func workspaceActions(_ group: SessionSidebarWorkspaceGroup) -> SidebarWorkspaceActions {
+        SidebarWorkspaceActions(
+            workspaceID: group.id, name: group.name, sessionCount: group.sessionCount, isCollapsed: group.isCollapsed,
+            workspaces: workspaceStore, window: targetWindow,
+            newSession: { [store, workspaceStore, targetWindow] in
+                store.createNewTab(inWorkspace: group.id, around: targetWindow, workspaceStore: workspaceStore)
+            },
+            toggleCollapse: { [store] in store.toggleWorkspaceCollapsed(group.id) })
+    }
+
+    private func tabListView(groups: [SessionSidebarWorkspaceGroup], buckets: [SidebarStatusBucket]?,
+                             flatItems: [SessionSidebarItem]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 0) {
@@ -317,54 +279,62 @@ struct SessionSidebarView: View {
                             .font(Font(T.monoFont(size: 11)))
                             .foregroundColor(Color(nsColor: T.dim))
                             .padding(.vertical, 24)
+                    } else if let buckets {
+                        ForEach(SidebarStatusBucket.entries(buckets)) { entry in
+                            switch entry.content {
+                            case .header(let bucket): SidebarStatusBucketHeader(bucket: bucket)
+                            case .row(let row): sessionRow(row.item, flatItems: flatItems, workspace: row.workspace)
+                            }
+                        }
                     } else {
                         ForEach(groups) { wsGroup in
                             SidebarWorkspaceDropTarget(
                                 group: wsGroup,
                                 onToggleCollapse: { store.toggleWorkspaceCollapsed(wsGroup.id) },
                                 onSelectWorkspace: { store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore) },
-                                onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) }
+                                onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
+                                actions: workspaceActions(wsGroup)
                             )
                             ForEach(wsGroup.items) { item in
-                                let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
-                                SessionSidebarRowView(
-                                    item: item, index: flatIdx, selectedIndex: showsArrowCursor ? selectedIndex : -1,
-                                    targetWindow: targetWindow, editingItemId: $editingItemId,
-                                    editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
-                                    reduceMotion: animState.reduceMotion, motionPaused: motionPaused,
-                                    onSelect: {
-                                        selectedIndex = flatIdx
-                                        showsArrowCursor = false
-                                        store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
-                                    }
-                                )
-                                .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
-                                    onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
-                                    canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
-                                    onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) }))
+                                sessionRow(item, flatItems: flatItems, workspace: nil)
                             }
                         }
                     }
-                }.background(SessionSidebarScrollerInstaller().frame(width: 0, height: 0))
+                }
+                // The lazy stack keeps a row it has built while the row's data
+                // is unchanged, even when it is now given another style or a
+                // workspace badge: a new look builds the list anew. Row ids,
+                // which scrolling uses, stay the same.
+                .id(presentation.preferences.sidebarLook)
+                .background(SessionSidebarScrollerInstaller().frame(width: 0, height: 0))
             }
             .focusable()
             // The keys go to the list, but it is no text field: no blue ring
             // around the whole sidebar on a click.
             .focusEffectDisabled()
             .focused($isListFocused)
+            .task {
+                guard let selected = flatItems.first(where: { $0.isSelected }) else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo(selected.id, anchor: .center)
+            }
             .onKeyPress(.upArrow) {
+                if SidebarRenameEditor.shared.isEditing(in: targetWindow) { return .ignored }   // this sidebar's rename field has these keys
                 if selectedIndex > 0 { selectedIndex -= 1 }
                 showsArrowCursor = true
                 if items.indices.contains(selectedIndex) { proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.downArrow) {
+                if SidebarRenameEditor.shared.isEditing(in: targetWindow) { return .ignored }   // this sidebar's rename field has these keys
                 if selectedIndex < items.count - 1 { selectedIndex += 1 }
                 showsArrowCursor = true
                 if items.indices.contains(selectedIndex) { proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.leftArrow) {
+                if SidebarRenameEditor.shared.isEditing(in: targetWindow) { return .ignored }   // this sidebar's rename field has these keys
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     let current = items[selectedIndex]
                     if current.hasChildren && !current.isCollapsed {
@@ -376,6 +346,7 @@ struct SessionSidebarView: View {
                 return .handled
             }
             .onKeyPress(.rightArrow) {
+                if SidebarRenameEditor.shared.isEditing(in: targetWindow) { return .ignored }   // this sidebar's rename field has these keys
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     let current = items[selectedIndex]
                     if current.hasChildren && current.isCollapsed {
@@ -384,14 +355,31 @@ struct SessionSidebarView: View {
                 }
                 return .handled
             }
+            .onExitCommand {
+                if showsFilterControls {
+                    collapseSearchAndClearFilter()
+                }
+            }
+            .onKeyPress(.escape) {
+                guard showsFilterControls else { return .ignored }
+                collapseSearchAndClearFilter()
+                return .handled
+            }
             .onKeyPress(.return) {
+                if SidebarRenameEditor.shared.isEditing(in: targetWindow) { return .ignored }   // this sidebar's rename field has these keys
                 if NSEvent.modifierFlags.contains(.option) { jumpToNextWaiting(); return .handled }
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     store.selectTab(item: items[selectedIndex], in: targetWindow, workspaceStore: workspaceStore)
                 }
                 return .handled
             }
-            .onKeyPress(.escape) { isPresented = false; return .handled }
+            .onKeyPress(Self.renameKey) {
+                let editor = SidebarRenameEditor.shared
+                guard !editor.isEditing(in: targetWindow), items.indices.contains(selectedIndex),
+                      store.canRename(items[selectedIndex], around: targetWindow) else { return .ignored }
+                editor.begin(items[selectedIndex], in: targetWindow, store: store)
+                return .handled
+            }
         }
     }
 

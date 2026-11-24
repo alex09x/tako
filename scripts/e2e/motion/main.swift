@@ -19,6 +19,16 @@ import AppKit
 
 setvbuf(stdout, nil, _IONBF, 0)
 let args = CommandLine.arguments
+if args.dropFirst().first == "--selftest-switch" { switchSelfTest() }
+/// `motion-check --preflight`: can this process click and record at all?
+/// Asks nothing and changes nothing: no prompt, no TCC change.
+func preflight() -> Bool {
+    let ax = AXIsProcessTrusted(), screen = CGPreflightScreenCaptureAccess()
+    print("preflight: Accessibility \(ax ? "granted" : "MISSING"), Screen Recording \(screen ? "granted" : "MISSING")")
+    return ax && screen
+}
+if args.dropFirst().first == "--preflight" { exit(preflight() ? 0 : 3) }
+guard preflight() else { exit(3) }
 guard args.count >= 4 else { print("usage: motion-check BUNDLE_ID TAKOCTL TAB_TITLE [FRAMES_DIR]"); exit(2) }
 let bundleID = args[1], takoctl = args[2], title = args[3]
 
@@ -61,6 +71,10 @@ Task {
     }
     let pid = app.processIdentifier
     app.activate()
+    if ProcessInfo.processInfo.environment["MOTION_SCENE"] == "switch" {
+        await switchCheck(pid: pid, titles: ["alpha", title], framesDir: args.count > 4 ? args[4] : nil)
+        finish()
+    }
 
     // Where everything is, once the tab strip has stopped moving: a shell
     // starting renames the first tab and pushes the others along.
@@ -211,6 +225,8 @@ Task {
 
 func finish() -> Never {
     let failed = checks.filter { !$0.ok }
+    // A run that judged nothing proved nothing.
+    guard !checks.isEmpty else { print("motion-check: no checks ran"); exit(1) }
     print(failed.isEmpty ? "motion-check: all \(checks.count) checks passed" : "motion-check: \(failed.count) of \(checks.count) checks failed")
     exit(failed.isEmpty ? 0 : 1)
 }

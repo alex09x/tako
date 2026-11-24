@@ -82,6 +82,7 @@ struct SessionListScreen: View {
                     HostKeyPrompt(
                         host: host,
                         presented: presented,
+                        armingDelay: LaunchOptions.hostKeyArmingHold ? nil : .seconds(1),
                         onTrust: {
                             KnownHosts.trust(
                                 host: draft.host,

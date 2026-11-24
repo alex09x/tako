@@ -32,7 +32,7 @@ native macOS app target that exists only as a wrapper:
 
 1. It compiles `AppHost/main.swift`, a placeholder, so the target links.
 2. A post-build script phase runs `python3 scripts/build-macapp.py` from the
-   repo root and `ditto`s the resulting `target/macapp/Tako.app` over its
+   repo root and `ditto`s the resulting `target/macapp-uitest/Tako.app` over its
    own product in `BUILT_PRODUCTS_DIR`, replacing the placeholder wholesale.
 
 Its `PRODUCT_BUNDLE_IDENTIFIER` matches the real bundle's
@@ -40,10 +40,22 @@ Its `PRODUCT_BUNDLE_IDENTIFIER` matches the real bundle's
 `TEST_TARGET_NAME = TakoCore`, which is what puts `UITargetAppPath` into the
 generated `.xctestrun`.
 
-If `scripts/build-macapp.py` fails, the script phase emits a warning and keeps
-the placeholder rather than failing the build. Compiling the tests is the point
-of this project and is deliberately not held hostage to the app build; the
-tests skip themselves outside a manual Xcode run anyway (below).
+### A private host
+
+`scripts/uitest.sh --host-id=SUFFIX` builds the host as
+`com.tako-core.terminal.uitest.SUFFIX` (build setting `TAKO_UITEST_HOST_ID`) into its own
+app and derived-data directories (`TAKO_UITEST_APP_DIR`), with the defaults suite
+`TAKO_UITEST_RUN_SUFFIX`. The runner keeps its identity, `com.tako-core.TakoUITests`, but is
+signed with entitlements generated for that host only (`TAKO_UITEST_RUNNER_ENTITLEMENTS`,
+from `scripts/uitest_host_identity.py`, which refuses any template other than the shared
+host's). The tests read both names from `TEST_RUNNER_TAKO_UITEST_HOST_ID` and
+`TEST_RUNNER_TAKO_UITEST_DEFAULTS_SUITE`, so their terminate, state-removal and defaults
+resets touch only the private host. The shared host's processes, profile and suite are
+snapshotted before and after; a change fails the run and is not rolled back. Without the flag
+every setting has its shared default. `--without-building` reruns a private build's tests.
+
+If `scripts/build-macapp.py` fails, the host phase fails the build. A UI run
+must execute against the current real app, and zero passed cases is a failure.
 
 ## Building and running
 
@@ -57,9 +69,18 @@ This uses the `TakoUITests-Run` scheme, which enables test discovery, holds the 
 and rejects a run with zero passed cases. The seven tests check scoped menus and containment,
 rendered theme/reset pixels, independent split panes, rendered font geometry and glyphs,
 full-preset preview/cancel, save/relaunch/reopen, invalid names and failed writes. Screenshots
-are retained in `target/uitest.xcresult` as supporting evidence. Each fixture uses an isolated
-config, defaults and test-bundle state; it restores any prior test profile and does not use the
-installed app's bundle or sessions.
+are retained in `target/uitest-results/run.*/tests.xcresult` as supporting evidence, alongside
+that run's log and stall diagnostics. Later runs do not erase earlier result bundles.
+Each fixture uses an isolated config, private shell/history/XDG/provider homes, and reserved
+test-bundle state; it does not use the installed app's bundle or default session namespace.
+`TakoDesktopSidebarUITests/testCompactSidebarHasDesignHeightInAnIsolatedShell` validates the
+actual app's private launch paths before launching. Its first input replaces that private
+login shell with a sanitized Bash, setting Bash's private history file and prompt at exec.
+After that controlled prompt appears, the next command checks the forwarded directories,
+the effective history-file variable and the observed Bash version. It observes
+cwd without claiming a private working directory or fish/zsh history coverage. The live Compact
+row's 24 pt AX height is asserted; its screenshot is supporting evidence. Run the full required
+CI to validate the other fixture suites. The wrapper does not prune its retained run evidence.
 
 To prepare the exact runner without executing UI tests:
 
@@ -69,6 +90,50 @@ scripts/uitest.sh --build-only TakoScopedAppearanceUITests TakoThemePresetUITest
 
 This is explicitly **compilation only**, not a passing UI run. The wrapper also fails if the
 real host app was not built and Xcode kept the placeholder.
+
+For a scoped motion/design review, retain the built-in recording even when a
+test passes:
+
+```sh
+TAKO_UI_SCHEME=TakoUITests-VisualReview scripts/uitest.sh TakoFloatingDesignUITests
+```
+
+This opt-in scheme keeps video in the external `.xcresult` for reviewing
+transitions. The regular CI scheme retains its usual attachment policy.
+
+### Native permission requests on the dedicated test Mac
+
+`TakoSetupPermissionRequestUITests` exercises folder, microphone, screen and local-network
+requests, the response after a denial, and the exact Automation Settings route. It is opt-in
+because these are real macOS dialogs. Run on the test Mac with its isolated `.uitest` host:
+
+```sh
+mkdir -p /private/tmp/tkui
+printf deny > /private/tmp/tkui/native-permission-actions.mode
+trap 'printf paused > /private/tmp/tkui/native-permission-actions.mode' EXIT
+scripts/uitest.sh --local TakoSetupPermissionRequestUITests
+```
+
+Only prompts naming the isolated host (`TakoCore` / `Tako`) and the requested capability are
+declined. The armed fixture can allow removable-volume access for its own host/runner so that
+the external build disk does not block testing. Tests do not reset TCC or enter administrator
+credentials. A network attempt must
+not become an “Allowed” receipt, and screen preflight cannot distinguish a previous denial
+from access that has never been requested. Native dialog and Settings screenshots remain in
+the result bundle. Tako controls use AX assertions; native Settings toolbar titles use OCR of
+XCTest screenshots and window bounds to avoid re-entering removable-volume TCC while AX
+enumerates installed apps. On Tahoe the Local Network anchor can open Privacy & Security;
+the test verifies that fallback and Tako's explicit remaining path, not a fictitious grant.
+The host staging phase removes the old executable after renaming it, preserves the real
+app's entitlements, and rejects a bundle that fails deep strict signature verification.
+The ordinary setup test covers optional navigation, the inline Full Disk
+Access app identity, notification feedback, dismissal and typing in the original terminal.
+
+Build products, DerivedData and evidence can stay on the external build disk. If removable-
+volume consent blocks the runner, a short-lived, strictly verified copy of the already built
+host and runner under `/private/tmp/tkui/` can be executed with `test-without-building` and a
+relocated `.xctestrun`; remove only those runtime copies after execution. This is not a second
+build or a substitute for a nonzero passing test result.
 
 ```
 xcodebuild build-for-testing -project macos_uitests/TakoUITests.xcodeproj \
@@ -83,21 +148,27 @@ Regenerate the project after editing `project.yml`:
 cd macos_uitests && xcodegen generate
 ```
 
-## Why these tests do nothing on CI
+## Real execution and test isolation
 
-`TakoCustomConfigCase` overrides `defaultTestSuite` to return an empty
-suite unless `IDE_DISABLED_OS_ACTIVITY_DT_MODE` is set in the environment --
-a variable Xcode's IDE sets and `xcodebuild` does not. That is upstream's own
-behaviour, kept verbatim: these tests are slow and click-driven, and upstream's
-CI does not run them either. Removing the skip would make them run, and hang or
-fail, in exactly the contexts upstream never intended.
-
-The `-Run` scheme supplies that IDE variable explicitly. Running it for real also needs:
+Both schemes run real tests; `-Run` remains the name used by the existing
+scripts. Use `build-for-testing` for compilation without desktop interaction.
+Running the tests needs:
 
 - a logged-in, unlocked GUI session on a real (not headless) display,
 - Accessibility and Automation permission granted to Xcode, otherwise the
   runner dies with `Timed out while enabling automation mode`,
 - no other app stealing focus, since the tests type keystrokes and drag tabs.
+
+The sandboxed test runner has narrowly scoped entitlements for the `.uitest`
+profile, its two test preference domains, and `/private/tmp/tkui/`. The base
+fixture clears that test state before and after each case, with a separate
+session directory per case. Ordinary interaction tests disable session
+persistence; the persistence runner tests that separately. State remains
+available across launches inside a single case.
+
+These permissions belong to the UI-test target. To roll them back, remove
+its `CODE_SIGN_ENTITLEMENTS` setting and `TakoUITests.entitlements`, then
+rebuild the test target. Production app entitlements are independent.
 
 If `/usr/bin/automationmodetool status` reports that Automation Mode is disabled and enabling
 it requires user authentication, the wrapper fails before running any test and says so. An

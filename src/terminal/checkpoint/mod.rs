@@ -19,12 +19,17 @@ pub(crate) mod encode;
 pub(crate) mod encode_graphics;
 pub(crate) mod grid;
 pub(crate) mod host;
+pub(crate) mod program_status;
 pub(crate) mod reader;
 pub(crate) mod types;
 pub(crate) mod writer;
 
 #[cfg(test)]
+mod program_status_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trailer_and_budget_tests;
 
 pub use api::{
     export, export_limited, export_version, inspect, measure, measure_limited, measure_version,

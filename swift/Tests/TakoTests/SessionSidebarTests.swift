@@ -25,11 +25,15 @@ struct SessionSidebarTests {
 
     @Test func sidebarStoreInitialStateAndOptInsOffByDefault() {
         let defaults = createTestDefaults()
+        defaults.set(false, forKey: SessionSidebarStore.isShowingKey)
         let store = SessionSidebarStore(defaults: defaults)
 
-        // B5 requirement: "Off by default for people who prefer the tab bar"
-        #expect(!store.isShowing)
-        // B5 requirement: "each opt-in field is off until enabled"
+        // Permanent sidebar requirement: always open on desktop windows, cannot be persisted as hidden.
+        #expect(store.isShowing)
+        store.isShowing = false
+        #expect(store.isShowing)
+        #expect(defaults.bool(forKey: SessionSidebarStore.isShowingKey))
+        // Opt-in fields remain off until enabled.
         #expect(!store.optInGit)
         #expect(!store.optInPorts)
         #expect(!store.filterNeedsAttention)

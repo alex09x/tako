@@ -184,24 +184,25 @@ import AppKit
     // MARK: - Untrusted Import Security Invariants
 
     @Test func testImportedSessionNeverRunsAutomatically() throws {
-        let cwd = "/Users/alex/safe-dir"
-
-        // Pre-approve prefix "claude" in ResumeTrustStore for cwd
-        ResumeTrustStore.shared.approve(prefix: "claude", cwd: cwd)
-        #expect(ResumeTrustStore.shared.isApproved(argv: ["claude", "--resume", "123"], cwd: cwd))
-
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cwd = tempDir.path
+        let argv = ["/bin/echo", "imported-session-fixture"]
+        let trust = ResumeTrustStore.shared
+        trust.approve(prefix: "/bin/echo", cwd: cwd)
+        defer { trust.revoke(prefix: "/bin/echo", cwd: cwd) }
+        try #require(trust.isApproved(argv: argv, cwd: cwd))
 
         let fileUrl = tempDir.appendingPathComponent("imported_session.json")
         let paneId = UUID()
         let pane = ExportedPane(
             id: paneId,
             pwd: cwd,
-            title: "Imported Claude",
+            title: "Imported Shell",
             scrollback: "previous session\n",
-            resume: ExportedResume(argv: ["claude", "--resume", "123"], cwd: cwd)
+            resume: ExportedResume(argv: argv, cwd: cwd)
         )
         let window = ExportedWindow(
             id: UUID(),
@@ -221,7 +222,10 @@ import AppKit
         let data = try encoder.encode(sessionFile)
         try data.write(to: fileUrl)
 
-        let app = Tako.App()
+        let config = tempDir.appendingPathComponent("tako-config")
+        // The import banner is for a shell that was not attached to a persistent session.
+        try "session-persistence = false\n".write(to: config, atomically: true, encoding: .utf8)
+        let app = Tako.App(configPath: config.path)
         let controllers = try SessionExportManager.shared.importSession(from: fileUrl, in: app)
         defer { for c in controllers { c.close() } }
 
