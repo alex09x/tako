@@ -59,7 +59,7 @@ func runWorkspaceSwitchSpeedScenario(_ d: Driver) throws {
               let header = d.element(withIdentifier: "SessionSidebarWorkspace-\(target)", root: window),
               let frame = d.axFrame(header) else { throw Failure("no visible \(target) workspace header") }
         let harness = ProcessInfo.processInfo.systemUptime
-        let pressed = try d.clickTimed(at: CGPoint(x: frame.midX, y: frame.midY))
+        let pressed = try d.postClick(at: CGPoint(x: frame.midX, y: frame.midY))
         var visible: TimeInterval?
         while ProcessInfo.processInfo.systemUptime - pressed < 5 {
             if d.onScreenWindowNumbers() == want { visible = ProcessInfo.processInfo.systemUptime; break }

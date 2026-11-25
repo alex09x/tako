@@ -194,6 +194,13 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         try expectName("Alpha One", gone: ["RnAlpha"], "Return keeps the session name")
     }
     try step("double-click + Escape") {
+        // Select the fixture session before testing the double click. Moving
+        // to another window remounts the sidebar and can stall the driver's
+        // ownership check between the two injected clicks.
+        try d.click(at: try named("Alpha One"))
+        guard d.wait(for: { (try? d.focusedPaneId()) == alpha }, timeout: 5) else {
+            throw Failure("the single click did not select the Alpha session")
+        }
         try d.doubleClick(at: try named("Alpha One")); try editing()
         try replace(with: "Nope"); d.key(Key.escape)
         try expectName("Alpha One", gone: ["Nope"], "Esc leaves the name")
