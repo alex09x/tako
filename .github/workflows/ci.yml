@@ -6,6 +6,8 @@
 # SPDX-License-Identifier: MIT
 
 name: Tako 0.2.1 unsigned candidate
+# The release coordinator exposes this branch only after all 15 node stages
+# pass on SOURCE_SHA. A candidate artifact is independent of hosted CI approval.
 on:
   workflow_dispatch:
 permissions:
@@ -43,10 +45,15 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(uname -m)" = arm64
           test -z "$(git status --porcelain)"
-          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
-          sh -n "$RUNNER_TEMP/mitts-install.sh"
-          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          tools="$RUNNER_TEMP/tako-tools"
+          mkdir -p "$tools"
+          archive="$tools/mitts-v0.5.3-aarch64-apple-darwin.tar.gz"
+          curl -fsSL --connect-timeout 20 --max-time 180 \
+            https://github.com/alex09x/mitts/releases/download/v0.5.3/mitts-v0.5.3-aarch64-apple-darwin.tar.gz \
+            -o "$archive"
+          printf '%s  %s\n' 190a5d3b87eea45859523526c684bc5dba9452ad8e8c83c8597874ca90c285ff "$archive" | shasum -a 256 -c -
+          tar -xzf "$archive" -C "$tools" mitts
+          echo "$tools" >> "$GITHUB_PATH"
           if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
             xcodebuild -downloadComponent MetalToolchain
           fi
@@ -85,11 +92,21 @@ jobs:
           (out / "candidate.json").write_text(json.dumps(data, indent=2) + "\n")
           (out / "SHA256SUMS").write_text(f"{sha}  {archive.name}\n")
           PY
-      - name: Retain candidate and build evidence
-        if: always()
+      - name: Upload the verified unsigned candidate
+        if: success()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tako-0.2.1-unsigned-c5356b63
+          name: tako-0.2.1-unsigned-c5356b63-attempt-${{ github.run_attempt }}
           path: target/rc-candidate/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tako-0.2.1-build-failure-attempt-${{ github.run_attempt }}
+          path: |
+            target/rc-candidate/build.log
+            target/rc-candidate/toolchain.txt
           if-no-files-found: warn
           retention-days: 7
