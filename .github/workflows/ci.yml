@@ -70,13 +70,15 @@ jobs:
             git rev-parse 'HEAD^{tree}'
           } > target/rc-candidate/toolchain.txt
           python3 scripts/ci_log.py --log target/rc-candidate/build.log --label rc-build -- python3 scripts/build-macapp.py
-          codesign --verify --strict --deep target/macapp/Tako.app
           ditto -c -k --keepParent target/macapp/Tako.app target/rc-candidate/Tako-0.2.1-unsigned.zip
-          python3 - <<'PY'
-          import hashlib, json, os, plistlib
+          staging="$(mktemp -d "$RUNNER_TEMP/tako-candidate.XXXXXX")"
+          ditto -x -k target/rc-candidate/Tako-0.2.1-unsigned.zip "$staging"
+          codesign --verify --strict --deep "$staging/Tako.app"
+          python3 - "$staging/Tako.app" <<'PY'
+          import hashlib, json, os, plistlib, sys
           from pathlib import Path
           out = Path("target/rc-candidate")
-          app = Path("target/macapp/Tako.app")
+          app = Path(sys.argv[1])
           info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
           source, version, build = (os.environ[k] for k in ("SOURCE_SHA", "TAKO_VERSION", "TAKO_BUILD_NUMBER"))
           if (info["TakoSourceCommit"], info["CFBundleShortVersionString"], info["CFBundleVersion"]) != (source, version, build):
@@ -97,7 +99,12 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tako-0.2.1-unsigned-8b2357ce-attempt-${{ github.run_attempt }}
-          path: target/rc-candidate/
+          path: |
+            target/rc-candidate/Tako-0.2.1-unsigned.zip
+            target/rc-candidate/candidate.json
+            target/rc-candidate/SHA256SUMS
+            target/rc-candidate/build.log
+            target/rc-candidate/toolchain.txt
           if-no-files-found: error
           retention-days: 7
       - name: Retain build diagnostics on failure
