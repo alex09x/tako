@@ -13,8 +13,13 @@ When running inside a Tako pane, the environment automatically provides:
 All Tako tools and commands automatically use these variables to target the current pane or create child splits linked to it.
 
 > **Pitfall.** `tako` on your PATH is the GUI app, not a command line. The CLI is **`takoctl`**.
-> Use `takoctl --help` to see every command. There is no login, grant or token: any process the
-> user runs can drive Tako, so do not ask the user for access.
+> Use `takoctl --help` to see every command. Once Tako is open, CLI access uses the local socket without a login or token.
+
+**First launch after installation.** Open the installed Tako app and wait for its first window before calling the CLI.
+For the first `takoctl --json tree` probe, set a 10-second wall-clock timeout in the calling tool.
+If the probe times out silently, stop retrying and ask the user to open Tako from Applications and click **Open** if macOS prompts.
+macOS can suspend the CLI before it can print anything or handle a timeout of its own.
+Resume with one tree probe after the user confirms a Tako window is visible. An immediate `Connection refused` is a different result: check that Tako is running.
 
 ---
 

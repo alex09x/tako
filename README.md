@@ -14,6 +14,18 @@ A native macOS terminal with a permanent session sidebar and a canvas for tiled 
 
 ---
 
+## Install on macOS
+
+For Apple Silicon Macs running macOS 14 or later, open the DMG above and drag Tako into Applications, or install the app and `takoctl` with Homebrew:
+
+```sh
+brew tap alex09x/apps
+brew help trust >/dev/null 2>&1 && brew trust --cask alex09x/apps/tako
+brew install --cask alex09x/apps/tako
+```
+
+Open the newly installed **Tako.app** from Applications (or your Homebrew `--appdir`). Click **Open** if macOS asks for confirmation. Until you approve that prompt, macOS can hold `takoctl` before it starts, so a command may wait silently. Once a Tako window appears, run `takoctl --json tree` to see your terminal layout. With the DMG installation, the CLI is at `/Applications/Tako.app/Contents/MacOS/takoctl`.
+
 ## Highlights
 
 - **Pure-Rust Engine (`tako_core`)**:
