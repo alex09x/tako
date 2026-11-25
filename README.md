@@ -20,12 +20,11 @@ For Apple Silicon Macs running macOS 14 or later, open the DMG above and drag Ta
 
 ```sh
 brew tap alex09x/apps
-brew trust --cask alex09x/apps/tako
+brew help trust >/dev/null 2>&1 && brew trust --cask alex09x/apps/tako
 brew install --cask alex09x/apps/tako
-open -a Tako
 ```
 
-If your Homebrew version has no `trust` command, skip that line. On first launch, open the newly installed copy of Tako and click **Open** if macOS asks for confirmation. Until you approve that prompt, macOS can hold `takoctl` before it starts, so a command may wait silently. Once a Tako window appears, run `takoctl --json tree` to see your terminal layout. With the DMG installation, the CLI is at `/Applications/Tako.app/Contents/MacOS/takoctl`.
+Open the newly installed **Tako.app** from Applications (or your Homebrew `--appdir`). Click **Open** if macOS asks for confirmation. Until you approve that prompt, macOS can hold `takoctl` before it starts, so a command may wait silently. Once a Tako window appears, run `takoctl --json tree` to see your terminal layout. With the DMG installation, the CLI is at `/Applications/Tako.app/Contents/MacOS/takoctl`.
 
 ## Highlights
 
