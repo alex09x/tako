@@ -220,7 +220,7 @@ struct FloatingRexPolishTests {
                         "Button top offset (\(topOffset)) must clear the \(FloatingPaneResizeHandlesView.topEdgeHitThickness)pt top resize strip")
                 if prefix == "FloatingPaneClose-" {
                     let rightGap = paneRectInWin.maxX - r.maxX
-                    #expect(rightGap >= 13.5, "Close right gap (\(rightGap)) must clear 12pt corner resize handle")
+                    #expect(abs(rightGap - topOffset) < 0.5, "Close insets: right \(rightGap), top \(topOffset)")
                 }
                 controlRects.append(r)
             }

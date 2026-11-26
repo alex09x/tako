@@ -184,6 +184,22 @@ extension DesktopCanvasDesignTests {
             #expect(FloatingPaneResizeHandlesView.topEdgeHitThickness == 3)
             let top = try #require(find("FloatingPaneResize-top-\(key(p2))", in: content))
             #expect(top.bounds.height == 3)
+            let close = try #require(find("FloatingPaneClose-\(key(p2))", in: content))
+            let closeFrame = close.convert(close.bounds, to: nil)
+            let topInset = paneFrame.maxY - closeFrame.maxY
+            #expect(abs(paneFrame.maxX - closeFrame.maxX - topInset) <= 0.5)
+            let perimeter = try #require(top.superview as? FloatingPaneResizePerimeterNSView)
+            // Sample the top arm, the right arm, the gutter beside Close and the full side below it.
+            for (right, down, edge) in [(8.0, 2.0, "topTrailing"), (2, 8, "topTrailing-header"),
+                                        (2, 18, "trailing-header"), (5, 32, "trailing")] {
+                let point = NSPoint(x: paneFrame.maxX - right, y: paneFrame.maxY - down)
+                let expected = try #require(find("FloatingPaneResize-\(edge)-\(key(p2))", in: content))
+                #expect(content.superview!.hitTest(point) === expected)
+                #expect((perimeter.accessibilityHitTest(w.convertPoint(toScreen: point)) as? NSView) === expected)
+                #expect(expected.convert(expected.bounds, to: nil).contains(point))
+            }
+            let justInsideClose = NSPoint(x: closeFrame.maxX - 1, y: closeFrame.maxY - 1)
+            #expect(content.superview!.hitTest(justInsideClose) === close)
             // The icon flips the grid/floating mode and its AX value.
             let icon = try #require(find("FloatingPaneFloat-\(key(p2))", in: content))
             #expect(icon.accessibilityValue() as? String == "floating")

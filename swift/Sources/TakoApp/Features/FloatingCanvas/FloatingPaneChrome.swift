@@ -16,7 +16,10 @@ import SwiftUI
 /// The mode icon only switches grid ⇄ free floating; maximize stays a separate action.
 struct FloatingPaneHeaderView: View {
     static let controlSize: CGFloat = DesktopCanvasMetrics.controlSize
-    static let controlsTrailingInset: CGFloat = 14
+    static let ringSize: CGFloat = 14
+    /// The status ring sits as far from the header's left edge as from its top:
+    /// the corner reads as a square inset.
+    static let ringLeadingInset: CGFloat = (FloatingPaneGeometry.headerHeight - ringSize) / 2
 
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
@@ -121,14 +124,15 @@ struct FloatingPaneHeaderView: View {
                     moveToTabMenuItem: { [weak surface = surfaceView] in surface.map(MovePaneToTab.menuItem) }
                 )
 
-                // Reference `.fw-hd` (header.css): 0 10 padding, 7 gap, the
-                // pill's 14 pt status ring, title 12/500, directory 11.
+                // Reference `.fw-hd` (header.css): 7 gap, the pill's 14 pt status
+                // ring, title 12/500, directory 11. The ring's left inset equals
+                // its top inset (owner, 2026-11-23) rather than the reference's 10.
                 HStack(spacing: 7) {
                     SidebarStatusLayerView(state: headerState, ringCenter: nil, cornerRadius: 0,
                                            reduceMotion: animationState.reduceMotion,
                                            paused: animationState.isTimelinePaused, pulses: crab.live?.pulses ?? 0,
-                                           ringOnly: 14, palette: Tako.tabStatusPalette(surface: surfaceView))
-                        .frame(width: 14, height: 14)
+                                           ringOnly: Self.ringSize, palette: Tako.tabStatusPalette(surface: surfaceView))
+                        .frame(width: Self.ringSize, height: Self.ringSize)
 
                     Text(displayTitle)
                         .font(Font(T.monoFont(size: 12, weight: .medium)))
@@ -154,7 +158,7 @@ struct FloatingPaneHeaderView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, 10)
+                .padding(.leading, Self.ringLeadingInset)
                 .padding(.trailing, 4)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -234,7 +238,7 @@ struct FloatingPaneHeaderView: View {
                     action: onClose
                 )
             }
-            .padding(.trailing, Self.controlsTrailingInset)
+            .padding(.trailing, DesktopCanvasMetrics.headerControlInset)
         }
         .frame(height: FloatingPaneGeometry.headerHeight)
     }
