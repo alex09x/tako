@@ -19,7 +19,7 @@ extension ThemePresetConfig {
         "adjust-cell-width", "adjust-cell-height", "adjust-font-baseline", "adjust-underline-position", "adjust-underline-thickness",
         "cursor-opacity", "background-opacity", "cursor-thickness", "background-blur", "background-blur-radius",
         "cell-width", "cell_width", "cell-height", "cell_height", "window-padding-x", "window-padding-y",
-        "window-padding-balance", "selection-invert-fg-bg", "cursor-style-blink", "window-padding-color", "window-colorspace",
+        "window-padding-balance", "selection-invert-fg-bg", "bold-is-bright", "cursor-style-blink", "window-padding-color", "window-colorspace",
         "cursor-style", "custom-shader", "custom-shader-animation", "palette",
         "tab-status-color-working", "tab-status-color-waiting", "tab-status-color-done", "tab-status-color-error", "tab-status-color-idle"
     ] + (0...255).map { "palette:\($0)" }

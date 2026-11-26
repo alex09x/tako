@@ -26,6 +26,21 @@ pub fn resolve_color(color: Color, default: (u8, u8, u8), palette: &Palette) -> 
     }
 }
 
+/// A cell's foreground: `resolve_color`, except that with the host setting
+/// `bold-is-bright` a bold cell in basic colour 0-7 takes entry 8-15.
+pub fn resolve_foreground(
+    color: Color,
+    bold: bool,
+    default: (u8, u8, u8),
+    palette: &Palette,
+) -> (u8, u8, u8) {
+    let color = match color {
+        Color::Indexed(n) => Color::Indexed(palette.foreground_index(n, bold)),
+        other => other,
+    };
+    resolve_color(color, default, palette)
+}
+
 /// A single terminal cell, flattened for FFI consumption: glyph, resolved
 /// foreground/background RGB, and boolean style flags.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
@@ -131,7 +146,8 @@ pub fn cell_to_ffi(
     default_fg: (u8, u8, u8),
     default_bg: (u8, u8, u8),
 ) -> FfiCell {
-    let (fg_r, fg_g, fg_b) = resolve_color(cell.fg, default_fg, palette);
+    let bold = cell.attrs.contains(CellAttrs::BOLD);
+    let (fg_r, fg_g, fg_b) = resolve_foreground(cell.fg, bold, default_fg, palette);
     let (bg_r, bg_g, bg_b) = resolve_color(cell.bg, default_bg, palette);
     let (ul_r, ul_g, ul_b) = resolve_color(cell.underline_color, (fg_r, fg_g, fg_b), palette);
     FfiCell {
@@ -148,7 +164,7 @@ pub fn cell_to_ffi(
         bg_r,
         bg_g,
         bg_b,
-        bold: cell.attrs.contains(CellAttrs::BOLD),
+        bold,
         dim: cell.attrs.contains(CellAttrs::DIM),
         italic: cell.attrs.contains(CellAttrs::ITALIC),
         underline: cell.attrs.contains(CellAttrs::UNDERLINE),

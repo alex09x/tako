@@ -68,6 +68,8 @@ extension Tako.SurfaceView {
     /// rebuilds the renderer on its own; the grid only follows a frame
     /// change, so it is given one at the size it already has.
     func applyTheme(_ newTheme: TerminalTheme) {
+        // Before `theme`, whose change repaints every row with it.
+        applyBoldIsBright(newTheme)
         theme = newTheme
         refreshDrawnColors()
         setFrameSize(frame.size)

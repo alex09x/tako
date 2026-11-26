@@ -218,6 +218,17 @@ impl TakoCore {
         lock_recover(&self.inner).terminal.set_dark_scheme(dark);
     }
 
+    /// Host setting `bold-is-bright`: bold text in basic colours 0-7 is drawn
+    /// in bright colours 8-15. Off by default; kept across `reset` and
+    /// checkpoint restores.
+    pub fn set_bold_is_bright(&self, enabled: bool) {
+        let mut term = lock_recover(&self.inner);
+        if term.terminal.palette().bold_is_bright() != enabled {
+            term.terminal.palette.set_bold_is_bright(enabled);
+            term.terminal.mark_colors_changed();
+        }
+    }
+
     /// Sets how many lines of history the terminal keeps; 0 keeps none.
     pub fn set_scrollback_limit(&self, lines: u32) {
         let mut term = lock_recover(&self.inner);

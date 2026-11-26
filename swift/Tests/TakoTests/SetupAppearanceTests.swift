@@ -74,4 +74,33 @@ struct SetupAppearanceTests {
         #expect(try String(contentsOf: config, encoding: .utf8).contains("font-size = 23"))
         #expect(model.progress.completed == false)
     }
+
+    /// `bold-is-bright` picks palette entries, so it belongs to the colour
+    /// preset: switching presets is not pinned by the previous one's value.
+    @Test func choosingColorsTakesTheNewPresetsBoldIsBright() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let themes = root.appendingPathComponent("themes")
+        try FileManager.default.createDirectory(at: themes, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for (name, bright) in [("Live Bright", "true"), ("Live Plain", "false")] {
+            try "# tako-preset-version: 1\nbackground = #102030\nbold-is-bright = \(bright)\n"
+                .write(to: themes.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        let suite = "SetupAppearanceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let config = root.appendingPathComponent("config")
+        try "theme = Live Bright\nfont-size = 17\n".write(to: config, atomically: true, encoding: .utf8)
+        let model = SetupModel(store: SetupProgressStore(defaults: defaults), configPath: config.path)
+        #expect(model.previewTheme.boldIsBright)
+
+        model.chooseTheme("Live Plain")
+        #expect(model.selectedTheme == "Live Plain")
+        #expect(model.previewTheme.boldIsBright == false)
+        #expect(!(try String(contentsOf: config, encoding: .utf8)).contains("bold-is-bright"))
+        #expect(model.previewTheme.fontSize == 17, "typography is still kept")
+
+        model.chooseTheme("Live Bright")
+        #expect(model.previewTheme.boldIsBright)
+    }
 }

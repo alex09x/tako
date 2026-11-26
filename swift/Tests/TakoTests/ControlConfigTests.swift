@@ -85,6 +85,21 @@ struct ControlConfigTests {
         }
     }
 
+    @Test func boldIsBrightIsWrittenAsTrueOrFalse() throws {
+        let (config, path, cleanup) = try sandbox("font-size = 12\n")
+        defer { cleanup() }
+        _ = try config.run(set([("bold-is-bright", "true")]))
+        #expect(file(path) == "font-size = 12\nbold-is-bright = true\n")
+        _ = try config.run(set([("bold-is-bright", "false")]))
+        #expect(file(path) == "font-size = 12\nbold-is-bright = false\n")
+        // Quoted, as the config parser reads it: one layer of either quote.
+        for quoted in ["\"true\"", "'true'"] {
+            _ = try config.run(set([("bold-is-bright", quoted)]))
+            #expect(file(path) == "font-size = 12\nbold-is-bright = \(quoted)\n")
+            #expect(TerminalTheme.parse(config: file(path)).boldIsBright, "\(quoted) is read as true")
+        }
+    }
+
     @Test func repeatableSettingsAddLinesAndUnsetRemovesThemAll() throws {
         let (config, path, cleanup) = try sandbox("keybind = cmd+k=clear_screen\n")
         defer { cleanup() }
@@ -105,6 +120,8 @@ struct ControlConfigTests {
             ("font-size", "99", "between 6 and 72"),
             ("font-size", "big", "between 6 and 72"),
             ("safe-paste", "yes", "expected true or false"),
+            ("bold-is-bright", "yes", "expected true or false"),
+            ("bold-is-bright", "\"yes\"", "expected true or false"),
             ("cursor-style", "triangle", "invalid value triangle"),
             ("tab-status-color-done", "green", "#rrggbb"),
             ("no-such-setting", "1", "unknown setting"),

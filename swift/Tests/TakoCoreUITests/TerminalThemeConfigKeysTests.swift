@@ -62,6 +62,24 @@ final class TerminalThemeConfigKeysTests: XCTestCase {
         XCTAssertFalse(invalid.selectionInvertFgBg)
     }
 
+    // MARK: - bold-is-bright
+
+    func testBoldIsBrightParsesAndDefaultsToFalse() {
+        XCTAssertFalse(TerminalTheme.takoDefault.boldIsBright)
+        XCTAssertFalse(TerminalTheme.parse(config: "").boldIsBright)
+
+        XCTAssertTrue(TerminalTheme.parse(config: "bold-is-bright = true").boldIsBright)
+        XCTAssertFalse(TerminalTheme.parse(config: "bold-is-bright = false").boldIsBright)
+
+        // Invalid boolean text: falls back to the default (false).
+        XCTAssertFalse(TerminalTheme.parse(config: "bold-is-bright = maybe").boldIsBright)
+
+        // Independent of the palette it picks from.
+        let both = TerminalTheme.parse(config: "palette = 9=#102030\nbold-is-bright = true")
+        XCTAssertTrue(both.boldIsBright)
+        XCTAssertNotNil(both.palette[9])
+    }
+
     // MARK: - cursor-opacity
 
     func testCursorOpacityParsesClampsAndDefaultsToOne() {

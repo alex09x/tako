@@ -170,7 +170,7 @@ public let knownTakoConfigKeys: Set<String> = [
     "adjust-cell-width", "adjust-cell-height", "adjust-font-baseline",
     "adjust-underline-position", "adjust-underline-thickness", "grapheme-width-method",
     "theme", "foreground", "selection-background", "selection-foreground", "selection-invert-fg-bg",
-    "cursor-color", "cursor-style", "cursor-style-blink", "cursor-opacity", "cursor-thickness",
+    "bold-is-bright", "cursor-color", "cursor-style", "cursor-style-blink", "cursor-opacity", "cursor-thickness",
     "cursor-click-to-move", "cell-width", "cell_width", "cell-height", "cell_height",
     "window-padding-x", "window-padding-y", "window-padding-balance", "window-padding-color",
     "window-inherit-working-directory", "window-inherit-font-size", "window-colorspace",
