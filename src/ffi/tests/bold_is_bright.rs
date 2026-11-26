@@ -112,6 +112,35 @@ fn turning_it_on_or_off_redraws_every_row_once() {
     assert_eq!(fg(&core, 0), entry(1));
 }
 
+/// A host that caches rows across `render_frame_delta` calls: the primary
+/// screen is cached, the program enters the alternate screen, the setting
+/// changes there, and the program leaves before the next frame. The primary
+/// rows the host still holds were drawn with the old setting.
+#[test]
+fn a_toggle_on_the_alternate_screen_repaints_the_cached_primary() {
+    let core = core_with_line(false);
+    let cached = core.render_frame_delta(0);
+    assert_eq!(fg(&core, 0), entry(1));
+
+    core.feed(b"\x1b[?1049h".to_vec());
+    core.set_bold_is_bright(true);
+    core.feed(b"\x1b[?1049l".to_vec());
+
+    let frame = core.render_frame_delta(cached.frame_version);
+    let at = frame
+        .row_indices
+        .iter()
+        .position(|&row| row == 0)
+        .expect("the primary's row 0 is sent again");
+    let offset = at * frame.row_stride as usize + 4;
+    let sent = (
+        frame.packed_cells[offset],
+        frame.packed_cells[offset + 1],
+        frame.packed_cells[offset + 2],
+    );
+    assert_eq!(sent, entry(9), "row 0 is sent with the new colour");
+}
+
 #[test]
 fn a_reset_keeps_the_host_setting() {
     let core = core_with_line(true);

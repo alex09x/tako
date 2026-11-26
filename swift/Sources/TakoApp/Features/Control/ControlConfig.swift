@@ -167,9 +167,10 @@ struct ControlConfig {
         }
         // Exactly what Settings checks before it writes.
         guard let item = DesktopPreferenceStore.item(key) else {
-            // Not in Settings, so nothing below checks it; the parser would
-            // drop anything but true/false and leave the default.
-            if key == "bold-is-bright", TerminalTheme.parseBool(value) == nil {
+            // Not in Settings, so nothing below checks it. The config parser
+            // strips one layer of quotes and drops anything but true/false.
+            if key == "bold-is-bright",
+               TerminalTheme.parseBool(ThemePresetConfig.unquoted(value)) == nil {
                 throw ControlError(.invalid, "\(key): expected true or false")
             }
             return

@@ -38,9 +38,9 @@ extension Tako.SurfaceView {
     var drawnForeground: CGColor { drawnColors.foreground.map(Self.cgColor) ?? theme.foreground }
 
     /// Hands the theme's `bold-is-bright` to the engine, which resolves the
-    /// colours it draws. Here rather than in `TakoCore.setBaseColors(from:)`:
-    /// TakoCoreUI's checked-in binding stays paired with the published
-    /// engine, which predates `set_bold_is_bright`.
+    /// colours it draws. Here rather than in `TakoCore.setBaseColors(from:)`
+    /// until the engine release that ships `set_bold_is_bright`: see
+    /// `TerminalTheme.boldIsBright`.
     func applyBoldIsBright(_ theme: TerminalTheme) {
         core.setBoldIsBright(enabled: theme.boldIsBright)
     }
