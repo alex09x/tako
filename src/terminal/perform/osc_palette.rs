@@ -13,7 +13,28 @@ use crate::palette;
 use super::super::state::Terminal;
 
 impl Terminal {
+    /// The colours cells resolve to changed (palette or default fg/bg):
+    /// every row of both screens is redrawn. Damage covers the active screen
+    /// only, and a host may hold the other screen's rows from an earlier
+    /// delta frame and get them back on a switch.
+    pub(crate) fn mark_colors_changed(&mut self) {
+        self.primary.mark_all_dirty();
+        self.alternate.mark_all_dirty();
+    }
+
+    /// OSC 4/104 and 10-12/110-112. Rows are repainted only when a colour
+    /// cells are drawn in really changed: not for a query, the cursor
+    /// colour, an unparsable index or a colour set to what it already was.
     pub(crate) fn handle_osc_palette(&mut self, params: &[&[u8]], bell_terminated: bool) -> bool {
+        let before = (*self.palette.colors(), self.default_fg, self.default_bg);
+        let handled = self.apply_osc_palette(params, bell_terminated);
+        if handled && before != (*self.palette.colors(), self.default_fg, self.default_bg) {
+            self.mark_colors_changed();
+        }
+        handled
+    }
+
+    fn apply_osc_palette(&mut self, params: &[&[u8]], bell_terminated: bool) -> bool {
         if params[0] == b"4" {
             let mut i = 1;
             while i + 1 < params.len() {
