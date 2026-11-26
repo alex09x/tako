@@ -296,6 +296,14 @@ struct ThemePresetStoreTests {
         #expect(throws: ThemePresetError.self) {
             try ThemePresetConfig.validate("bold-is-bright = maybe")
         }
+        // Quoted, as the runtime parser reads it.
+        for quoted in ["\"true\"", "'true'"] {
+            try ThemePresetConfig.validate("bold-is-bright = \(quoted)")
+            #expect(try ThemePresetConfig.parsed("bold-is-bright = \(quoted)").boldIsBright)
+        }
+        #expect(throws: ThemePresetError.self) {
+            try ThemePresetConfig.validate("bold-is-bright = \"maybe\"")
+        }
         #expect(ThemePresetConfig.controlKeys.contains("bold-is-bright"))
     }
 
