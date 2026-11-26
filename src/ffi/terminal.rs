@@ -225,10 +225,7 @@ impl TakoCore {
         let mut term = lock_recover(&self.inner);
         if term.terminal.palette().bold_is_bright() != enabled {
             term.terminal.palette.set_bold_is_bright(enabled);
-            // Both screens: a host may hold the other one's rows from an
-            // earlier frame and get them back unrepainted on a switch.
-            term.terminal.primary.mark_all_dirty();
-            term.terminal.alternate.mark_all_dirty();
+            term.terminal.mark_colors_changed();
         }
     }
 
