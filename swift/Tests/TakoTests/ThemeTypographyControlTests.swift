@@ -117,7 +117,7 @@ import Testing
             "cursor-opacity": "0.8", "background-opacity": "0.9", "cursor-thickness": "2",
             "background-blur": "3", "background-blur-radius": "3", "cell-width": "11", "cell_width": "11",
             "cell-height": "24", "cell_height": "24", "window-padding-x": "8,12", "window-padding-y": "6,10",
-            "window-padding-balance": "true", "selection-invert-fg-bg": "false", "cursor-style-blink": "false",
+            "window-padding-balance": "true", "selection-invert-fg-bg": "false", "bold-is-bright": "true", "cursor-style-blink": "false",
             "window-padding-color": "background", "window-colorspace": "srgb", "cursor-style": "bar",
             "custom-shader": shader, "custom-shader-animation": "false", "palette": "17=#123456"
         ]
