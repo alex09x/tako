@@ -32,8 +32,10 @@ struct FloatingChromeReferenceTests {
     @Test func headerRingAndShelfPillsFollowTheReference() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
-        window.setContentSize(NSSize(width: 1000 + SessionSidebarWidth.current(), height: 700))
         controller.showWindow(nil)
+        // showWindow restores the last session's frame. Size the visible fixture after it returns.
+        window.setContentSize(NSSize(width: DesktopCanvasFixture.windowWidth, height: 620))
+        DesktopCanvasFixture.expectUnclamped(window, width: DesktopCanvasFixture.windowWidth)
 
         let p1 = try #require(controller.focusedSurface)
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))

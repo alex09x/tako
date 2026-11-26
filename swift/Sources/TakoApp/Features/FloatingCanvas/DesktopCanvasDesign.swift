@@ -19,6 +19,7 @@ enum DesktopCanvasMetrics {
     static let childRowHeight: CGFloat = 23
     static let paneHeaderHeight: CGFloat = 28
     static let controlSize: CGFloat = 22
+    static let headerControlInset = (paneHeaderHeight - controlSize) / 2
     static let controlRadius: CGFloat = 5
     static let floatingSymbolSize: CGFloat = 16
     static let paneRadius: CGFloat = 10

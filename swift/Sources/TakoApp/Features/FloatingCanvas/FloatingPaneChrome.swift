@@ -20,8 +20,6 @@ struct FloatingPaneHeaderView: View {
     /// The status ring sits as far from the header's left edge as from its top:
     /// the corner reads as a square inset.
     static let ringLeadingInset: CGFloat = (FloatingPaneGeometry.headerHeight - ringSize) / 2
-    /// Keeps the last control clear of the right-edge and corner resize handles.
-    static let controlsTrailingInset: CGFloat = 14
 
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
@@ -240,7 +238,7 @@ struct FloatingPaneHeaderView: View {
                     action: onClose
                 )
             }
-            .padding(.trailing, Self.controlsTrailingInset)
+            .padding(.trailing, DesktopCanvasMetrics.headerControlInset)
         }
         .frame(height: FloatingPaneGeometry.headerHeight)
     }
