@@ -10,4 +10,5 @@
 
 mod core;
 mod delta;
+mod palette_repaint;
 mod render;
