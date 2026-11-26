@@ -51,7 +51,9 @@ extension KeybindConfigFile {
             guard TerminalAppearanceCatalog.themeNames(paths: appearanceThemePaths).contains(name) else { return false }
             try ensureConfigFileExists(at: path)
             let text = try String(contentsOfFile: path, encoding: .utf8)
-            let colors: Set<String> = ["background", "foreground", "cursor-color", "selection-background", "selection-foreground", "palette"]
+            // `bold-is-bright` picks palette entries, so it follows the preset too.
+            let colors: Set<String> = ["background", "foreground", "cursor-color", "selection-background", "selection-foreground",
+                                       "palette", "bold-is-bright"]
             let retained = ThemePresetConfig.configuration(from: theme).components(separatedBy: "\n").filter {
                 guard let entry = Self.parseConfigKeyValue($0) else { return false }
                 return !colors.contains(entry.key) && !entry.key.hasPrefix("tab-status-color-")
