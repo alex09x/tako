@@ -186,9 +186,10 @@ struct PaneStatusTests {
         #expect(tracker.statusText == "running task")
         #expect(tracker.remainingTTL != nil)
 
-        // Wait for TTL timer to fire
-        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-        #expect(tracker.paneStatus == .unknown, "Status should expire to unknown after TTL")
+        // The TTL is a real Timer on the main run loop: wait for it with a
+        // deadline, not a fixed sleep, which a loaded runner can outlast.
+        let expired = await waitUntilPanelAsync(timeout: 2) { tracker.paneStatus == .unknown }
+        #expect(expired, "Status should expire to unknown after TTL")
         #expect(tracker.statusText == nil)
         #expect(tracker.remainingTTL == nil)
     }
