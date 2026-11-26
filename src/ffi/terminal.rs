@@ -193,7 +193,7 @@ impl TakoCore {
             cursor.map(Into::into),
             &entries,
         );
-        term.terminal.mark_all_damaged();
+        term.terminal.mark_colors_changed();
     }
 
     /// The background the screen's default cells are drawn in now: the
