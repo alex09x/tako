@@ -85,6 +85,15 @@ struct ControlConfigTests {
         }
     }
 
+    @Test func boldIsBrightIsWrittenAsTrueOrFalse() throws {
+        let (config, path, cleanup) = try sandbox("font-size = 12\n")
+        defer { cleanup() }
+        _ = try config.run(set([("bold-is-bright", "true")]))
+        #expect(file(path) == "font-size = 12\nbold-is-bright = true\n")
+        _ = try config.run(set([("bold-is-bright", "false")]))
+        #expect(file(path) == "font-size = 12\nbold-is-bright = false\n")
+    }
+
     @Test func repeatableSettingsAddLinesAndUnsetRemovesThemAll() throws {
         let (config, path, cleanup) = try sandbox("keybind = cmd+k=clear_screen\n")
         defer { cleanup() }
@@ -105,6 +114,7 @@ struct ControlConfigTests {
             ("font-size", "99", "between 6 and 72"),
             ("font-size", "big", "between 6 and 72"),
             ("safe-paste", "yes", "expected true or false"),
+            ("bold-is-bright", "yes", "expected true or false"),
             ("cursor-style", "triangle", "invalid value triangle"),
             ("tab-status-color-done", "green", "#rrggbb"),
             ("no-such-setting", "1", "unknown setting"),

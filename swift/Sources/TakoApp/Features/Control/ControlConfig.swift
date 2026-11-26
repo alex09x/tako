@@ -166,7 +166,14 @@ struct ControlConfig {
             throw ControlError(.invalid, "\(key): a value is one line")
         }
         // Exactly what Settings checks before it writes.
-        guard let item = DesktopPreferenceStore.item(key) else { return }
+        guard let item = DesktopPreferenceStore.item(key) else {
+            // Not in Settings, so nothing below checks it; the parser would
+            // drop anything but true/false and leave the default.
+            if key == "bold-is-bright", TerminalTheme.parseBool(value) == nil {
+                throw ControlError(.invalid, "\(key): expected true or false")
+            }
+            return
+        }
         if let reason = DesktopPreferenceStore.validationError(value, for: item) {
             throw ControlError(.invalid, reason)
         }

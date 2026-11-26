@@ -13,7 +13,7 @@ use super::types::{
     DEFAULT_BG, DEFAULT_FG, FfiGrapheme, FfiGraphicsPlacement, FfiSelectionRange, FfiTerminalModes,
     PACKED_BLINK, PACKED_BOLD, PACKED_CELL_SIZE, PACKED_DIM, PACKED_GRAPHEME, PACKED_HIDDEN,
     PACKED_ITALIC, PACKED_OVERLINE, PACKED_REVERSE, PACKED_STRIKETHROUGH, PACKED_UNDERLINE,
-    PACKED_WIDE, grapheme_text, resolve_color,
+    PACKED_WIDE, grapheme_text, resolve_color, resolve_foreground,
 };
 use crate::grid::CellAttrs;
 use crate::terminal::{ScreenBuffer, Terminal};
@@ -111,7 +111,8 @@ pub(crate) fn packed_rows_from_terminal(
             } else {
                 u32::from(cell.char)
             };
-            let (fr, fg, fb) = resolve_color(cell.fg, default_fg, palette);
+            let bold = cell.attrs.contains(CellAttrs::BOLD);
+            let (fr, fg, fb) = resolve_foreground(cell.fg, bold, default_fg, palette);
             let (br, bg, bb) = resolve_color(cell.bg, default_bg, palette);
             let (ur, ug, ub) = resolve_color(cell.underline_color, (fr, fg, fb), palette);
 
@@ -121,7 +122,7 @@ pub(crate) fn packed_rows_from_terminal(
                     bits |= flag;
                 }
             };
-            set(PACKED_BOLD, cell.attrs.contains(CellAttrs::BOLD));
+            set(PACKED_BOLD, bold);
             set(PACKED_DIM, cell.attrs.contains(CellAttrs::DIM));
             set(PACKED_ITALIC, cell.attrs.contains(CellAttrs::ITALIC));
             set(PACKED_UNDERLINE, cell.attrs.contains(CellAttrs::UNDERLINE));

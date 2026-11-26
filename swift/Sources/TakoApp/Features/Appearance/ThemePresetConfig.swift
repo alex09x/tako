@@ -205,6 +205,9 @@ public enum ThemePresetConfig {
         if theme.selectionInvertFgBg {
             lines.append("selection-invert-fg-bg = true")
         }
+        if theme.boldIsBright {
+            lines.append("bold-is-bright = true")
+        }
         if theme.cursorOpacity != 1.0 {
             lines.append("cursor-opacity = \(theme.cursorOpacity)")
         }

@@ -259,6 +259,7 @@ impl Terminal {
             .map(|index| (index, self.palette.base(index)))
             .collect();
         fresh.set_base_colors(fg, bg, cursor, &palette);
+        fresh.palette.keep_host_settings(&self.palette);
         fresh.set_default_cursor_style(self.default_cursor_style);
         fresh.set_scrollback_capacity(self.primary.scrollback_capacity());
         fresh.set_grapheme_width_method(self.grapheme_width_method);

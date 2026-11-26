@@ -151,7 +151,7 @@ extension ThemePresetConfig {
             guard isValidPaddingPair(value) else {
                 throw ThemePresetError.invalidValue(line: lineNum, key: key, value: value, reason: "Padding must be a non-negative number or comma-separated pair")
             }
-        case "window-padding-balance", "selection-invert-fg-bg", "cursor-style-blink":
+        case "window-padding-balance", "selection-invert-fg-bg", "bold-is-bright", "cursor-style-blink":
             guard isValidBool(value) else {
                 throw ThemePresetError.invalidValue(line: lineNum, key: key, value: value, reason: "Expected 'true' or 'false'")
             }

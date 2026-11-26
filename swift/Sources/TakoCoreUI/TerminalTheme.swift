@@ -131,6 +131,12 @@ public struct TerminalTheme {
 
     /// The 16 ANSI colors plus the 240 extended ones a theme can override.
     public var palette: [Int: CGColor] = [:]
+    /// `bold-is-bright`: bold text in one of the eight basic colors (0-7) is
+    /// drawn in its bright counterpart (8-15). Off by default. The desktop
+    /// app applies it; `TakoTerminalView` and a standalone
+    /// `TakoTerminalNSView` do not yet, as the published engine their
+    /// binding pairs with predates it.
+    public var boldIsBright = false
     /// User overrides for the tab's lifecycle indicators, independent of ANSI colors.
     public var tabStatusColors: [String: CGColor] = [:]
 

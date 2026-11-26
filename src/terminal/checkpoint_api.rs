@@ -98,6 +98,8 @@ impl Terminal {
         let reserved = checkpoint::retained_cost(self).saturating_add(data.len() as u64);
         let mut restored = checkpoint::import_reserving(data, reserved)?;
         restored.set_grapheme_width_method(self.grapheme_width_method);
+        // `bold-is-bright` is a host setting, not checkpoint state.
+        restored.palette.keep_host_settings(&self.palette);
         restored
             .set_program_status_probe_reply_enabled(self.is_program_status_probe_reply_enabled());
         *self = restored;

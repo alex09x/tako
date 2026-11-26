@@ -163,6 +163,8 @@ extension TerminalTheme {
                 if let c = parseColor(value) { theme.selectionForeground = c }
             case "selection-invert-fg-bg":
                 if let b = parseBool(value) { theme.selectionInvertFgBg = b }
+            case "bold-is-bright":
+                if let b = parseBool(value) { theme.boldIsBright = b }
             case "cursor-color":
                 if let c = parseColor(value) { theme.cursorColor = c }
             case "cursor-opacity":

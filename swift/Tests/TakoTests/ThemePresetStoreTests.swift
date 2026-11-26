@@ -280,6 +280,25 @@ struct ThemePresetStoreTests {
         }
     }
 
+    // MARK: - bold-is-bright
+
+    @Test func boldIsBrightRoundtripsAndIsOmittedWhenOff() throws {
+        let plain = ThemePresetConfig.configuration(from: .takoDefault)
+        #expect(!plain.contains("bold-is-bright"))
+        #expect(try ThemePresetConfig.parsed(plain).boldIsBright == false)
+
+        var theme = TerminalTheme.takoDefault
+        theme.boldIsBright = true
+        let serialized = ThemePresetConfig.configuration(from: theme)
+        try ThemePresetConfig.validate(serialized)
+        #expect(try ThemePresetConfig.parsed(serialized).boldIsBright)
+
+        #expect(throws: ThemePresetError.self) {
+            try ThemePresetConfig.validate("bold-is-bright = maybe")
+        }
+        #expect(ThemePresetConfig.controlKeys.contains("bold-is-bright"))
+    }
+
     // MARK: - Failed Write Preserves Old File
 
     @Test func failedWritePreservesOldFile() throws {
