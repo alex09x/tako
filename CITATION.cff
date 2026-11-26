@@ -14,6 +14,12 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.23028533
     description: "Concept DOI representing all versions of Tako"
+  - type: doi
+    value: 10.5281/zenodo.24547326
+    description: "Version DOI for Tako 0.2.1"
+  - type: doi
+    value: 10.5281/zenodo.23028534
+    description: "Version DOI for Tako 0.1.2"
 preferred-citation:
   type: software
   title: "Tako: GPU-accelerated terminal for macOS and iOS"
@@ -22,8 +28,8 @@ preferred-citation:
       family-names: Panasenko
       email: alex@prod.codes
       orcid: "https://orcid.org/0009-0003-3569-6490"
-  version: "0.1.2"
-  date-released: "2026-09-28"
-  doi: 10.5281/zenodo.23028534
-  url: "https://zenodo.org/records/23028534"
+  version: "0.2.1"
+  date-released: "2026-11-25"
+  doi: 10.5281/zenodo.24547326
+  url: "https://zenodo.org/records/24547326"
   license: MIT
