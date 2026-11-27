@@ -33,6 +33,8 @@ IDENTITY = "tako-core"
 # The framework slices the direct builders link: the Mac app, the simulator
 # app (scripts/build-iosapp.py) and the phone.
 REQUIRED_SLICES = ("macos-arm64", "ios-arm64-simulator", "ios-arm64")
+# What locate() returns, for --field.
+FIELDS = ("version", "revision", "checkout", "ui_sources", "shader", "xcframework", "slices")
 
 
 class Unresolved(Exception):
@@ -78,6 +80,11 @@ def slices(xcframework):
     return out
 
 
+def same_bytes(a, b):
+    with open(a, "rb") as fa, open(b, "rb") as fb:
+        return fa.read() == fb.read()
+
+
 def locate(package=PACKAGE, resolved=RESOLVED):
     version, revision = pin(resolved)
     build = os.path.join(package, ".build")
@@ -86,6 +93,14 @@ def locate(package=PACKAGE, resolved=RESOLVED):
                           capture_output=True, text=True).stdout.strip()
     if head != revision:
         raise Unresolved(f"{checkout} is at {head or 'nothing'}, Package.resolved says {revision}")
+    # A reused checkout with an edited or added file is refused. (An added
+    # file the checkout's ignore rules hide is not seen here, but it is never
+    # compiled either: ui_swift_files() takes only files the commit tracks.)
+    status = subprocess.run(["git", "-C", checkout, "status", "--porcelain", "--untracked-files=all"],
+                            capture_output=True, text=True)
+    if status.returncode != 0 or status.stdout.strip():
+        changed = status.stdout.strip().splitlines()[:5] or [status.stderr.strip()]
+        raise Unresolved(f"{checkout} is not the pinned tree as released: {'; '.join(changed)}")
     found = glob.glob(os.path.join(build, "artifacts", IDENTITY, "*", "TakoCore.xcframework"))
     if len(found) != 1:
         raise Unresolved(f"expected one TakoCore.xcframework for {IDENTITY}, found {found}")
@@ -102,6 +117,19 @@ def locate(package=PACKAGE, resolved=RESOLVED):
             raise Unresolved(f"{name}: {lib if not os.path.isfile(lib) else headers} is missing; "
                              "resolve the package again")
     ui = os.path.join(checkout, "swift", "Sources", "TakoCoreUI")
+    # The framework of this release, not one left from an interrupted
+    # resolve: each slice carries the generated binding the checkout has.
+    binding = os.path.join(ui, "Generated", "tako_core.swift")
+    for name in REQUIRED_SLICES:
+        shipped = os.path.join(framework_slices[name]["headers"], "tako_core.swift")
+        try:
+            same = same_bytes(binding, shipped)
+        except OSError as e:
+            raise Unresolved(f"{found[0]} ({name}): the binding cannot be read ({e!r}); "
+                             "resolve the package again") from e
+        if not same:
+            raise Unresolved(f"{found[0]} ({name}) is not the framework of {version} ({revision[:12]}): "
+                             "its binding differs from the checkout's; resolve the package again")
     return {
         "version": version,
         "revision": revision,
@@ -114,16 +142,18 @@ def locate(package=PACKAGE, resolved=RESOLVED):
 
 
 def ui_swift_files(paths):
-    """TakoCoreUI's Swift sources in a stable order, its generated binding included."""
-    out = []
-    for d, _, fs in os.walk(paths["ui_sources"]):
-        out += [os.path.join(d, f) for f in sorted(fs) if f.endswith(".swift")]
-    return sorted(out)
+    """TakoCoreUI's Swift sources as the pinned commit has them (its generated
+    binding included), in a stable order: files Git tracks there, so nothing
+    added to the checkout -- even an ignored file -- is ever compiled."""
+    rel = os.path.relpath(paths["ui_sources"], paths["checkout"])
+    listed = subprocess.run(["git", "-C", paths["checkout"], "ls-files", "-z", "--", rel],
+                            capture_output=True, text=True, check=True).stdout.split("\0")
+    return sorted(os.path.join(paths["checkout"], f) for f in listed if f.endswith(".swift"))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--field", help="print one field instead of the whole record")
+    parser.add_argument("--field", choices=FIELDS, help="print one field instead of the whole record")
     parser.add_argument("--no-resolve", action="store_true", help="only locate what is already resolved")
     args = parser.parse_args(argv)
     try:

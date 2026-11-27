@@ -3,7 +3,9 @@
 # CI. See scripts/check_run.py for the check names.
 #
 #   export TAKO_MAC=user@test-mac.local
-#   scripts/check.sh rust:search swift:CrossSessionSearch e2e:find-all,find-stale
+#   scripts/check.sh swift:CrossSessionSearch e2e:find-all,find-stale
+#
+# The engine and TakoCoreUI are tested in tako-core, not here.
 #
 # scripts/ci.sh stays the full run: every stage, clippy and coverage gates.
 set -euo pipefail

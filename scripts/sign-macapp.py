@@ -16,7 +16,8 @@ import re
 import subprocess
 import sys
 
-from macapp_signing import candidate_source, sign_bundle, verify_source_checkout
+from macapp_signing import (candidate_source, sign_bundle, verify_bundled_runtime, verify_runtime_pin,
+                            verify_source_checkout)
 
 
 def main():
@@ -35,8 +36,12 @@ def main():
     if not info.get("CFBundleIdentifier", "").startswith("com.tako-core.terminal"):
         parser.error("this is not a Tako candidate")
     source = candidate_source(info, args.candidate_metadata)
+    # Before signing rewrites its hash: the helper must be the one its
+    # manifest records, whether or not this run notarizes.
+    verify_bundled_runtime(app)
     if args.notarize:
         verify_source_checkout(source, Path(__file__).resolve().parent.parent)
+        verify_runtime_pin(app, Path(__file__).resolve().parent.parent)
     identity = args.identity or os.environ.get("TAKO_CODESIGN_IDENTITY")
     if not identity:
         result = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],

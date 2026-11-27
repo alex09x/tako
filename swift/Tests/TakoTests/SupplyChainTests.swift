@@ -255,8 +255,10 @@ import Testing
     private func expectReleaseGraph(
         packages: [[String: Any]], idKey: String, graph: [String: [String]], root: String
     ) {
+        // The engine's framework and crates, and the session runtime the app
+        // bundles at Contents/Helpers.
         let expectedDirect: Set<String> = [
-            "TakoCoreXCFramework", "base64", "bitflags", "flate2", "libc", "russh",
+            "TakoCoreXCFramework", "tako-session", "base64", "bitflags", "flate2", "libc", "russh",
             "smallvec", "thiserror", "tokio", "unicode-normalization",
             "unicode-segmentation", "unicode-width", "uniffi",
         ]

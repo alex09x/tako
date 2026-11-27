@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from macapp_signing import candidate_source, sign_bundle, verify_source_checkout
+from macapp_signing import candidate_source, sign_bundle, verify_runtime_pin, verify_source_checkout
 
 
 class SigningTests(unittest.TestCase):
@@ -46,10 +46,13 @@ class SigningTests(unittest.TestCase):
             path = self.app / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"unsigned fixture")
+            path.chmod(0o755)
         self.helper = self.app / "Contents/Helpers/zmx"
         self.manifest = self.app / "Contents/Resources/session-runtime.json"
         self.manifest.parent.mkdir(parents=True)
-        self.original = {"path": "Contents/Helpers/zmx", "sha256": "old", "guardedProtocol": 3,
+        # A candidate as built: the manifest records the helper it ships.
+        self.original = {"path": "Contents/Helpers/zmx",
+                         "sha256": hashlib.sha256(b"unsigned fixture").hexdigest(), "guardedProtocol": 3,
                          "commit": "source fixture", "future_metadata": {"keep": True}}
         self.manifest.write_text(json.dumps(self.original))
 
@@ -181,6 +184,59 @@ class SigningTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, source if args[1] == "rev-parse" else "", "")
 
         verify_source_checkout(source, self.root.name, runner=clean)
+
+        seen = []
+
+        def record(args, **kwargs):
+            seen.append(args)
+            return clean(args, **kwargs)
+
+        verify_source_checkout(source, self.root.name, runner=record)
+        self.assertIn("packaging/session-runtime.json", seen[-1], "an edited runtime pin is a local edit too")
+
+    def test_a_candidate_bundles_the_runtime_its_commit_pins(self):
+        checkout = Path(self.root.name) / "checkout"
+        (checkout / "packaging").mkdir(parents=True)
+        pin = {"name": "tako-session", "version": "0.1.0", "commit": "c" * 40, "tag": "session-v0.1.0",
+               "guardedProtocol": 3}
+        asset = {"asset": "tako-session-macos-arm64", "sha256": "e" * 64}
+        (checkout / "packaging/session-runtime.json").write_text(
+            json.dumps({**pin, "executables": {"macos-arm64": asset}}))
+        bundled = {**pin, "asset": asset["asset"], "assetSha256": asset["sha256"],
+                   "path": "Contents/Helpers/zmx", "sha256": hashlib.sha256(self.helper.read_bytes()).hexdigest()}
+        self.manifest.write_text(json.dumps(bundled))
+        verify_runtime_pin(self.app, checkout)
+        original = self.helper.read_bytes()
+        self.helper.write_bytes(b"a helper swapped in afterwards")
+        with self.assertRaisesRegex(ValueError, "not the file its manifest records"):
+            verify_runtime_pin(self.app, checkout)
+        self.helper.write_bytes(original)
+        self.helper.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "not executable"):
+            verify_runtime_pin(self.app, checkout)
+        self.helper.chmod(0o755)
+        self.manifest.write_text(json.dumps({**bundled, "guardedProtocol": 3.0}))
+        with self.assertRaisesRegex(ValueError, "runtime's guardedProtocol"):
+            verify_runtime_pin(self.app, checkout)
+        self.manifest.write_text("[]")
+        with self.assertRaisesRegex(ValueError, "not a JSON object"):
+            verify_runtime_pin(self.app, checkout)
+        for key, value in [("version", "0.0.9"), ("commit", "d" * 40), ("tag", "session-v0.0.9"),
+                           ("guardedProtocol", 0), ("asset", "other-asset"), ("assetSha256", "f" * 64)]:
+            self.manifest.write_text(json.dumps({**bundled, key: value}))
+            with self.assertRaisesRegex(ValueError, f"runtime's {key}"):
+                verify_runtime_pin(self.app, checkout)
+        self.manifest.write_text(json.dumps(bundled))
+        self.helper.unlink()
+        self.helper.symlink_to(self.app / "Contents/MacOS/takoctl")
+        with self.assertRaisesRegex(ValueError, "linked runtime executable"):
+            verify_runtime_pin(self.app, checkout)
+        self.helper.unlink()
+        self.helper.write_bytes(original)
+        self.helper.chmod(0o755)
+        self.manifest.unlink()
+        with self.assertRaisesRegex(ValueError, "must bundle the session runtime"):
+            verify_runtime_pin(self.app, checkout)
 
 
 if __name__ == "__main__":

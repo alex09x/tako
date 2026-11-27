@@ -21,22 +21,11 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def extract_module(path: str) -> str:
-    norm = os.path.normpath(path).strip().lstrip(os.sep)
-    if norm.startswith("./"):
-        norm = norm[2:]
-    parts = norm.split(os.sep)
-    return parts[0] if parts else ""
-
-
 DEFAULT_MODULES = ["TakoKit", "TakoApp/_TakoShim"]
 
 
-def compute_effective_modules(files: list[str], modules: list[str] | None) -> set[str]:
-    if files:
-        mods = {extract_module(f) for f in files if f.strip()}
-        mods.discard("")
-        return mods
+def compute_effective_modules(modules: list[str] | None) -> set[str]:
+    """The Sources/<dir> scopes checked when no files are named."""
     return set(modules or DEFAULT_MODULES)
 
 
@@ -53,6 +42,14 @@ def own_source(filename: str, sources: str = SOURCES) -> str | None:
         return None
     rel = real[len(root):]
     return None if "/Generated/" in "/" + rel else rel
+
+
+def unmatched_scopes(checked: list[str], files: list[str], modules: set[str]) -> list[str]:
+    """The requested files, or else modules, that no checked source belongs
+    to: a scope that matched nothing would otherwise pass unseen."""
+    if files:
+        return [f for f in files if f not in checked]
+    return sorted(m for m in modules if not any(rel.startswith(m + "/") for rel in checked))
 
 
 class TestCompletionTracker:
@@ -288,10 +285,16 @@ class TestSwiftCoverageGate(unittest.TestCase):
         self.assertTrue(tracker.finished)
 
     def test_effective_modules_filtering(self):
-        self.assertEqual(compute_effective_modules([], None), {"TakoKit", "TakoApp/_TakoShim"})
-        self.assertEqual(compute_effective_modules([], ["TakoKit"]), {"TakoKit"})
-        self.assertEqual(compute_effective_modules(["TakoApp/AppDelegate.swift"], None), {"TakoApp"})
-        self.assertEqual(compute_effective_modules(["./TakoKit/TakoKit.swift"], None), {"TakoKit"})
+        self.assertEqual(compute_effective_modules(None), {"TakoKit", "TakoApp/_TakoShim"})
+        self.assertEqual(compute_effective_modules(["TakoKit"]), {"TakoKit"})
+
+    def test_every_requested_scope_must_match_something(self):
+        checked = ["TakoKit/TakoKit.swift"]
+        self.assertEqual(unmatched_scopes(checked, [], {"TakoKit", "TakoApp/_TakoShim"}), ["TakoApp/_TakoShim"])
+        self.assertEqual(unmatched_scopes(checked + ["TakoApp/_TakoShim/Tako+A.swift"], [],
+                                          {"TakoKit", "TakoApp/_TakoShim"}), [])
+        self.assertEqual(unmatched_scopes(checked, ["TakoKit/TakoKit.swift", "TakoKit/Gone.swift"], set()),
+                         ["TakoKit/Gone.swift"])
 
     def test_dependency_sources_are_never_counted(self):
         for root in ("/r", "/x/.build/Sources/r"):
@@ -344,7 +347,7 @@ def main():
         result = runner.run(suite)
         sys.exit(0 if result.wasSuccessful() else 1)
 
-    effective_modules = compute_effective_modules(args.files, args.module)
+    effective_modules = compute_effective_modules(args.module)
 
     # A Swift Testing or XCTest run whose main run loop is stopped by something under test
     # ends early with exit status 0, so the exit status alone would pass a run
@@ -372,8 +375,10 @@ def main():
     ).stdout.strip()
 
     failed = False
-    checked = 0
-    for entry in json.load(open(path))["data"][0]["files"]:
+    checked = []
+    with open(path) as f:
+        entries = json.load(f)["data"][0]["files"]
+    for entry in entries:
         rel = own_source(entry["filename"])
         if rel is None:
             continue
@@ -386,11 +391,12 @@ def main():
         pct = lines["percent"] if lines["count"] else 100.0
         ok = pct >= args.min
         failed |= not ok
-        checked += 1
+        checked.append(rel)
         print(f"{'ok  ' if ok else 'FAIL'} {pct:6.2f}%  {rel}")
 
-    if checked == 0:
-        sys.exit("swift-coverage-gate: nothing matched")
+    unmatched = unmatched_scopes(checked, args.files, effective_modules)
+    if unmatched:
+        sys.exit(f"swift-coverage-gate: nothing matched {', '.join(unmatched)}")
     sys.exit(1 if failed else 0)
 
 

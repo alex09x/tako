@@ -115,13 +115,13 @@ From outside its panes, target this development instance with
 Run the checks affected by a change on your configured test Mac:
 
 ```bash
-./scripts/check.sh rust:search
 ./scripts/check.sh 'swift:ThemePresetStoreTests|ThemeWeightDiagnosticTests'
 ./scripts/check.sh e2e:theme-typography
 ./scripts/uitest.sh TakoFontWeightUITests
 ```
 
-`TAKO_MAC` selects the test host. `scripts/ci.sh` is the explicit full
+`TAKO_MAC` selects the test host. The engine and TakoCoreUI are tested in
+[tako-core](https://github.com/alex09x/tako-core), not here. `scripts/ci.sh` is the explicit full
 multi-stage release gate; it is separate from these targeted checks.
 
 GitHub Mac CI and candidate/signing workflows are documented in

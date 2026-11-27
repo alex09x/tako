@@ -159,6 +159,27 @@ def parse_swift_packages(core=None):
     return packages
 
 
+def parse_session_runtime(pin_path=None):
+    """The session runtime the app bundles at Contents/Helpers: the macOS
+    release asset packaging/session-runtime.json pins (the legacy test
+    fixture is never shipped, so it is not listed)."""
+    import json
+    from urllib.parse import quote
+    with open(pin_path or os.path.join(ROOT, "packaging", "session-runtime.json")) as f:
+        pin = json.load(f)
+    asset = pin["executables"]["macos-arm64"]
+    url = f"{pin['repository']}/releases/download/{pin['tag']}/{asset['asset']}"
+    return [{
+        "name": pin["name"],
+        "version": pin["version"],
+        "url": url,
+        "checksum": asset["sha256"],
+        # A release asset, not a path in a repository: a generic artifact
+        # identified by its download.
+        "purl": f"pkg:generic/{pin['name']}@{pin['version']}?download_url={quote(url, safe='')}",
+    }]
+
+
 def get_timestamp():
     """Returns deterministic or current ISO 8601 UTC timestamp."""
     source_date_epoch = os.environ.get("SOURCE_DATE_EPOCH")

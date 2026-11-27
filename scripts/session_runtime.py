@@ -70,11 +70,14 @@ def curl(url, dest):
     subprocess.run(["curl", "-fsSL", "--retry", "3", "-o", dest, url], check=True)
 
 
-def source_record(pin):
-    """What the app's runtime manifest is made from (its hash is added later,
-    over the signed file in the bundle)."""
+def source_record(pin, platform="macos-arm64"):
+    """What the app's runtime manifest is made from: the release, the asset
+    and that asset's digest as downloaded (`sha256` is added later, over the
+    signed file in the bundle, so release checks the asset by this one)."""
+    asset = pin["executables"][platform]
     return {"name": pin["name"], "version": pin["version"], "commit": pin["commit"],
-            "tag": pin["tag"], "guardedProtocol": pin["guardedProtocol"]}
+            "tag": pin["tag"], "guardedProtocol": pin["guardedProtocol"],
+            "asset": asset["asset"], "assetSha256": asset["sha256"]}
 
 
 def entry_dir(pin, platform, cache=CACHE):
@@ -82,8 +85,8 @@ def entry_dir(pin, platform, cache=CACHE):
     return os.path.join(cache, f"{pin['tag']}-{platform}-{digest[:16]}")
 
 
-def complete(entry, pin, platform):
-    """Whether a cache entry holds exactly the pinned files."""
+def files_verified(entry, pin, platform):
+    """Whether a cache entry's executable and notices are the pinned files."""
     exe = os.path.join(entry, EXECUTABLE)
     if not (os.path.isfile(exe) and os.access(exe, os.X_OK)):
         return False
@@ -93,9 +96,16 @@ def complete(entry, pin, platform):
         p = os.path.join(entry, notice["as"])
         if not os.path.isfile(p) or sha256(p) != notice["sha256"]:
             return False
+    return True
+
+
+def complete(entry, pin, platform):
+    """Whether a cache entry holds exactly the pinned files and their record."""
+    if not files_verified(entry, pin, platform):
+        return False
     try:
         with open(os.path.join(entry, "source.json")) as f:
-            return json.load(f) == source_record(pin)
+            return json.load(f) == source_record(pin, platform)
     except (OSError, ValueError):
         return False
 
@@ -108,6 +118,26 @@ def fetch(platform="macos-arm64", pin=None, cache=CACHE, download=curl):
     entry = entry_dir(pin, platform, cache)
     if complete(entry, pin, platform):
         return os.path.join(entry, EXECUTABLE)
+    if files_verified(entry, pin, platform):
+        # Every file checks out; only the record is from an older version of
+        # this script. Replace it (never writing through whatever is there)
+        # rather than download the same files again; if that fails, rebuild.
+        temporary = None
+        try:
+            fd, temporary = tempfile.mkstemp(prefix=".source-", dir=entry)
+            with os.fdopen(fd, "w") as f:
+                json.dump(source_record(pin, platform), f, sort_keys=True)
+            os.replace(temporary, os.path.join(entry, "source.json"))
+            if complete(entry, pin, platform):
+                return os.path.join(entry, EXECUTABLE)
+        except OSError:
+            pass
+        finally:
+            if temporary is not None:
+                try:
+                    os.remove(temporary)
+                except FileNotFoundError:
+                    pass
     os.makedirs(cache, exist_ok=True)
     # Assembled aside and renamed into place in one step: an interrupted run
     # never leaves something complete() accepts.
@@ -127,7 +157,7 @@ def fetch(platform="macos-arm64", pin=None, cache=CACHE, download=curl):
             if got != notice["sha256"]:
                 raise Mismatch(f"{path}: sha256 {got}, pinned {notice['sha256']}")
         with open(os.path.join(stage, "source.json"), "w") as f:
-            json.dump(source_record(pin), f, sort_keys=True)
+            json.dump(source_record(pin, platform), f, sort_keys=True)
         if not complete(stage, pin, platform):
             raise Mismatch("incomplete runtime entry")
         shutil.rmtree(entry, ignore_errors=True)

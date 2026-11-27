@@ -12,6 +12,7 @@ import plistlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import tako_core
 
@@ -25,10 +26,15 @@ class LocateTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.package = tmp.name
-        checkout = os.path.join(self.package, ".build", "checkouts", "tako-core")
-        os.makedirs(os.path.join(checkout, "swift", "Sources", "TakoCoreUI"))
+        checkout = self.checkout = os.path.join(self.package, ".build", "checkouts", "tako-core")
+        generated = os.path.join(checkout, "swift", "Sources", "TakoCoreUI", "Generated")
+        os.makedirs(generated)
+        self.binding = b"// binding of this release\n"
+        with open(os.path.join(generated, "tako_core.swift"), "wb") as f:
+            f.write(self.binding)
         git(checkout, "init", "-q")
-        git(checkout, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
+        git(checkout, "add", ".")
+        git(checkout, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "x")
         revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=checkout, capture_output=True,
                                   text=True, check=True).stdout.strip()
         self.resolved = os.path.join(self.package, "Package.resolved")
@@ -49,10 +55,18 @@ class LocateTests(unittest.TestCase):
     def locate(self):
         return tako_core.locate(self.package, self.resolved)
 
-    def complete_slices(self):
+    def complete_slices(self, binding=None):
         for ident in tako_core.REQUIRED_SLICES:
             os.makedirs(os.path.join(self.framework, ident, "Headers"), exist_ok=True)
             open(os.path.join(self.framework, ident, "libtako_core.a"), "w").close()
+            with open(os.path.join(self.framework, ident, "Headers", "tako_core.swift"), "wb") as f:
+                f.write(self.binding if binding is None else binding)
+
+    def test_a_framework_left_from_another_release_is_refused(self):
+        self.write_info(self.libraries(*tako_core.REQUIRED_SLICES))
+        self.complete_slices(binding=b"// an older binding\n")
+        with self.assertRaisesRegex(tako_core.Unresolved, "not the framework of 9.9.9"):
+            self.locate()
 
     def test_a_complete_release_is_located(self):
         self.write_info(self.libraries(*tako_core.REQUIRED_SLICES))
@@ -79,6 +93,33 @@ class LocateTests(unittest.TestCase):
         os.remove(os.path.join(self.framework, "ios-arm64", "libtako_core.a"))
         with self.assertRaisesRegex(tako_core.Unresolved, "ios-arm64: .*libtako_core.a is missing"):
             self.locate()
+
+    def test_a_checkout_with_an_edited_or_added_file_is_refused(self):
+        self.write_info(self.libraries(*tako_core.REQUIRED_SLICES))
+        self.complete_slices()
+        self.locate()
+        extra = os.path.join(self.checkout, "swift", "Sources", "TakoCoreUI", "Injected.swift")
+        with open(extra, "w") as f:
+            f.write("let injected = 1\n")
+        with self.assertRaisesRegex(tako_core.Unresolved, "not the pinned tree.*Injected.swift"):
+            self.locate()
+
+    def test_only_sources_of_the_pinned_commit_are_compiled(self):
+        self.write_info(self.libraries(*tako_core.REQUIRED_SLICES))
+        self.complete_slices()
+        paths = self.locate()
+        ui = os.path.join(self.checkout, "swift", "Sources", "TakoCoreUI")
+        with open(os.path.join(self.checkout, ".git", "info", "exclude"), "a") as f:
+            f.write("Ignored.swift\n")
+        with open(os.path.join(ui, "Ignored.swift"), "w") as f:
+            f.write("let ignored = 1\n")
+        self.assertEqual([os.path.relpath(p, ui) for p in tako_core.ui_swift_files(paths)],
+                         [os.path.join("Generated", "tako_core.swift")])
+
+    def test_an_unknown_field_fails_before_anything_resolves(self):
+        with self.assertRaises(SystemExit), mock.patch.object(tako_core, "resolve") as resolve:
+            tako_core.main(["--field", "verison"])
+        resolve.assert_not_called()
 
     def test_a_checkout_at_another_commit_is_refused(self):
         self.write_info(self.libraries(*tako_core.REQUIRED_SLICES))

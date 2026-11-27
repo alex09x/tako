@@ -14,82 +14,14 @@
 import os
 import subprocess
 from sbom_models import (
-    build_cargo_maps,
     engine,
     parse_cargo_lock,
-    resolve_dependency,
-    tomllib,
 )
 
 
 def engine_root():
     """The engine's crate: the pinned tako-core checkout."""
     return engine()["checkout"]
-
-
-def derive_manifest_direct_deps(features_spec="", root=None):
-    """Derives direct non-dev dependencies from Cargo.toml given an active feature set."""
-    manifest_path = os.path.join(root or engine_root(), "Cargo.toml")
-    if not os.path.isfile(manifest_path):
-        return []
-
-    active_features = [f.strip() for f in features_spec.split(",") if f.strip()]
-    if tomllib is not None:
-        with open(manifest_path, "rb") as f:
-            manifest = tomllib.load(f)
-        deps_table = manifest.get("dependencies", {})
-        features_table = manifest.get("features", {})
-    else:
-        deps_table = {}
-        features_table = {}
-        current_section = None
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    current_section = stripped[1:-1].strip()
-                    continue
-                if current_section == "dependencies" and "=" in stripped:
-                    key = stripped.split("=")[0].strip()
-                    opt = "optional = true" in stripped
-                    deps_table[key] = {"optional": opt}
-                elif current_section == "features" and "=" in stripped:
-                    k, v = stripped.split("=", 1)
-                    k = k.strip()
-                    items = [x.strip().strip('"').strip("'") for x in v.strip().strip("[]").split(",") if x.strip()]
-                    features_table[k] = items
-
-    for f in active_features:
-        if f not in features_table and f != "default":
-            raise RuntimeError(f"Unknown feature '{f}' requested in --features '{features_spec}'")
-
-    direct = set()
-    for name, spec in deps_table.items():
-        if isinstance(spec, dict):
-            if not spec.get("optional", False):
-                direct.add(name)
-        else:
-            direct.add(name)
-
-    feat_queue = list(active_features)
-    visited_feats = set()
-    while feat_queue:
-        feat = feat_queue.pop(0)
-        if feat in visited_feats:
-            continue
-        visited_feats.add(feat)
-        for item in features_table.get(feat, []):
-            if item.startswith("dep:"):
-                dep_name = item[4:]
-                if dep_name in deps_table:
-                    direct.add(dep_name)
-            elif "/" in item:
-                dep_name = item.split("/")[0]
-                if dep_name in deps_table:
-                    direct.add(dep_name)
-            elif item in features_table:
-                feat_queue.append(item)
-    return sorted(direct)
 
 
 def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh", root=None):

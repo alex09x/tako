@@ -69,7 +69,9 @@ class FetchTests(unittest.TestCase):
                          ["LICENSE-tako-session", "NOTICE-tako-session", "source.json", "tako-session"])
         with open(os.path.join(entry, "source.json")) as f:
             self.assertEqual(json.load(f), {"name": "tako-session", "version": "0.1.0", "commit": "c" * 40,
-                                            "tag": "session-v0.1.0", "guardedProtocol": 3})
+                                            "tag": "session-v0.1.0", "guardedProtocol": 3,
+                                            "asset": "tako-session-macos-arm64",
+                                            "assetSha256": digest(self.files["tako-session-macos-arm64"])})
         self.assertIn("https://github.com/example/core/releases/download/session-v0.1.0/tako-session-macos-arm64",
                       self.downloads)
         self.assertIn(f"https://raw.githubusercontent.com/example/core/{'c' * 40}/tako-session/NOTICE",
@@ -88,6 +90,23 @@ class FetchTests(unittest.TestCase):
         self.files["tako-session/NOTICE"] = b"changed"
         with self.assertRaisesRegex(sr.Mismatch, "tako-session/NOTICE: sha256"):
             self.fetch()
+
+    def test_a_verified_entry_with_an_old_record_is_not_downloaded_again(self):
+        exe = self.fetch()
+        record = os.path.join(os.path.dirname(exe), "source.json")
+        with open(record, "w") as f:
+            json.dump({"name": "tako-session", "version": "0.1.0"}, f)
+        fetched = len(self.downloads)
+        self.assertEqual(self.fetch(), exe)
+        self.assertEqual(len(self.downloads), fetched, "the verified files are kept")
+        with open(record) as f:
+            self.assertEqual(json.load(f)["assetSha256"], digest(self.files["tako-session-macos-arm64"]))
+        # A record that is a link to a verified file is replaced, never written through.
+        os.remove(record)
+        os.symlink(exe, record)
+        self.assertEqual(self.fetch(), exe)
+        self.assertEqual(read(exe), self.files["tako-session-macos-arm64"])
+        self.assertFalse(os.path.islink(record))
 
     def test_a_tampered_cache_entry_is_downloaded_again(self):
         exe = self.fetch()

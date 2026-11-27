@@ -14,7 +14,7 @@
 from sbom_models import build_cargo_maps, get_direct_cargo_dependencies, resolve_dependency
 
 
-def generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
+def generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp, runtime_pkgs=()):
     """Generates an SPDX 2.3 JSON document with precise dependency graph."""
     doc_namespace = f"https://github.com/alex09x/tako/releases/download/v{version}/tako-{version}.spdx.json"
     spdx_packages = []
@@ -83,6 +83,29 @@ def generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
                     "referenceCategory": "PACKAGE-MANAGER",
                     "referenceType": "purl",
                     "referenceLocator": f"pkg:swift/github.com/alex09x/tako/{name}@{ver}"
+                }
+            ]
+        })
+        add_edge(root_spdx_id, "DEPENDS_ON", spdx_id)
+
+    # Released executables the app bundles: the session runtime.
+    for pkg in runtime_pkgs:
+        spdx_id = f"SPDXRef-Package-binary-{pkg['name']}-{pkg['version']}".replace("_", "-")
+        spdx_packages.append({
+            "SPDXID": spdx_id,
+            "name": pkg["name"],
+            "versionInfo": pkg["version"],
+            "downloadLocation": pkg["url"],
+            "filesAnalyzed": False,
+            "checksums": [{"algorithm": "SHA256", "checksumValue": pkg["checksum"]}],
+            "licenseConcluded": "MIT",
+            "licenseDeclared": "MIT",
+            "copyrightText": "Copyright (c) 2026 Alexander Panasenko",
+            "externalRefs": [
+                {
+                    "referenceCategory": "PACKAGE-MANAGER",
+                    "referenceType": "purl",
+                    "referenceLocator": pkg["purl"]
                 }
             ]
         })

@@ -35,6 +35,7 @@ from sbom_models import (
     get_git_info,
     get_timestamp,
     parse_cargo_lock,
+    parse_session_runtime,
     parse_swift_packages,
     ROOT,
 )
@@ -54,7 +55,10 @@ def main():
     parser.add_argument("--output-dir", default=os.path.join(ROOT, "target", "macapp"), help="Directory to save generated SBOM files")
     parser.add_argument("--version", default="", help="Release version (defaults to git tag or TAKO_VERSION)")
     parser.add_argument("--format", choices=["spdx", "cyclonedx", "all"], default="all", help="Output format")
-    parser.add_argument("--target", default="aarch64-apple-darwin", help="Target triple for release artifact (default: aarch64-apple-darwin)")
+    # The app ships for Apple silicon only, and the runtime it lists is that
+    # platform's: another target would mix platforms in one SBOM.
+    parser.add_argument("--target", default="aarch64-apple-darwin", choices=["aarch64-apple-darwin"],
+                        help="Target triple for release artifact (Apple silicon, the one the app ships for)")
     parser.add_argument("--features", default="ssh", help="Features enabled for release artifact (default: ssh)")
     parser.add_argument("--include-all-lockfile", action="store_true", help="Include all crates from Cargo.lock instead of release artifact scope")
     args = parser.parse_args()
@@ -72,12 +76,13 @@ def main():
         cargo_pkgs = resolve_release_cargo_packages(target=args.target, features=args.features,
                                                     root=core["checkout"])
     swift_pkgs = parse_swift_packages(core)
+    runtime_pkgs = parse_session_runtime()
 
     os.makedirs(args.output_dir, exist_ok=True)
     outputs = []
 
     if args.format in ("spdx", "all"):
-        spdx_doc = generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp)
+        spdx_doc = generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp, runtime_pkgs)
         spdx_path = os.path.join(args.output_dir, f"Tako-{version}-sbom.spdx.json")
         write_json(spdx_path, spdx_doc)
         outputs.append(spdx_path)
@@ -87,7 +92,7 @@ def main():
         outputs.append(canonical_spdx)
 
     if args.format in ("cyclonedx", "all"):
-        cdx_doc = generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp)
+        cdx_doc = generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp, runtime_pkgs)
         cdx_path = os.path.join(args.output_dir, f"Tako-{version}-sbom.cdx.json")
         write_json(cdx_path, cdx_doc)
         outputs.append(cdx_path)

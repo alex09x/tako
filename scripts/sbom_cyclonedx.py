@@ -15,7 +15,7 @@ import uuid
 from sbom_models import build_cargo_maps, get_direct_cargo_dependencies, resolve_dependency
 
 
-def generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
+def generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp, runtime_pkgs=()):
     """Generates a CycloneDX 1.5 JSON document with precise dependency graph."""
     seed = f"tako-{version}-{commit}"
     doc_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, seed))
@@ -45,6 +45,8 @@ def generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
     root_depends_on = []
     for pkg in swift_pkgs:
         root_depends_on.append(f"pkg:swift/github.com/alex09x/tako/{pkg['name']}@{pkg['version']}")
+    for pkg in runtime_pkgs:
+        root_depends_on.append(pkg["purl"])
     for pkg in direct_cargo:
         root_depends_on.append(f"pkg:cargo/{pkg['name']}@{pkg['version']}")
 
@@ -81,6 +83,20 @@ def generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
             "ref": bom_ref,
             "dependsOn": []
         })
+
+    # Released executables the app bundles: the session runtime.
+    for pkg in runtime_pkgs:
+        components.append({
+            "bom-ref": pkg["purl"],
+            "type": "application",
+            "name": pkg["name"],
+            "version": pkg["version"],
+            "purl": pkg["purl"],
+            "licenses": [{"license": {"id": "MIT"}}],
+            "hashes": [{"alg": "SHA-256", "content": pkg["checksum"]}],
+            "externalReferences": [{"type": "distribution", "url": pkg["url"]}],
+        })
+        dependencies.append({"ref": pkg["purl"], "dependsOn": []})
 
     # Cargo components and crate-to-crate dependencies
     for pkg in cargo_pkgs:

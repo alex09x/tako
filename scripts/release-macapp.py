@@ -42,7 +42,7 @@ What this needs before it will run:
 Then: python3 scripts/release-macapp.py
 """
 import os, subprocess, sys, plistlib, shutil
-from macapp_signing import candidate_source, verify_source_checkout
+from macapp_signing import candidate_source, verify_bundled_runtime, verify_runtime_pin, verify_source_checkout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -84,8 +84,12 @@ def preflight():
     with open(os.path.join(APP, "Contents", "Info.plist"), "rb") as stream:
         info = plistlib.load(stream)
     source = candidate_source(info)
+    # Every release ships the session runtime it records; whether it is the
+    # one pinned can only be checked against a known source commit.
+    verify_bundled_runtime(APP)
     if source:
         verify_source_checkout(source, ROOT)
+        verify_runtime_pin(APP, ROOT)
         os.environ["GITHUB_SHA"] = source
     os.environ["TAKO_VERSION"] = info["CFBundleShortVersionString"]
 

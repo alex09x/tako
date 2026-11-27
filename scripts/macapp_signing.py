@@ -45,11 +45,53 @@ def verify_source_checkout(source, root, runner=subprocess.run):
         raise ValueError(f"checkout does not match candidate source {source}; use a clean worktree at that commit")
     result = runner(["git", "status", "--porcelain", "--untracked-files=all", "--",
                      "swift/Package.swift", "swift/Package.resolved", "scripts/tako_core.py",
+                     RUNTIME_PIN, "scripts/session_runtime.py",
                      "scripts/generate-sbom.py", "scripts/sbom_models.py", "scripts/sbom_resolver.py",
                      "scripts/sbom_spdx.py", "scripts/sbom_cyclonedx.py"],
                     cwd=root, check=True, capture_output=True, text=True)
     if result.stdout.strip():
         raise ValueError("candidate source or SBOM inputs have local edits; use a clean matching worktree")
+
+
+RUNTIME_PIN = "packaging/session-runtime.json"
+
+
+def verify_bundled_runtime(app):
+    """The candidate bundles the session runtime, and its helper is the file
+    the manifest was written for (signed or not yet re-signed), not one
+    swapped in afterwards. Returns the manifest."""
+    manifest = Path(app) / "Contents/Resources/session-runtime.json"
+    helper = Path(app) / "Contents/Helpers/zmx"
+    if helper.is_symlink() or manifest.is_symlink():
+        raise ValueError("linked runtime executable or manifest is not allowed")
+    if not manifest.is_file() or not helper.is_file():
+        raise ValueError("a release candidate must bundle the session runtime (built with TAKO_WITH_ZMX=0?)")
+    if not os.access(helper, os.X_OK):
+        raise ValueError("the bundled session runtime is not executable; the app would not run it")
+    runtime = json.loads(manifest.read_text())
+    if not isinstance(runtime, dict):
+        raise ValueError("the session runtime manifest is not a JSON object")
+    if hashlib.sha256(helper.read_bytes()).hexdigest() != runtime.get("sha256"):
+        raise ValueError("the bundled session runtime is not the file its manifest records")
+    return runtime
+
+
+def verify_runtime_pin(app, root):
+    """A release candidate bundles the session runtime, and exactly the
+    release and asset its source commit pins: a build from an edited pin,
+    reverted afterwards, would otherwise pass as that commit. The asset is
+    checked by the digest it had when downloaded (`assetSha256`); the
+    manifest's `sha256` is the signed helper's."""
+    runtime = verify_bundled_runtime(app)
+    pin = json.loads((Path(root) / RUNTIME_PIN).read_text())
+    asset = pin["executables"]["macos-arm64"]
+    expected = {key: pin.get(key) for key in ("name", "version", "commit", "tag", "guardedProtocol")}
+    expected.update(asset=asset["asset"], assetSha256=asset["sha256"])
+    for key, want in expected.items():
+        got = runtime.get(key)
+        if got != want or type(got) is not type(want):
+            raise ValueError(f"the bundled session runtime's {key} is {runtime.get(key)!r}, "
+                             f"but {RUNTIME_PIN} at the candidate source pins {want!r}")
 
 
 def sign_bundle(app, identity, runner=subprocess.run):
