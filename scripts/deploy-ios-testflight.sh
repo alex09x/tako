@@ -54,11 +54,11 @@ mkdir -p "$OUT_DIR"
 # The project is generated, not committed, so it can never drift from the
 # source directories it lists.
 echo "[testflight] generating the Xcode project"
-xcodegen -s ios/project.yml -p ios --quiet
+./scripts/ios-project.sh
 
 echo "[testflight] archiving build=$BUILD_NUMBER"
 xcodebuild \
-    -project ios/TakoCore.xcodeproj \
+    -project ios/TakoCore.xcodeproj -onlyUsePackageVersionsFromResolvedFile \
     -scheme TakoCore \
     -configuration Release \
     -destination 'generic/platform=iOS' \

@@ -114,6 +114,9 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
             "--format-version", "1",
             "--features", features,
             "--filter-platform", target,
+            # The release's own Cargo.lock as it is: never updated to
+            # describe a graph the engine was not built from.
+            "--locked",
             "--offline"
         ]
         res = subprocess.run(cmd, cwd=root, capture_output=True, text=True)

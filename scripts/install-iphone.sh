@@ -24,14 +24,14 @@ fi
     exit 1
 }
 
-xcodegen -s ios/project.yml -p ios --quiet
+./scripts/ios-project.sh
 
 DERIVED="$ROOT_DIR/target/ios-derived"
 # Built for `generic/platform=iOS` rather than for this device: xcodebuild
 # addresses a phone by its hardware UDID while devicectl uses its own
 # identifier, and one generic build installs on either.
 xcodebuild \
-    -project ios/TakoCore.xcodeproj \
+    -project ios/TakoCore.xcodeproj -onlyUsePackageVersionsFromResolvedFile \
     -scheme TakoCore \
     -configuration Debug \
     -destination 'generic/platform=iOS' \

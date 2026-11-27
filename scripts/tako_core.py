@@ -30,6 +30,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGE = os.path.join(ROOT, "swift")
 RESOLVED = os.path.join(PACKAGE, "Package.resolved")
 IDENTITY = "tako-core"
+# The framework slices the direct builders link: the Mac app, the simulator
+# app (scripts/build-iosapp.py) and the phone.
+REQUIRED_SLICES = ("macos-arm64", "ios-arm64-simulator", "ios-arm64")
 
 
 class Unresolved(Exception):
@@ -60,13 +63,18 @@ def slices(xcframework):
     ios-arm64 and ios-arm64-simulator as the framework names them."""
     with open(os.path.join(xcframework, "Info.plist"), "rb") as f:
         info = plistlib.load(f)
+    libraries = info.get("AvailableLibraries") if isinstance(info, dict) else None
+    if not isinstance(libraries, list):
+        raise ValueError("Info.plist has no AvailableLibraries list")
     out = {}
-    for lib in info["AvailableLibraries"]:
-        d = os.path.join(xcframework, lib["LibraryIdentifier"])
-        out[lib["LibraryIdentifier"]] = {
-            "library": os.path.join(d, lib["LibraryPath"]),
-            "headers": os.path.join(d, lib.get("HeadersPath", "Headers")),
-        }
+    for lib in libraries:
+        fields = [lib.get(k, "Headers" if k == "HeadersPath" else None) if isinstance(lib, dict) else None
+                  for k in ("LibraryIdentifier", "LibraryPath", "HeadersPath")]
+        if not all(isinstance(v, str) and v for v in fields):
+            raise ValueError(f"Info.plist has a malformed library entry: {lib!r}")
+        ident, library, headers = fields
+        d = os.path.join(xcframework, ident)
+        out[ident] = {"library": os.path.join(d, library), "headers": os.path.join(d, headers)}
     return out
 
 
@@ -81,6 +89,18 @@ def locate(package=PACKAGE, resolved=RESOLVED):
     found = glob.glob(os.path.join(build, "artifacts", IDENTITY, "*", "TakoCore.xcframework"))
     if len(found) != 1:
         raise Unresolved(f"expected one TakoCore.xcframework for {IDENTITY}, found {found}")
+    try:
+        framework_slices = slices(found[0])
+    except Exception as e:  # any way a damaged Info.plist fails to parse
+        raise Unresolved(f"{found[0]} cannot be read ({e!r}); resolve the package again") from e
+    missing = [s for s in REQUIRED_SLICES if s not in framework_slices]
+    if missing:
+        raise Unresolved(f"{found[0]} has no {', '.join(missing)} slice; resolve the package again")
+    for name in REQUIRED_SLICES:
+        lib, headers = framework_slices[name]["library"], framework_slices[name]["headers"]
+        if not os.path.isfile(lib) or not os.path.isdir(headers):
+            raise Unresolved(f"{name}: {lib if not os.path.isfile(lib) else headers} is missing; "
+                             "resolve the package again")
     ui = os.path.join(checkout, "swift", "Sources", "TakoCoreUI")
     return {
         "version": version,
@@ -89,7 +109,7 @@ def locate(package=PACKAGE, resolved=RESOLVED):
         "ui_sources": ui,
         "shader": os.path.join(ui, "Resources", "TerminalShaders.metal"),
         "xcframework": found[0],
-        "slices": slices(found[0]),
+        "slices": framework_slices,
     }
 
 

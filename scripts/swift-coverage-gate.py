@@ -40,10 +40,19 @@ def compute_effective_modules(files: list[str], modules: list[str] | None) -> se
     return set(modules or DEFAULT_MODULES)
 
 
-def is_own_source(filename: str) -> bool:
-    """A file of this repository's package, not of a resolved dependency
-    (SwiftPM reports those from .build/checkouts too)."""
-    return "/Sources/" in filename and "/.build/" not in filename and "/Generated/" not in filename
+SOURCES = os.path.join(ROOT, "swift", "Sources") + os.sep
+
+
+def own_source(filename: str, sources: str = SOURCES) -> str | None:
+    """The path under this package's swift/Sources of a file of this
+    repository, or None for anything else: a resolved dependency (SwiftPM
+    reports those from .build/checkouts too) or a generated binding."""
+    real = os.path.realpath(filename)
+    root = os.path.realpath(sources.rstrip(os.sep)) + os.sep
+    if not real.startswith(root):
+        return None
+    rel = real[len(root):]
+    return None if "/Generated/" in "/" + rel else rel
 
 
 class TestCompletionTracker:
@@ -285,10 +294,13 @@ class TestSwiftCoverageGate(unittest.TestCase):
         self.assertEqual(compute_effective_modules(["./TakoKit/TakoKit.swift"], None), {"TakoKit"})
 
     def test_dependency_sources_are_never_counted(self):
-        self.assertTrue(is_own_source("/r/swift/Sources/TakoKit/TakoKit.swift"))
-        self.assertFalse(is_own_source(
-            "/r/swift/.build/checkouts/tako-core/swift/Sources/TakoCoreUI/TakoTerminalNSView.swift"))
-        self.assertFalse(is_own_source("/r/swift/Sources/Foo/Generated/binding.swift"))
+        for root in ("/r", "/x/.build/Sources/r"):
+            sources = f"{root}/swift/Sources/"
+            self.assertEqual(own_source(f"{root}/swift/Sources/TakoKit/TakoKit.swift", sources),
+                             "TakoKit/TakoKit.swift")
+            self.assertIsNone(own_source(
+                f"{root}/swift/.build/checkouts/tako-core/swift/Sources/TakoCoreUI/TakoTerminalNSView.swift", sources))
+            self.assertIsNone(own_source(f"{root}/swift/Sources/Foo/Generated/binding.swift", sources))
 
     def test_actual_log_file_full_completion(self):
         log_path = os.path.join(ROOT, "target/swift-final-recheck.log")
@@ -362,10 +374,9 @@ def main():
     failed = False
     checked = 0
     for entry in json.load(open(path))["data"][0]["files"]:
-        name = entry["filename"]
-        if not is_own_source(name):
+        rel = own_source(entry["filename"])
+        if rel is None:
             continue
-        rel = name.split("/Sources/", 1)[1]
         if args.files:
             if rel not in args.files:
                 continue

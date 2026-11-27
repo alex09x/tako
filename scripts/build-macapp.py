@@ -113,6 +113,36 @@ try:
 except tako_core.Unresolved as e:
     sys.exit(f"failed: tako-core: {e}")
 CORE_SLICE = CORE["slices"]["macos-arm64"]
+# What a product of the release depends on beyond the files themselves: the
+# release, the build mode and the compiler (a .swiftmodule from another
+# Swift cannot be imported).
+SWIFT_VERSION = run(["swiftc", "--version"], "swiftc version").stdout.strip().splitlines()[0]
+CORE_KEY = f"{CORE['revision']} {'release' if RELEASE else 'debug'} {SWIFT_VERSION}"
+
+
+def keyed(stamp_path, outputs, inputs):
+    """Whether every output exists, is newer than its inputs and was built
+    for CORE_KEY (recorded in `stamp_path`)."""
+    try:
+        with open(stamp_path) as f:
+            same = f.read() == CORE_KEY
+    except OSError:
+        return False
+    return same and all(up_to_date(o, inputs) for o in outputs)
+
+
+def forget_key(stamp_path):
+    """Before a rebuild: outputs left half-written by a failed rebuild must
+    not pass for the key the stamp named before."""
+    try:
+        os.remove(stamp_path)
+    except FileNotFoundError:
+        pass
+
+
+def record_key(stamp_path):
+    with open(stamp_path, "w") as f:
+        f.write(CORE_KEY)
 
 # This app is linked with `swiftc` directly, so compile the Metal resource
 # explicitly rather than relying on SwiftPM's automatic resource handling.
@@ -120,7 +150,9 @@ CORE_SLICE = CORE["slices"]["macos-arm64"]
 # is the one library `MTLDevice.makeDefaultLibrary(bundle:)` -- what
 # MetalTerminalRenderer asks for -- will load.
 metal_src = CORE["shader"]
-if not up_to_date(os.path.join(BUILD, "default.metallib"), [metal_src, __file__]):
+metallib_stamp = os.path.join(BUILD, "default.metallib.key")
+if not keyed(metallib_stamp, [os.path.join(BUILD, "default.metallib")], [metal_src, __file__]):
+    forget_key(metallib_stamp)
     air = os.path.join(BUILD, "TerminalShaders.air")
     # Match the app's macOS 14 deployment target. A newer build SDK defaults
     # to its own Metal language version (Xcode 26 emits Metal 4.0), which
@@ -128,6 +160,7 @@ if not up_to_date(os.path.join(BUILD, "default.metallib"), [metal_src, __file__]
     run(["xcrun", "-sdk", "macosx", "metal", "-std=metal3.1",
          "-mmacosx-version-min=14.0", "-c", metal_src, "-o", air], "compile metal shader")
     run(["xcrun", "-sdk", "macosx", "metallib", air, "-o", os.path.join(BUILD, "default.metallib")], "link metallib")
+    record_key(metallib_stamp)
 
 # Upstream imports this as a module, so it is built first.
 for name, root in [("TakoKit", "swift/Sources/TakoKit")]:
@@ -143,23 +176,21 @@ if not up_to_date(os.path.join(BUILD, "TakoObjC.o"), ["swift/Sources/TakoObjC"])
      "swift/Sources/TakoObjC/TakoObjC.m"], "objc helpers")
 
 # TakoCoreUI, a module of its own as the package defines it, compiled from
-# the release's sources against the release's engine headers. Rebuilt only
-# when the pinned release (or this script) changes.
+# the release's sources against the release's engine headers. Rebuilt when
+# the release, the build mode, the compiler or this script changes.
 CORE_HEADERS = ["-Xcc", "-I" + CORE_SLICE["headers"], "-I", CORE_SLICE["headers"]]
 core_ui_lib = os.path.join(BUILD, "libTakoCoreUI.a")
-core_ui_stamp = os.path.join(BUILD, "TakoCoreUI.revision")
-core_ui_current = (os.path.exists(core_ui_lib) and os.path.exists(core_ui_stamp)
-                   and open(core_ui_stamp).read() == CORE["revision"] + ("-release" if RELEASE else "")
-                   and up_to_date(core_ui_lib, [__file__]))
-if not core_ui_current:
+core_ui_module = os.path.join(BUILD, "TakoCoreUI.swiftmodule")
+core_ui_stamp = os.path.join(BUILD, "TakoCoreUI.key")
+if not keyed(core_ui_stamp, [core_ui_lib, core_ui_module], [__file__]):
+    forget_key(core_ui_stamp)
     run(["swiftc", "-emit-module", "-emit-library", "-static", "-parse-as-library",
          "-module-name", "TakoCoreUI", *BASE,
          *(["-O", "-whole-module-optimization"] if RELEASE else ["-Onone"]),
          *CORE_HEADERS,
-         "-emit-module-path", os.path.join(BUILD, "TakoCoreUI.swiftmodule"),
+         "-emit-module-path", core_ui_module,
          "-o", core_ui_lib, *tako_core.ui_swift_files(CORE)], "module TakoCoreUI")
-    with open(core_ui_stamp, "w") as f:
-        f.write(CORE["revision"] + ("-release" if RELEASE else ""))
+    record_key(core_ui_stamp)
 
 files = swift_files("swift/Sources/TakoApp")
 

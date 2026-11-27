@@ -239,7 +239,7 @@ PY
             # This Xcode project takes TakoCoreUI from the pinned tako-core
             # package; xcodebuild resolves and checks it.
             python3 scripts/app_locations.py check-source "$stage"
-            xcodegen -s ios/project.yml -p ios --quiet
+            ./scripts/ios-project.sh
             if [ -n "${TAKO_SIM_DEVICE:-}" ]; then
                 destination="platform=iOS Simulator,name=$TAKO_SIM_DEVICE"
             else
@@ -262,7 +262,7 @@ sys.exit("FAIL: no available iPhone simulator")
             ios_derived="$(python3 scripts/app_locations.py dir ci-ios-derived)"
             python3 scripts/app_locations.py check-app "$ios_derived"
             result_dir=$(mktemp -d target/ci-ios.XXXXXX)
-            ci_logged "$stage" xcodebuild test -project ios/TakoCore.xcodeproj \
+            ci_logged "$stage" xcodebuild test -project ios/TakoCore.xcodeproj -onlyUsePackageVersionsFromResolvedFile \
                 -scheme TakoCore -configuration Debug -jobs 2 \
                 -destination "$destination" \
                 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \

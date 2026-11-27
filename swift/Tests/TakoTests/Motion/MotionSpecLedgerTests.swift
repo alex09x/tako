@@ -180,11 +180,16 @@ struct MotionSpecLedgerTests {
                  because: "Alex, 2026-10-20: the crab is replaced by the 1b ring; the page is out of date"),
     ]
 
-    /// Every test function the package has, by name.
+    /// Every test function the package has, by name, and those of the
+    /// terminal view it ships, which are tako-core's: its tests in the pinned
+    /// release SwiftPM checked out.
     static let testNames: Set<String> = {
         let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let walk = FileManager.default.enumerator(at: tests, includingPropertiesForKeys: nil)
-        let files = (walk?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "swift" }
+        let coreTests = tests.deletingLastPathComponent().appendingPathComponent(".build/checkouts/tako-core/swift/Tests")
+        let files = [tests, coreTests].flatMap { root -> [URL] in
+            let walk = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+            return (walk?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "swift" }
+        }
         let declaration = try! NSRegularExpression(pattern: #"func (\w+)\("#)
         var names: Set<String> = []
         for file in files {

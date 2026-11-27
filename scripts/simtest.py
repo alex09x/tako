@@ -282,8 +282,9 @@ def stop_servers():
 # ── the app ──────────────────────────────────────────────────────────────────
 
 def build_and_install():
-    run(["xcodegen", "-s", "ios/project.yml", "-p", "ios", "--quiet"])
-    run(["xcodebuild", "-project", "ios/TakoCore.xcodeproj", "-scheme", "TakoCore",
+    run(["./scripts/ios-project.sh"])
+    run(["xcodebuild", "-project", "ios/TakoCore.xcodeproj", "-onlyUsePackageVersionsFromResolvedFile",
+         "-scheme", "TakoCore",
          "-configuration", "Debug",
          "-destination", f"platform=iOS Simulator,name={DEVICE}",
          "-derivedDataPath", DERIVED, "build"])
@@ -775,6 +776,7 @@ def run_walkthrough():
          # scripts/ios-coverage-gate.py from walkthrough.xcresult.
          "-enableCodeCoverage", "YES",
          "-project", "ios/TakoCore.xcodeproj",
+         "-onlyUsePackageVersionsFromResolvedFile",
          "-scheme", "TakoCore",
          "-destination", f"platform=iOS Simulator,name={DEVICE}",
          "-derivedDataPath", DERIVED,

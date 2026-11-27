@@ -18,8 +18,8 @@ for name in "$@"; do ONLY+=("-only-testing:TakoCoreUnitTests/$name"); done
 python3 scripts/app_locations.py check-source ios-unit-test
 DERIVED="${TAKO_IOS_DERIVED:-$(python3 scripts/app_locations.py dir ios-sim-derived)}"
 python3 scripts/app_locations.py check-app "$DERIVED"
-xcodegen -s ios/project.yml -p ios --quiet
-xcodebuild -project ios/TakoCore.xcodeproj -scheme TakoCore -configuration Debug \
+./scripts/ios-project.sh
+xcodebuild -project ios/TakoCore.xcodeproj -onlyUsePackageVersionsFromResolvedFile -scheme TakoCore -configuration Debug \
     -destination "platform=iOS Simulator,name=$DEVICE" -derivedDataPath "$DERIVED" \
     ${ONLY[@]+"${ONLY[@]}"} test 2>&1 | grep -E "error:|Test Case|Executed|TEST (SUCCEEDED|FAILED)|XCTAssert" | tail -60
 exit "${PIPESTATUS[0]}"

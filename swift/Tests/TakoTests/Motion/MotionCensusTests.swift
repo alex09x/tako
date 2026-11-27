@@ -137,11 +137,11 @@ struct MotionCensusTests {
         Site(file: "TakoTerminalNSView.swift", code: "var displayLink: CADisplayLink?",
              what: "the terminal's display link", coveredBy: ["testTheTerminalsDisplayLinkSleepsWakesAndIsParkedOffWindow", "testPresentationPauseTransitionsAreIdempotent"]),
         Site(file: "TakoTerminalView+Metal.swift", code: "let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick))",
-             what: "the terminal's frames on iOS (scripts/check.sh ios)",
+             what: "the terminal's frames on iOS (tako-core's iOS simulator tests)",
              coveredBy: ["testADroppedFrameIsRetriedByTheDisplayLinkWithoutNewDamage",
                          "testATailRestoredWhileMode2026HeldTheRedrawIsTheFrameThatEndsUpOnTheLayer"]),
         Site(file: "TakoTerminalView.swift", code: "var displayLink: CADisplayLink?",
-             what: "the iOS terminal's display link (scripts/check.sh ios)",
+             what: "the iOS terminal's display link (tako-core's iOS simulator tests)",
              coveredBy: ["testADroppedFrameIsRetriedByTheDisplayLinkWithoutNewDamage", "testThemeChangeRebuildsRendererStateWithoutDuplicates"]),
         Site(file: "TakoTerminalView.swift", code: "var kineticDisplayLink: CADisplayLink?",
              what: "iOS kinetic scrolling", coveredBy: ["testKineticDecelerationMonotonicDecay", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
@@ -307,7 +307,7 @@ struct MotionCensusTests {
         Site(file: "TakoTerminalNSView+Presentation.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)"#,
              what: "a capped surface lets its next frame through after its throttle", coveredBy: ["testAPresentationThrottleLetsTheNextFrameThroughAfterItsDelay"]),
         Site(file: "TakoTerminalView+Display.swift", code: #"DispatchQueue.main.asyncAfter("#,
-             what: "the phone's grid takes the last size once a resize settles (scripts/check.sh ios)", coveredBy: ["testThePhonesGridTakesTheLastSizeOnceTheResizeSettles"]),
+             what: "the phone's grid takes the last size once a resize settles (tako-core's iOS simulator tests)", coveredBy: ["testThePhonesGridTakesTheLastSizeOnceTheResizeSettles"]),
         Site(file: "PaneOverviewView.swift", code: #"try? await Task.sleep(nanoseconds: UInt64(oneOff * 1_000_000_000))"#,
              what: "the Overview goes back to 30 a second once a one-off has played", coveredBy: ["aOneOffTakesEveryFrameUntilItRestsThenThirtyAgain"]),
         Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {"#,
@@ -339,7 +339,7 @@ struct MotionCensusTests {
         Site(file: "TakoTerminalNSView+Triggers.swift", code: "CATransaction.setDisableActions(true)",
              what: "trigger highlights come and move at once", coveredBy: ["testTriggerHighlightsComeAndMoveAtOnce"]),
         Site(file: "TakoTerminalView+Metal.swift", code: "CATransaction.setDisableActions(true)",
-             what: "the phone's Metal layer takes a resize at once (scripts/check.sh ios)", coveredBy: ["testThePhonesMetalLayerTakesANewSizeAtOnce"]),
+             what: "the phone's Metal layer takes a resize at once (tako-core's iOS simulator tests)", coveredBy: ["testThePhonesMetalLayerTakesANewSizeAtOnce"]),
         Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { isSearchFieldFocused = true }"#,
              what: "the Overview's search field takes focus", coveredBy: [delayedAction]),
         // The desktop canvas, settings and setup (frozen desktop reference).
@@ -393,19 +393,29 @@ struct MotionCensusTests {
             .deletingLastPathComponent().deletingLastPathComponent()
     }
 
+    /// TakoCoreUI's sources as the app ships them: the pinned tako-core
+    /// release, where SwiftPM checked it out for this package.
+    static var takoCoreUIRoot: URL {
+        swiftRoot.appendingPathComponent(".build/checkouts/tako-core/swift/Sources/TakoCoreUI")
+    }
+
     static func swiftFiles(under folder: String) -> [URL] {
-        let root = swiftRoot.appendingPathComponent(folder)
+        swiftFiles(in: swiftRoot.appendingPathComponent(folder))
+    }
+
+    static func swiftFiles(in root: URL) -> [URL] {
         let walk = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
         return (walk?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "swift" }
     }
 
-    /// Every line of the app's sources that animates, by file name, read once.
+    /// Every line that animates in the app's sources and in the terminal
+    /// view it ships, by file name, read once.
     static func animationLines() -> [(file: String, line: String)] { scanned }
 
     private static let scanned: [(file: String, line: String)] = scan()
 
     private static func scan() -> [(file: String, line: String)] {
-        swiftFiles(under: "Sources").flatMap { url -> [(String, String)] in
+        (swiftFiles(under: "Sources") + swiftFiles(in: takoCoreUIRoot)).flatMap { url -> [(String, String)] in
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             return text.split(separator: "\n", omittingEmptySubsequences: false).compactMap { raw in
                 let line = raw.trimmingCharacters(in: .whitespaces)
@@ -431,7 +441,11 @@ struct MotionCensusTests {
     }
 
     @Test func everyTestTheCensusNamesExists() {
-        let tests = Self.swiftFiles(under: "Tests").map { (try? String(contentsOf: $0, encoding: .utf8)) ?? "" }.joined()
+        // The terminal view's motion is tested with it, in tako-core.
+        let coreTests = Self.takoCoreUIRoot.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests")
+        let tests = (Self.swiftFiles(under: "Tests") + Self.swiftFiles(in: coreTests))
+            .map { (try? String(contentsOf: $0, encoding: .utf8)) ?? "" }.joined()
         for site in Self.census {
             for name in site.coveredBy where ![Self.notMotion, Self.delayedAction, Self.phoneApp].contains(name)
                 && !tests.contains("func \(name)(") {
@@ -445,7 +459,7 @@ struct MotionCensusTests {
     /// The phone's view is built only for the phone, so the Mac cannot run
     /// it: it blinks on `CursorBlinker`, which the Mac does run.
     @Test func thePhonesViewBlinksOnTheSharedBlinker() throws {
-        let ui = Self.swiftRoot.appendingPathComponent("Sources/TakoCoreUI")
+        let ui = Self.takoCoreUIRoot
         let view = try String(contentsOf: ui.appendingPathComponent("TakoTerminalView.swift"), encoding: .utf8)
         let display = try String(contentsOf: ui.appendingPathComponent("TakoTerminalView+Display.swift"), encoding: .utf8)
         let metal = try String(contentsOf: ui.appendingPathComponent("TakoTerminalView+Metal.swift"), encoding: .utf8)
