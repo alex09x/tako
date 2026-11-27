@@ -658,14 +658,14 @@ nothing is written to the repository by Tako.
 - Kitty graphics gaps closed: default action `a=t`, query action `a=q`, and response control `q=2` returning PTY replies; cursor advances on placement unless `C=1`.
 - iTerm2 inline image escape supported (`OSC 1337 ; File=inline=1;... : <base64>`) with auto-detected dimensions across PNG, JPEG, GIF, and WebP.
 - Enforced per-pane memory cap (`max_memory_bytes`, default 64 MiB) with generation-based LRU eviction preventing memory exhaustion.
-- Sixel support evaluated in [`docs/sixel-evaluation.md`](sixel-evaluation.md) and rejected due to memory/security risks and CPU overhead.
+- Sixel support evaluated in [`docs/sixel-evaluation.md`](https://github.com/alex09x/tako-core/blob/main/docs/sixel-evaluation.md) in tako-core and rejected due to memory/security risks and CPU overhead.
 
 Done when the common image-printing tools show images correctly in Tako, and a hostile image
 stream cannot exceed the cap.
 
 ### [x] D5. Text sizing (*evaluate*)
 
-Evaluated in [`docs/text-sizing-evaluation.md`](text-sizing-evaluation.md). Closed as not planned due to lack of CLI/TUI tool adoption and the architectural degradation variable-sized text imposes on fixed-stride terminal grids, with rich formatting already provided via sandboxed overlays (Track D1).
+Evaluated in [`docs/text-sizing-evaluation.md`](https://github.com/alex09x/tako-core/blob/main/docs/text-sizing-evaluation.md) in tako-core. Closed as not planned due to lack of CLI/TUI tool adoption and the architectural degradation variable-sized text imposes on fixed-stride terminal grids, with rich formatting already provided via sandboxed overlays (Track D1).
 
 Done when: a written evaluation records current terminal tool adoption and either schedules an engine
 implementation or closes the item as not planned.
@@ -849,7 +849,7 @@ Item A4; shipped in [#8](https://github.com/alex09x/tako/pull/8).
 
 A single written policy of what a program may do through escape sequences -- set the title, write
 the clipboard (with the confirmation setting), read it only through an explicit host policy that refuses by default, notify (rate-limited), report
-progress and status, open links (with E8) -- with a fuzz target for every sequence Tako adds. Shipped in [#44](https://github.com/alex09x/tako/pull/44) (`docs/escape-sequence-policy.md`).
+progress and status, open links (with E8) -- with a fuzz target for every sequence Tako adds. Shipped in [#44](https://github.com/alex09x/tako/pull/44) ([`docs/escape-sequence-policy.md`](https://github.com/alex09x/tako-core/blob/main/docs/escape-sequence-policy.md), now in tako-core).
 
 Done when the policy page exists, each new sequence lands with its fuzz target, and the policy is
 enforced in the engine rather than by convention in the app.
@@ -949,8 +949,8 @@ A small track that runs alongside the app:
 
 - [x] minimal sample apps for macOS and iOS (`examples/macos-sample`, `examples/ios-sample`);
 - [x] a headless example over the C ABI (`examples/c`);
-- [x] a page of limits and compatibility (`docs/takocore.md`);
-- [x] a versioning policy for the API (`docs/takocore.md`).
+- [x] a page of limits and compatibility ([`docs/takocore.md`](https://github.com/alex09x/tako-core/blob/main/docs/takocore.md) in tako-core);
+- [x] a versioning policy for the API ([`docs/takocore.md`](https://github.com/alex09x/tako-core/blob/main/docs/takocore.md) in tako-core).
 
 When an app feature needs something new from the engine, it is designed and tested in TakoCore
 first, then used by the app.

@@ -14,6 +14,7 @@ import SwiftUI
 import Combine
 import OSLog
 import TakoKit
+import TakoCoreUI
 
 extension Tako {
     open class SurfaceView: TakoTerminalNSView, Identifiable, ObservableObject, Codable, TakoTerminalNSViewDelegate, SecureInputCheckable {
@@ -169,7 +170,6 @@ extension Tako {
                 ?? app?.config.windowSizeInCells.map { Int($0.rows) }
                 ?? 24
             super.init(frame: .zero, theme: initialTheme, initialCols: defaultCols, initialRows: defaultRows)
-            applyBoldIsBright(initialTheme)
             if let size = baseConfig?.initialSize {
                 self.initialSize = size
             }

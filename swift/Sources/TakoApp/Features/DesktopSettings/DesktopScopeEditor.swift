@@ -8,6 +8,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// One editing target. Global writes go to the config file; workspace,
 /// session and pane writes go to ScopedAppearanceStore through the

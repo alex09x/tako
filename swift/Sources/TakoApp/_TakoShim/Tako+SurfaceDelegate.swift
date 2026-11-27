@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.SurfaceView {
         // MARK: - TakoTerminalNSViewDelegate

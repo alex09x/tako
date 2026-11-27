@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// In-terminal read-only diff review pane container view (D3).
 ///

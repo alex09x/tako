@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+import TakoCoreUI
+
 extension Tako.SurfaceView {
     /// The characters of `rows` (counted from the top of the scrollback, as
     /// `viewportRow` counts them), one line per row, without styling: what

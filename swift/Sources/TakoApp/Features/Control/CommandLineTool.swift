@@ -1,4 +1,5 @@
 import AppKit
+import TakoCoreUI
 
 /// `takoctl` ships inside the app (Contents/MacOS) but is not on anyone's
 /// PATH from there. This puts a link to it where shells look -- asked once

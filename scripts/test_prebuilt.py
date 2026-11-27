@@ -73,7 +73,8 @@ class PrebuiltTests(unittest.TestCase):
         self.tmp = os.path.realpath(tmp.name)
         self.root = os.path.join(self.tmp, "checkout")
         os.makedirs(os.path.join(self.root, "scripts"))
-        for pin in ("rust-toolchain.toml", "Cargo.lock", "scripts/build-macapp.py"):
+        os.makedirs(os.path.join(self.root, "swift"))
+        for pin in ("rust-toolchain.toml", "swift/Package.resolved", "scripts/build-macapp.py"):
             with open(os.path.join(self.root, pin), "w") as f:
                 f.write(pin)
         with open(os.path.join(self.root, ".gitignore"), "w") as f:
@@ -112,14 +113,14 @@ class PrebuiltTests(unittest.TestCase):
         self.assertEqual(self.manifest["build"]["mode"], "debug")
         self.assertEqual(self.manifest["build"]["codesign"], "-")
         self.assertEqual(self.manifest["build"]["bundle_id"], "com.tako-core.terminal.prebuilt")
-        self.assertIn("Cargo.lock", self.manifest["pins"])
+        self.assertIn("swift/Package.resolved", self.manifest["pins"])
         self.assertIn("Contents/Helpers/zmx", self.manifest["app"])
         self.assertTrue(self.manifest["build"]["with_zmx"])
         self.assertEqual(set(self.manifest["runner"]), {"tako-e2e", "tako-e2e.inputs"})
         prebuilt.verify(self.out, True, self.root, ENV, self.current())
 
     def test_a_dirty_checkout_cannot_pack(self):
-        with open(os.path.join(self.root, "Cargo.lock"), "w") as f:
+        with open(os.path.join(self.root, "swift/Package.resolved"), "w") as f:
             f.write("edited")
         with self.assertRaisesRegex(prebuilt.Mismatch, "uncommitted"):
             prebuilt.pack(self.app, self.out + "2", None, self.root, ENV)
@@ -127,7 +128,6 @@ class PrebuiltTests(unittest.TestCase):
     def test_an_untracked_source_counts_as_a_change_but_ignored_products_do_not(self):
         # target/ (the app and runner themselves) is ignored and already present.
         prebuilt.pack(self.app, self.out + "-clean", None, self.root, ENV)
-        os.makedirs(os.path.join(self.root, "swift"))
         with open(os.path.join(self.root, "swift", "New.swift"), "w") as f:
             f.write("let x = 1\n")
         with self.assertRaisesRegex(prebuilt.Mismatch, "uncommitted"):

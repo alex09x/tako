@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 import Testing
 @testable import Tako
 @testable import TakoKit

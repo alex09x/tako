@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.SurfaceView {
         /// Where `copy-on-select` puts a selection by itself: a pasteboard of

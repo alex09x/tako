@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// A single card in the Pane Overview 4b grid (Spec 1b §6).
 struct PaneOverviewCard: View, Equatable {

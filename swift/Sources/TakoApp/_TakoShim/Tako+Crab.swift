@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 // The crab indicator that sits in each tab.
 //

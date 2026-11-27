@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 extension KeybindConfigFile {
     var appearanceThemePaths: [String] {

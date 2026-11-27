@@ -7,8 +7,8 @@
 
 Coverage comes from the XCUITest walkthrough that scripts/simtest.py runs in
 the simulator with code coverage on (target/simtest/walkthrough.xcresult).
-Only files under swift/Sources/iOSApp are checked; TakoCoreUI has its own
-gate in scripts/swift-coverage-gate.py.
+Only files under swift/Sources/iOSApp are checked; TakoCoreUI comes from the
+pinned tako-core release and is gated there.
 """
 
 import argparse

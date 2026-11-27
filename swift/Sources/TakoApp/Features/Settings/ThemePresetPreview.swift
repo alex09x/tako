@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 @MainActor final class ThemePresetPreview {
     private static let active = NSHashTable<ThemePresetPreview>.weakObjects()

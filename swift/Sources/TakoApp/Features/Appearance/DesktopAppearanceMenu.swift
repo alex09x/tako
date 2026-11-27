@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// What the reference's «Appearance ▸» offers for one level (spec «inheritance»):
 /// up to six presets with the level's own first and ✓, «Inherit» (drop

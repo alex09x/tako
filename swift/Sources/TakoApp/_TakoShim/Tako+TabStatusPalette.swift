@@ -10,6 +10,7 @@
 
 import AppKit
 import QuartzCore
+import TakoCoreUI
 
 extension Tako {
     @MainActor

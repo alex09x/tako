@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// Main actor store for versioned scoped appearance overrides (workspace, session and pane).
 ///

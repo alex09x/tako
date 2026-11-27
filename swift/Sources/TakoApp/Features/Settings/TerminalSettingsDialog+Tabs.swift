@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension TerminalSettingsDialog {
     var tabLayout: [(tab: SettingsTab, label: String, column: Int)] {

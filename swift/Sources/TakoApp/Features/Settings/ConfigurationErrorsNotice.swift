@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 import TakoKit
 
 /// Presents configuration errors as an in-terminal TUI card matching the TakoCore palette,

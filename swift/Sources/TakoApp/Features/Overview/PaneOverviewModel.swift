@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import TakoCoreUI
 import TakoKit
 
 /// Sourced information for a single terminal pane card in the full-window Pane Overview (B6).

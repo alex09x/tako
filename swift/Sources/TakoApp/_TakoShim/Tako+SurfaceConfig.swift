@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.SurfaceView {
         func configDidReload(_ config: Tako.Config) {

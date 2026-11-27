@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 extension ThemePresetConfig {
     static func typographyConfiguration(from theme: TerminalTheme) -> [String] {

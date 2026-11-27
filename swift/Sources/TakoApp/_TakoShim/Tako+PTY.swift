@@ -10,6 +10,7 @@
 
 import Foundation
 import Darwin
+import TakoCoreUI
 
 
 /// Internal UNIX pseudo-terminal pair management for Tako.SurfaceView.

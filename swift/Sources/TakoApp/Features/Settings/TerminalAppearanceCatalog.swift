@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// Lists real Tako theme files and installed monospaced font families.
 enum TerminalAppearanceCatalog {

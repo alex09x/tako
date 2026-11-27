@@ -8,6 +8,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// Nothing touches disk until DesktopThemeLibrary.save; cancelling simply
 /// drops the value. The preview is parsed from the exact text to be saved.

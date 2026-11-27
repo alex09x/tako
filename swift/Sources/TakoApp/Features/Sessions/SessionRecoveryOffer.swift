@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// The question Session Recovery asks about sessions found outside the
 /// restored windows, and what counts as having asked it.

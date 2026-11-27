@@ -9,6 +9,7 @@
  */
 
 import SwiftUI
+import TakoCoreUI
 import UIKit
 
 // One session, full screen: the terminal, and the key row a phone keyboard

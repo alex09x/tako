@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension KeybindConfigFile {
     public static func parseConfigKeyValue(_ line: String) -> (key: String, value: String)? {

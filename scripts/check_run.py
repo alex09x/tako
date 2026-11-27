@@ -11,13 +11,13 @@
 Run through scripts/check.sh, which sends it to the test Mac. Each argument
 names one check:
 
-    rust:<name>      mitts test --test <name> for a test file or directory target,
-                     else mitts test <name> as a filter
     swift:<filter>   the Swift package's tests matching <filter>, no coverage
     e2e:<a,b,...>    those scenarios of scripts/e2e-macapp.sh on a fresh build
     selftest         the app's self-test on a fresh build
-    ios              the iOS terminal surface tests on the simulator
     iosunit:<A,B,..> those hosted unit-test classes of the phone app (ios/UnitTests) on the simulator
+
+The engine and TakoCoreUI are tako-core's, tested there; their release is
+pinned in swift/Package.swift.
 
 This is not the full CI (scripts/ci.sh): no clippy, no coverage gates, no
 iOS scenarios unless asked. The report says exactly what ran. A check that
@@ -37,8 +37,8 @@ os.chdir(ROOT)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import ci_log  # noqa: E402
 
-SWIFT_FLAGS = ["--no-parallel", "-Xlinker", "-L../target/macos", "-Xlinker", "-ltako_core",
-               "-Xcc", "-I../target/bindings"]
+# The tako-core release exactly as Package.resolved records it.
+SWIFT_FLAGS = ["--no-parallel", "--force-resolved-versions"]
 
 report = []
 failed = False
@@ -81,54 +81,14 @@ def note(check, ok, detail, build=None, lock=None, run_s=None):
     report.append((check, ok, detail, build, lock, run_s))
 
 
-def check_rust(name):
-    integration = os.path.isfile(f"tests/{name}.rs") or os.path.isfile(f"tests/{name}/main.rs")
-    target = ["--test", name] if integration else [name]
-    only = target if target[0] == "--test" else []
-    build, code, _ = run(["mitts", "test", "--features", "pty,ssh", "--no-run"] + only)
-    if code != 0:
-        return note(f"rust:{name}", False, "build failed", build)
-    # Keep a positional test filter before the variadic feature list.
-    # Otherwise Mitts can consume it as another feature and run every test.
-    secs, code, out = run(["mitts", "test"] + target + ["--features", "pty,ssh"])
-    passed = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. (\d+) passed", out))
-    failed_tests = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. \d+ passed; (\d+) failed", out))
-    ok = code == 0 and passed > 0
-    detail = f"{passed} passed, {failed_tests} failed" if passed or failed_tests else "no completed test summary"
-    note(f"rust:{name}", ok, detail, build, None, secs)
-
-
-def host_framework():
-    """The macOS slice the Swift package links, rebuilt only when the engine changed."""
-    def stale(artifact):
-        # By content, not timestamps: see scripts/engine_fingerprint.py.
-        # The build scripts themselves make Mitts see changed content.
-        return subprocess.run(["python3", "scripts/engine_fingerprint.py", "check", artifact]).returncode != 0
-
-    secs = 0.0
-    if stale("TakoCore.xcframework"):
-        secs, code, _ = run(["scripts/build-xcframework.sh", "--macos-only"])
-        if code != 0:
-            return None
-    if stale("target/macos/libtako_core.a"):
-        s, code, _ = run(["scripts/build-macos-testlib.sh"])
-        secs += s
-        if code != 0:
-            return None
-    return secs
-
-
 def check_swift(filter_):
-    prep = host_framework()
-    if prep is None:
-        return note(f"swift:{filter_}", False, "engine build failed")
     build, code, _ = run(["swift", "build", "--build-tests"] + SWIFT_FLAGS[1:], cwd="swift")
     if code != 0:
-        return note(f"swift:{filter_}", False, "build failed", prep + build)
+        return note(f"swift:{filter_}", False, "build failed", build)
     secs, code, out = run(["swift", "test", "--skip-build"] + SWIFT_FLAGS + ["--filter", filter_], cwd="swift")
     count, finished = swift_test_count(out)
     ok = code == 0 and finished and count > 0
-    note(f"swift:{filter_}", ok, f"{count} tests" if count else "no tests ran", prep + build, None, secs)
+    note(f"swift:{filter_}", ok, f"{count} tests" if count else "no tests ran", build, None, secs)
 
 
 def swift_test_count(out):
@@ -240,16 +200,6 @@ def check_selftest():
     note("selftest", code == 0, "ok" if code == 0 else "failed", build, wait, secs - (wait or 0))
 
 
-def check_ios():
-    secs, code, out = run(["scripts/test-ios-surface.sh"])
-    m = re.findall(r"Executed (\d+) tests?, with .*?(\d+) failures", out)
-    count = int(m[-1][0]) if m else 0
-    # test-ios-surface.sh builds, installs and tests in one go; its phases
-    # are not reported separately, so the time is shown as one figure.
-    note("ios", code == 0 and count > 0,
-         (f"{count} tests" if count else "no tests ran") + "; build+run not separated", None, None, secs)
-
-
 def check_iosunit(classes):
     secs, code, out = run(["scripts/ios-unit-test.sh"] + [c for c in classes.split(",") if c])
     m = re.findall(r"Executed (\d+) tests?, with (\d+) failures", out)
@@ -268,16 +218,12 @@ def main(args):
         return 2
     for arg in args:
         kind, _, value = arg.partition(":")
-        if kind == "rust" and value:
-            check_rust(value)
-        elif kind == "swift" and value:
+        if kind == "swift" and value:
             check_swift(value)
         elif kind == "e2e" and value:
             check_e2e(value)
         elif arg == "selftest":
             check_selftest()
-        elif arg == "ios":
-            check_ios()
         elif kind == "iosunit" and value:
             check_iosunit(value)
         else:

@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 
 /// Manages user-defined regex redaction patterns for persisted session snapshots (G5).

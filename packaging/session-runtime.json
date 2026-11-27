@@ -1,0 +1,38 @@
+{
+  "name": "tako-session",
+  "version": "0.1.0",
+  "repository": "https://github.com/alex09x/tako-core",
+  "tag": "session-v0.1.0",
+  "commit": "0cd5fe165b9204d1d9284b01d701795e32638ec8",
+  "guardedProtocol": 3,
+  "executables": {
+    "macos-arm64": {
+      "asset": "tako-session-macos-arm64",
+      "sha256": "d0baa5be1101b81d0510fed4c03d28c1af87fc15b1dbc36ce48a16fa84d053a9"
+    },
+    "linux-x86_64": {
+      "asset": "tako-session-linux-x86_64",
+      "sha256": "fad51c6845a3e4d0a743cdae6fac886bcbd0596caec07aba56c4d4e5708bd254"
+    }
+  },
+  "notices": {
+    "tako-session/LICENSE": {
+      "as": "LICENSE-tako-session",
+      "sha256": "55a2f2b419e14b672c52af4a75a9d70d02e9e5b40afbf89447bb36e7501b383e"
+    },
+    "tako-session/LICENSE-zmx": {
+      "as": "LICENSE-zmx",
+      "sha256": "56bab989df218f62a6deb746b43903340291dafbc7a811e3fa0c8ea889f8f5ea"
+    },
+    "tako-session/NOTICE": {
+      "as": "NOTICE-tako-session",
+      "sha256": "acc7931a6b66b42cf274fe1358e48cb197a64d94993ce24ed38dfb817c6a930e"
+    }
+  },
+  "legacyFixture": {
+    "about": "The runtime older Tako releases shipped (0.8.1 with two patches, no guarded operations). Test input only, for the checks that a session it created still reattaches; never bundled.",
+    "tag": "fixtures-v1",
+    "asset": "tako-session-legacy-fixture-macos-arm64",
+    "sha256": "2a7dc1b9d20ec41dd536e027bf1485a8fcf490fcf436fe199e6215cb35392e00"
+  }
+}

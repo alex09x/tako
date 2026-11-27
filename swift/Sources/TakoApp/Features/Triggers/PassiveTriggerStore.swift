@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 import UserNotifications
 
 /// Central registry and dispatcher for passive regex triggers (Track E7).

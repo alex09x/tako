@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import TakoCoreUI
 import TakoKit
 
 /// Sourced information for a single tab/workspace row in the session sidebar (B5).

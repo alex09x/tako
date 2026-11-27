@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 import UserNotifications
 
 extension Tako.SurfaceView {

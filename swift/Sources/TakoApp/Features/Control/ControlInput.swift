@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// Typing into a pane and reading it back, for `takoctl send|type|key|text`.
 @MainActor

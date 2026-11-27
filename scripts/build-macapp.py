@@ -5,13 +5,15 @@
 # Author: https://prod.codes/about/
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
-"""Build the macOS app: upstream's Swift app layer over the Rust core.
+"""Build the macOS app: upstream's Swift app layer over the tako-core engine.
 
-Produces Tako.app. The Rust staticlib, the Objective-C helpers and
-all of upstream's Swift link into one binary -- nothing loads at runtime
-that isn't in the bundle.
+Produces Tako.app. The engine's static library and TakoCoreUI (from the
+pinned tako-core release), the Objective-C helpers and all of upstream's
+Swift link into one binary -- nothing loads at runtime that isn't in the
+bundle.
 """
 import hashlib, json, os, subprocess, sys, shutil, plistlib
+import tako_core
 from macapp_signing import sign_bundle
 from macapp_privacy import PRIVACY_USAGE_DESCRIPTIONS
 
@@ -101,31 +103,23 @@ def up_to_date(output, inputs):
     return os.path.getmtime(output) >= stamp(inputs)
 
 os.makedirs(BUILD, exist_ok=True)
-run(["mitts", "build", "--release", "--features", "ssh"], "mitts build")
 
-# The direct Swift build consumes generated UniFFI sources from target/bindings.
-# Keep them tied to the Rust ABI instead of silently reusing a stale file after
-# an FFI record or method changes.
-bindings_swift = "target/bindings/tako_core.swift"
-if not up_to_date(bindings_swift, ["src", "Cargo.toml", "Cargo.lock"]):
-    os.makedirs("target/bindings", exist_ok=True)
-    run([
-        "mitts", "run", "--quiet", "--bin", "uniffi-bindgen",
-        "--features", "uniffi-cli,ssh", "--", "generate",
-        "--language", "swift", "--out-dir", "target/bindings",
-        "target/release/libtako_core.dylib",
-    ], "generate Swift bindings")
-    run([
-        "sed", "-i", "", "-E", "s/[[:space:]]+$//",
-        bindings_swift, "target/bindings/tako_coreFFI.h",
-    ], "normalize generated Swift bindings")
+# The engine and its terminal views: the tako-core release swift/Package.swift
+# pins, as Package.resolved records it (scripts/tako_core.py). Its framework
+# brings the engine's static library and C headers for this platform.
+try:
+    tako_core.resolve()
+    CORE = tako_core.locate()
+except tako_core.Unresolved as e:
+    sys.exit(f"failed: tako-core: {e}")
+CORE_SLICE = CORE["slices"]["macos-arm64"]
 
 # This app is linked with `swiftc` directly, so compile the Metal resource
 # explicitly rather than relying on SwiftPM's automatic resource handling.
 # The result is named default.metallib and shipped in Resources, because that
 # is the one library `MTLDevice.makeDefaultLibrary(bundle:)` -- what
 # MetalTerminalRenderer asks for -- will load.
-metal_src = "swift/Sources/TakoCoreUI/Resources/TerminalShaders.metal"
+metal_src = CORE["shader"]
 if not up_to_date(os.path.join(BUILD, "default.metallib"), [metal_src, __file__]):
     air = os.path.join(BUILD, "TerminalShaders.air")
     # Match the app's macOS 14 deployment target. A newer build SDK defaults
@@ -148,9 +142,26 @@ if not up_to_date(os.path.join(BUILD, "TakoObjC.o"), ["swift/Sources/TakoObjC"])
      "-o", os.path.join(BUILD, "TakoObjC.o"),
      "swift/Sources/TakoObjC/TakoObjC.m"], "objc helpers")
 
-files = swift_files("swift/Sources/TakoApp") \
-        + [f for f in swift_files("swift/Sources/TakoCoreUI") if "/Generated/" not in f] \
-        + ["target/bindings/tako_core.swift"]
+# TakoCoreUI, a module of its own as the package defines it, compiled from
+# the release's sources against the release's engine headers. Rebuilt only
+# when the pinned release (or this script) changes.
+CORE_HEADERS = ["-Xcc", "-I" + CORE_SLICE["headers"], "-I", CORE_SLICE["headers"]]
+core_ui_lib = os.path.join(BUILD, "libTakoCoreUI.a")
+core_ui_stamp = os.path.join(BUILD, "TakoCoreUI.revision")
+core_ui_current = (os.path.exists(core_ui_lib) and os.path.exists(core_ui_stamp)
+                   and open(core_ui_stamp).read() == CORE["revision"] + ("-release" if RELEASE else "")
+                   and up_to_date(core_ui_lib, [__file__]))
+if not core_ui_current:
+    run(["swiftc", "-emit-module", "-emit-library", "-static", "-parse-as-library",
+         "-module-name", "TakoCoreUI", *BASE,
+         *(["-O", "-whole-module-optimization"] if RELEASE else ["-Onone"]),
+         *CORE_HEADERS,
+         "-emit-module-path", os.path.join(BUILD, "TakoCoreUI.swiftmodule"),
+         "-o", core_ui_lib, *tako_core.ui_swift_files(CORE)], "module TakoCoreUI")
+    with open(core_ui_stamp, "w") as f:
+        f.write(CORE["revision"] + ("-release" if RELEASE else ""))
+
+files = swift_files("swift/Sources/TakoApp")
 
 # The incremental build needs an object file named for every source. It is
 # regenerated each run, because a stale map sends new files to a temporary
@@ -173,14 +184,15 @@ if not RELEASE:
 binary = os.path.join(BUILD, "Tako")
 run(["swiftc", "-module-name", "Tako", *BASE, *OPT,
      "-import-objc-header", "swift/Sources/TakoApp/_TakoShim/Tako-Bridging-Header.h",
-     "-Xcc", "-I" + os.path.abspath("target/bindings"),
+     *CORE_HEADERS,
      "-Xcc", "-I" + os.path.abspath("swift/Sources/TakoObjC"),
      "-I", BUILD,
      "-o", binary,
      *files,
      os.path.join(BUILD, "TakoObjC.o"),
      os.path.join(BUILD, "libTakoKit.a"),
-     "target/release/libtako_core.a",
+     core_ui_lib,
+     CORE_SLICE["library"],
      "-framework", "Cocoa", "-framework", "SwiftUI",
      "-framework", "UserNotifications", "-framework", "CoreText",
      "-framework", "UniformTypeIdentifiers", "-framework", "Carbon",
@@ -296,14 +308,15 @@ def codesign_identity():
 identity = codesign_identity()
 adhoc = identity == "-"
 
-# The session runtime (session-persistence, experimental): bundled only when
-# asked for, so ordinary builds and checks never fetch Zig or zmx. It is
-# signed on its own first, and the manifest records the hash of that signed
-# file -- what Tako checks before it runs one. The app's signature then seals
-# it as part of the bundle without re-signing it.
+# The session runtime (session-persistence): tako-session as tako-core
+# released it, checked against the hash pinned in packaging/session-runtime.json
+# (scripts/session_runtime.py). TAKO_WITH_ZMX=0 leaves it out. It sits at the
+# path the session protocol names, is signed on its own first, and the
+# manifest records the hash of that signed file -- what Tako checks before it
+# runs one. The app's signature then seals it without re-signing it.
 if os.environ.get("TAKO_WITH_ZMX") != "0":
-    built = subprocess.run(["scripts/build-zmx.sh"], check=True, capture_output=True,
-                           text=True).stdout.strip().splitlines()[-1]
+    built = run([sys.executable, "scripts/session_runtime.py"],
+                "fetch the session runtime").stdout.strip().splitlines()[-1]
     helpers = os.path.join(APP, "Contents", "Helpers")
     os.makedirs(helpers, exist_ok=True)
     helper = os.path.join(helpers, "zmx")
@@ -314,10 +327,10 @@ if os.environ.get("TAKO_WITH_ZMX") != "0":
         digest = hashlib.sha256(f.read()).hexdigest()
     with open(os.path.join(APP, "Contents", "Resources", "session-runtime.json"), "w") as f:
         json.dump({**source, "path": "Contents/Helpers/zmx", "sha256": digest}, f, indent=2, sort_keys=True)
-    # The runtime's own notices, and those of what it bundles, ship with it.
+    # The runtime's own notices ship with it.
     licenses = os.path.join(APP, "Contents", "Resources", "Licenses")
     os.makedirs(licenses, exist_ok=True)
-    for notice in ("LICENSE-zmx", "LICENSE-ghostty"):
+    for notice in ("LICENSE-tako-session", "LICENSE-zmx", "NOTICE-tako-session"):
         shutil.copy2(os.path.join(os.path.dirname(built), notice), os.path.join(licenses, notice))
 
 # takoctl is an executable of its own inside the bundle: notarization

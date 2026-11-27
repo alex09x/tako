@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import TakoCoreUI
 
 // A tab's progress in upstream's tab accessory stack, beside the
 // key-equivalent label and the zoom button. The crab that sat here is gone:

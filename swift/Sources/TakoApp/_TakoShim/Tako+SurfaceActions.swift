@@ -11,6 +11,7 @@
 import AppKit
 import Combine
 import Foundation
+import TakoCoreUI
 
 // What a surface does when a menu item, a keybinding, the command palette or
 // AppleScript asks it for something by name.
@@ -68,8 +69,8 @@ extension Tako.SurfaceView {
     /// rebuilds the renderer on its own; the grid only follows a frame
     /// change, so it is given one at the size it already has.
     func applyTheme(_ newTheme: TerminalTheme) {
-        // Before `theme`, whose change repaints every row with it.
-        applyBoldIsBright(newTheme)
+        // The theme hands its colours and `bold-is-bright` to the engine
+        // (`TakoCore.setBaseColors(from:)`) before any row is repainted.
         theme = newTheme
         refreshDrawnColors()
         setFrameSize(frame.size)

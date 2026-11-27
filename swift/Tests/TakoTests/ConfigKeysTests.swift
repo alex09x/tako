@@ -12,6 +12,7 @@ import Testing
 @testable import Tako
 import SwiftUI
 import AppKit
+import TakoCoreUI
 
 /// Config keys `Tako.Config` parses but a property used to ignore, wired up
 /// to actually read them. See `Tako+Config.swift`.

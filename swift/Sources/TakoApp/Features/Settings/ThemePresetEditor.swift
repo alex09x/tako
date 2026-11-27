@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 @MainActor final class ThemePresetEditor {
     let store: ThemePresetStore

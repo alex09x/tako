@@ -11,6 +11,7 @@
 import AppKit
 import Combine
 import Foundation
+import TakoCoreUI
 import TakoKit
 
 extension SessionSidebarStore {

@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// In-terminal TUI settings card displaying scrollable keybindings, search filter,
 /// and live keyboard shortcut detection matching the TakoTUI brand palette.

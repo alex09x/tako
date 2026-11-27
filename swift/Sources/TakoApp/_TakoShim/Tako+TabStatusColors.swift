@@ -8,6 +8,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 @MainActor
 extension Tako {

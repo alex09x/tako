@@ -8,7 +8,6 @@ run artifacts live under `target/` and are not source files.
 Use the checks affected by the change:
 
 ```sh
-./scripts/check.sh rust:search
 ./scripts/check.sh 'swift:ThemePresetStoreTests|ThemeWeightDiagnosticTests'
 ./scripts/check.sh e2e:theme-typography
 ./scripts/check.sh e2e:persist-scoped-appearance
@@ -25,8 +24,8 @@ Normal and persistence scenarios use their respective isolated app runners.
 
 | Entry point | Purpose |
 |---|---|
-| `check.sh` / `check_run.py` | Named Rust tests, Swift filters, E2E scenarios, self-tests and iOS checks |
-| `swift-test.sh` | Swift test runner with the generated bindings and linker flags |
+| `check.sh` / `check_run.py` | Swift filters, E2E scenarios, self-tests and iOS unit checks |
+| `swift-test.sh` | Swift test runner against the pinned tako-core release |
 | `selftest-macapp.sh` | Built app's event, PTY and rendering self-tests |
 | `e2e-macapp.sh` | Low-level Accessibility runner against an already built test app |
 | `e2e-persist.sh` | Live-session persistence journeys with separate app and session state |
@@ -36,7 +35,8 @@ Normal and persistence scenarios use their respective isolated app runners.
 | `motion-check.sh`, `motion-gate.sh`, `motion-mutants.py` | Motion-specific capture, gates and mutation checks |
 | `ci.sh` | Explicit full multi-stage run, including lint and coverage gates |
 
-The coverage gates remain available for engine, Swift and iOS release work.
+The coverage gates remain available for Swift and iOS release work; the
+engine and TakoCoreUI are tested in tako-core.
 An ordinary targeted change does not require running the full CI command.
 
 ## Builds and releases
@@ -45,14 +45,11 @@ An ordinary targeted change does not require running the full CI command.
 |---|---|
 | `build-macapp.py` | Native macOS app; see the root README for an isolated development launch |
 | `build-iosapp.py` | iOS application build |
-| `build-xcframework.sh` | Engine framework slices and generated bindings |
-| `build-macos-testlib.sh`, `bindings.sh` | Lower-level test library and binding generation |
-| `build-zmx.sh` | Pinned, patched session runtime and its notices |
+| `tako_core.py` | The pinned tako-core release (checkout and engine framework) for the app builders |
+| `session_runtime.py` | The released session runtime and its notices, checked against `packaging/session-runtime.json` |
 | `release-macapp.py` | Developer ID verification, notarization and distributable macOS packaging |
 | `sign-macapp.py` | Sign and optionally notarize a downloaded candidate without rebuilding it |
-| `package-xcframework.sh vX.Y.Z` | Framework release archive and Swift package URL/checksum update |
-| `generate-sbom.py`, `verify-reproducible-build.sh` | Supply-chain metadata and reproducible engine verification |
-| `verify-ios-xcframework.sh` | Manual inspection of the complete macOS/iOS framework artifact |
+| `generate-sbom.py` | Supply-chain metadata for the release, from the pinned tako-core release |
 | `install-iphone.sh`, `deploy-ios-testflight.sh` | Device installation and TestFlight delivery |
 
 Use signed, notarized release artifacts for installation. A local development

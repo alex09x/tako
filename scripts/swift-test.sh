@@ -1,36 +1,17 @@
 #!/bin/bash
-set -e
-cd "$(dirname "$0")/../swift"
-
-# `swift test` alone fails to link: SPM auto-generates a per-package smoke
-# bundle (TakoCoreUIPackageTests, named after the package, not any target)
-# that links every product together, and it doesn't pick up TakoCoreUI's
-# target-level linkerSettings the way a real consumer would. Passing the
-# same flags globally via -Xlinker fixes it for every link step, synthetic
-# bundle included.
+# tako — Swift package tests
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
+# `swift test` for the app layer, against the tako-core release that
+# swift/Package.swift pins, exactly as Package.resolved records it.
 #
 # Several AppKit tests synchronously talk to NSPasteboard and WindowServer.
 # Swift Testing's parallel scheduling can leave those calls mutually blocked,
 # so the repository-wide entry point deliberately runs them serially.
-#
-# The generated header is passed to clang as a bare include path, not through
-# a module map: TakoCoreUI already gets the tako_coreFFI module from the
-# xcframework, and a second map for the same module is a redefinition error.
-# The Tako target's bridging header only needs the header itself.
-# The package links TakoCore.xcframework, which is build output rather than
-# part of the repository. It is rebuilt when missing or older than the engine
-# sources: a kept build directory (scripts/mac-remote.sh keeps one per job)
-# would otherwise test the Swift code against an old engine, or fail to link
-# a newly added FFI method. build-xcframework.sh also refreshes the macOS test
-# library and the generated bindings.
-# Stale unless built from exactly these engine sources (by content; see
-# scripts/engine_fingerprint.py for why not timestamps).
-stale() {
-    ! python3 ../scripts/engine_fingerprint.py check "$1"
-}
-# Tests here link the macOS slice only; building the iOS slices too would
-# only make an engine change wait for two more cross-compiles.
-if stale TakoCore.xcframework; then ../scripts/build-xcframework.sh --macos-only; fi
-if stale target/macos/libtako_core.a; then ../scripts/build-macos-testlib.sh; fi
-
-exec swift test -Xlinker -L../target/macos -Xlinker -ltako_core -Xcc -I../target/bindings "$@"
+set -e
+cd "$(dirname "$0")/../swift"
+exec swift test --force-resolved-versions "$@"

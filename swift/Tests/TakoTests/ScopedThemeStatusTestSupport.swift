@@ -10,6 +10,7 @@
 
 import AppKit
 import QuartzCore
+import TakoCoreUI
 @testable import Tako
 
 @MainActor extension ScopedThemeStatusColorTests {

@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 /// Detects installed AI coding agents (Antigravity, Gemini CLI, Claude Code, Codex)
 /// and manages installing Tako lifecycle hooks natively with schema validation

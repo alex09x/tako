@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension Tako.SurfaceView {
     func didGainSurfaceFocus(flushTitle: Bool) {

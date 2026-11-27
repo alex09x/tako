@@ -9,6 +9,7 @@
 
 import AppKit
 import CoreText
+import TakoCoreUI
 
 extension TerminalSettingsDialog {
     func typographyPreviewFont(family: String? = nil, size: CGFloat? = nil, face: String = "font-weight") -> NSFont {

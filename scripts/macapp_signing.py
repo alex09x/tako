@@ -43,7 +43,8 @@ def verify_source_checkout(source, root, runner=subprocess.run):
     result = runner(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True)
     if result.stdout.strip() != source:
         raise ValueError(f"checkout does not match candidate source {source}; use a clean worktree at that commit")
-    result = runner(["git", "status", "--porcelain", "--untracked-files=all", "--", "Cargo.toml", "Cargo.lock", "src",
+    result = runner(["git", "status", "--porcelain", "--untracked-files=all", "--",
+                     "swift/Package.swift", "swift/Package.resolved", "scripts/tako_core.py",
                      "scripts/generate-sbom.py", "scripts/sbom_models.py", "scripts/sbom_resolver.py",
                      "scripts/sbom_spdx.py", "scripts/sbom_cyclonedx.py"],
                     cwd=root, check=True, capture_output=True, text=True)

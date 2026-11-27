@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// In-terminal artifact and document overlay container view (D1).
 ///

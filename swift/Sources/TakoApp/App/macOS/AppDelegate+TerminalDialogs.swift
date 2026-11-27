@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension AppDelegate {
     static func configureTerminalDialogHandlers() {

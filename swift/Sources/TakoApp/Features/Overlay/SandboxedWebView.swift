@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 import WebKit
 
 /// Singleton manager for the precompiled WebKit network deny rule list.

@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 extension ThemePresetConfig {
     /// The same schema drives validation and replacement of old overrides.

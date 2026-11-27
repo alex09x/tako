@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// A question drawn inside the terminal window instead of a macOS sheet or
 /// alert: the terminal dims, and a card in the look of the desktop sheets

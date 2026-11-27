@@ -11,6 +11,7 @@
 import Foundation
 import Testing
 import CoreGraphics
+import TakoCoreUI
 @testable import Tako
 
 @Suite @MainActor struct ScopedAppearanceStoreTests {

@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 extension Tako.SurfaceView {
     func applyScopedTheme(_ global: TerminalTheme, store: ScopedAppearanceStore, workspaceID: UUID?) {

@@ -11,9 +11,10 @@
 
 """Generate Software Bill of Materials (SBOM) in SPDX 2.3 and CycloneDX 1.5 formats.
 
-Inspects:
-  - Cargo.lock: all Rust crates, pinned versions, checksums, and license info
-  - Package.swift: Swift packages, binary target checksums, and assets
+Inspects the tako-core release the app links (swift/Package.resolved, resolved
+by scripts/tako_core.py):
+  - its Cargo.lock: all Rust crates, pinned versions, checksums, and license info
+  - its Package.swift: the engine framework's URL and checksum
   - Environment: pinned compiler and toolchain versions
 """
 
@@ -30,6 +31,7 @@ if SCRIPTS_DIR not in sys.path:
 
 from sbom_cyclonedx import generate_cyclonedx
 from sbom_models import (
+    engine,
     get_git_info,
     get_timestamp,
     parse_cargo_lock,
@@ -62,12 +64,14 @@ def main():
         version = args.version.lstrip("v")
 
     timestamp = get_timestamp()
+    core = engine()
     if args.include_all_lockfile:
-        cargo_lock = os.path.join(ROOT, "Cargo.lock")
+        cargo_lock = os.path.join(core["checkout"], "Cargo.lock")
         cargo_pkgs = parse_cargo_lock(cargo_lock)
     else:
-        cargo_pkgs = resolve_release_cargo_packages(target=args.target, features=args.features)
-    swift_pkgs = parse_swift_packages()
+        cargo_pkgs = resolve_release_cargo_packages(target=args.target, features=args.features,
+                                                    root=core["checkout"])
+    swift_pkgs = parse_swift_packages(core)
 
     os.makedirs(args.output_dir, exist_ok=True)
     outputs = []

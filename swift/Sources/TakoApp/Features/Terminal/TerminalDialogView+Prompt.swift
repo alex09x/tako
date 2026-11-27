@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension TerminalDialogView {
     /// Obtains a suitable, visible, deminiaturized terminal window to host a TUI dialog.

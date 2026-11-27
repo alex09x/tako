@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// The colours Tako's own terminal-style UI -- confirmations, the command
 /// palette -- is drawn in: the TakoCore brand palette, not the terminal

@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// What a session and its terminals are called in the sidebar (agreed with
 /// the owner 2026-11-11):

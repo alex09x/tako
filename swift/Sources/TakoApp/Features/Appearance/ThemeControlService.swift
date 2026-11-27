@@ -9,6 +9,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 @MainActor final class ThemeControlService {
     static let maxConfigBytes = ControlProtocol.maxRequestBytes

@@ -8,11 +8,12 @@
 
 """Build the iPhone app for the simulator and install it.
 
-The engine and the renderer are the same sources the Mac builds; only the
-shell in swift/Sources/iOSApp is different, because upstream's macOS app is
-AppKit throughout and none of it transfers.
+The engine and the renderer are the same tako-core release the Mac builds
+(scripts/tako_core.py); only the shell in swift/Sources/iOSApp is different,
+because upstream's macOS app is AppKit throughout and none of it transfers.
 """
 import os, subprocess, sys, plistlib, shutil
+import tako_core
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -40,26 +41,30 @@ sdk = subprocess.run(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"],
                      capture_output=True, text=True).stdout.strip()
 os.makedirs(BUILD, exist_ok=True)
 
-# The phone has no fork/exec, so the transport is not optional here:
-# without it the app builds and can reach nothing.
-ios_env = os.environ.copy()
-ios_env["IPHONEOS_DEPLOYMENT_TARGET"] = "17.0"
-run(["mitts", "build", "--release", "--features", "ssh",
-     "--target", "aarch64-apple-ios-sim"], "mitts ios-sim", env=ios_env)
+# The engine (with its SSH transport: the phone has no fork/exec) and
+# TakoCoreUI, from the pinned tako-core release.
+try:
+    tako_core.resolve()
+    CORE = tako_core.locate()
+except tako_core.Unresolved as e:
+    sys.exit(f"failed: tako-core: {e}")
+CORE_SLICE = CORE["slices"]["ios-arm64-simulator"]
+TARGET = ["-target", "arm64-apple-ios17.0-simulator", "-sdk", sdk]
+CORE_HEADERS = ["-Xcc", "-I" + CORE_SLICE["headers"], "-I", CORE_SLICE["headers"]]
 
 os.makedirs(APP, exist_ok=True)
-files = swift_files("swift/Sources/iOSApp") + swift_files("swift/Sources/TakoCoreUI")
-if not any(f.endswith("tako_core.swift") for f in files) and os.path.exists("target/bindings/tako_core.swift"):
-    files.append("target/bindings/tako_core.swift")
-
-headers_dir = os.path.abspath("target/bindings") if os.path.exists("target/bindings/tako_coreFFI.h") else os.path.abspath("TakoCore.xcframework/ios-arm64-simulator/Headers")
+run(["swiftc", *TARGET, "-emit-module", "-emit-library", "-static", "-parse-as-library",
+     "-module-name", "TakoCoreUI", "-Onone", *CORE_HEADERS,
+     "-emit-module-path", os.path.join(BUILD, "TakoCoreUI.swiftmodule"),
+     "-o", os.path.join(BUILD, "libTakoCoreUI.a"), *tako_core.ui_swift_files(CORE)], "module TakoCoreUI")
+files = swift_files("swift/Sources/iOSApp")
 
 # TakoTerminalView renders with MetalTerminalRenderer, which asks the device
 # for the process default library. This app is linked with `swiftc` directly,
 # so the shared shaders are compiled for the simulator SDK here rather than by
 # an Xcode build phase, and the result is bundled as default.metallib -- the
 # name `MTLDevice.makeDefaultLibrary()` looks for.
-metal_src = "swift/Sources/TakoCoreUI/Resources/TerminalShaders.metal"
+metal_src = CORE["shader"]
 metallib = os.path.join(BUILD, "default.metallib")
 air = os.path.join(BUILD, "TerminalShaders.air")
 run(["xcrun", "-sdk", "iphonesimulator", "metal",
@@ -68,13 +73,13 @@ run(["xcrun", "-sdk", "iphonesimulator", "metal",
 run(["xcrun", "-sdk", "iphonesimulator", "metallib", air, "-o", metallib],
     "link metallib")
 
-run(["swiftc", "-target", "arm64-apple-ios17.0-simulator", "-sdk", sdk,
+run(["swiftc", *TARGET,
      "-module-name", "TakoCore", "-Onone", "-parse-as-library",
-     "-Xcc", "-I" + headers_dir,
-     "-import-objc-header", "swift/Sources/iOSApp/Bridging-Header.h",
+     *CORE_HEADERS, "-I", BUILD,
      "-o", os.path.join(APP, "TakoCore"),
      *files,
-     "target/aarch64-apple-ios-sim/release/libtako_core.a",
+     os.path.join(BUILD, "libTakoCoreUI.a"),
+     CORE_SLICE["library"],
      # Everything TakoCoreUI and the app shell import: the view layer, the
      # Metal renderer with its CAMetalLayer, the CoreText glyph atlas and the
      # ImageIO decode path behind the Kitty image cache.

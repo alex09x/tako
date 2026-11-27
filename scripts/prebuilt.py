@@ -36,9 +36,12 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMA = 1
 # Inputs a stale bundle could hide behind even at the same commit: the
-# toolchain pin, the lockfiles, and the scripts that turn sources into the bundle.
-PINS = ["rust-toolchain.toml", "Cargo.lock", "takoctl/Cargo.lock", "scripts/build-macapp.py",
-        "scripts/macapp_signing.py", "scripts/build-zmx.sh", "scripts/e2e-macapp.sh"]
+# toolchain pin, the lockfiles (the engine's is the tako-core release in
+# Package.resolved), and the scripts that turn sources into the bundle.
+PINS = ["rust-toolchain.toml", "swift/Package.resolved", "takoctl/Cargo.lock", "scripts/build-macapp.py",
+        "scripts/tako_core.py",
+        "scripts/macapp_signing.py", "scripts/session_runtime.py", "packaging/session-runtime.json",
+        "scripts/e2e-macapp.sh"]
 # What resealing under another bundle id may change, and nothing else.
 RESEALED = {"Contents/Info.plist", "Contents/_CodeSignature/CodeResources", "Contents/MacOS/Tako"}
 

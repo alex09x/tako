@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 import TakoKit
 
 extension Tako.SurfaceView {

@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 extension ScopedAppearanceStore {
     /// Color keys a scope record can state explicitly.

@@ -11,6 +11,7 @@
 import Testing
 import AppKit
 import UserNotifications
+import TakoCoreUI
 @testable import Tako
 
 @MainActor

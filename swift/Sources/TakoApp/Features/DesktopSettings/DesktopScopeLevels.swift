@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// One level the appearance page can edit. The chain is taken once from the
 /// terminal the settings were opened over and kept while switching levels.

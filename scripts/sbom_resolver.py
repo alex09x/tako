@@ -15,16 +15,21 @@ import os
 import subprocess
 from sbom_models import (
     build_cargo_maps,
+    engine,
     parse_cargo_lock,
     resolve_dependency,
     tomllib,
-    ROOT,
 )
 
 
-def derive_manifest_direct_deps(features_spec=""):
+def engine_root():
+    """The engine's crate: the pinned tako-core checkout."""
+    return engine()["checkout"]
+
+
+def derive_manifest_direct_deps(features_spec="", root=None):
     """Derives direct non-dev dependencies from Cargo.toml given an active feature set."""
-    manifest_path = os.path.join(ROOT, "Cargo.toml")
+    manifest_path = os.path.join(root or engine_root(), "Cargo.toml")
     if not os.path.isfile(manifest_path):
         return []
 
@@ -87,14 +92,17 @@ def derive_manifest_direct_deps(features_spec=""):
     return sorted(direct)
 
 
-def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"):
+def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh", root=None):
     """Resolves Cargo packages for the actual release build configuration.
 
-    Filters out dev-dependencies and inactive optional features using Mitts metadata,
-    retaining only the packages built into the release artifact.
+    The engine library in the app is the pinned tako-core release, built from
+    that release's Cargo.lock with the given features; `root` defaults to its
+    checkout. Filters out dev-dependencies and inactive optional features using
+    Mitts metadata, retaining only the packages built into the release artifact.
     Fails closed when target-specific metadata cannot be resolved.
     """
-    cargo_lock_path = os.path.join(ROOT, "Cargo.lock")
+    root = root or engine_root()
+    cargo_lock_path = os.path.join(root, "Cargo.lock")
     lock_pkgs = parse_cargo_lock(cargo_lock_path)
     checksum_map = {(p["name"], p["version"]): p.get("checksum", "") for p in lock_pkgs}
 
@@ -108,12 +116,12 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
             "--filter-platform", target,
             "--offline"
         ]
-        res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
         unsupported = any(marker in (res.stdout + res.stderr).lower() for marker in (
             "unsupported", "unrecognized subcommand", "unexpected argument"))
         if res.returncode != 0 and not unsupported:
             cmd.pop()
-            res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+            res = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
 
         if res.returncode == 0:
             meta = json.loads(res.stdout)

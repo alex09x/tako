@@ -9,6 +9,7 @@
  */
 
 import SwiftUI
+import TakoCoreUI
 import TakoKit
 
 struct TerminalCommandPaletteView: View {

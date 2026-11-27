@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// pfPageLook: what this level renders, the 10 built-in and the user themes
 /// as cards, the font from the real inventory and the fractional base size.

@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import TakoCoreUI
 
 extension Tako.SurfaceView {
         func exportSnapshotState(maxBytes: UInt64, unlessGeneration generation: UInt64?) -> SnapshotExport {

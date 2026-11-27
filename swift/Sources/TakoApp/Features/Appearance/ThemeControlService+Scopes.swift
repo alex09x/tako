@@ -9,6 +9,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension ThemeControlService {
     func applyPreset(_ name: String, to scope: ThemeControlScope) throws -> [String: JSON] {

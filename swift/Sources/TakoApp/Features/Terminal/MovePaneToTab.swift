@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// «Move to Tab ▸»: every other tab of the pane's workspace, in any window.
 /// Choosing one moves the pane in beside that tab's focused pane, on its

@@ -9,6 +9,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 @MainActor
 struct SetupAppearanceStep: View {

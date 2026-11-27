@@ -10,6 +10,7 @@
 
 import Foundation
 import AppKit
+import TakoCoreUI
 
 extension ControlCommands {
     /// `takoctl screenshot`: capture rendered terminal pane screenshot as PNG (D2).

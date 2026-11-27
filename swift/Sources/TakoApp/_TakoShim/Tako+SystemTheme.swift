@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: MIT
 
 import Foundation
+import TakoCoreUI
 
 /// Configs are also parsed on worker threads. Only the AppKit observer reads
 /// effectiveAppearance; parsing consumes its synchronized value.

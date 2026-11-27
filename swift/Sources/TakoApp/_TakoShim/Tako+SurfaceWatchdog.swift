@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.SurfaceView {
         /// Applies one batch's `WatchdogAction`. Main thread only: the timer

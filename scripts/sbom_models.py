@@ -28,6 +28,19 @@ except ImportError:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def engine():
+    """The tako-core release the app links, as swift/Package.resolved pins it
+    and SwiftPM resolved it (scripts/tako_core.py): its checkout holds the
+    Cargo.lock the engine library was built from, and its Package.swift the
+    framework's URL and checksum."""
+    import tako_core
+    try:
+        return tako_core.locate()
+    except tako_core.Unresolved:
+        tako_core.resolve()
+        return tako_core.locate()
+
+
 def get_git_info():
     """Returns (commit_hash, tag_or_version) from git if available."""
     commit = os.environ.get("GITHUB_SHA", "")
@@ -124,12 +137,13 @@ def parse_cargo_lock(lock_path):
     return packages
 
 
-def parse_swift_packages():
-    """Extracts Swift binary targets and package metadata."""
+def parse_swift_packages(core=None):
+    """The engine's binary framework, as the pinned tako-core release declares it."""
+    core = core or engine()
     packages = []
-    root_pkg = os.path.join(ROOT, "Package.swift")
-    if os.path.isfile(root_pkg):
-        with open(root_pkg, "r", encoding="utf-8") as f:
+    manifest = os.path.join(core["checkout"], "Package.swift")
+    if os.path.isfile(manifest):
+        with open(manifest, "r", encoding="utf-8") as f:
             content = f.read()
         name_m = re.search(r'binaryTarget\s*\(\s*name:\s*"([^"]+)"', content)
         url_m = re.search(r'url:\s*"([^"]+)"', content)
@@ -137,9 +151,9 @@ def parse_swift_packages():
         if name_m and url_m and chk_m:
             packages.append({
                 "name": name_m.group(1),
-                "version": "0.1.7",
+                "version": core["version"],
                 "url": url_m.group(1),
-                "checksum": chk_m.group(3) if chk_m.lastindex and chk_m.lastindex >= 3 else chk_m.group(1),
+                "checksum": chk_m.group(1),
                 "ecosystem": "swift",
             })
     return packages

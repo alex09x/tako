@@ -10,6 +10,7 @@
 
 import CoreGraphics
 import Foundation
+import TakoCoreUI
 
 /// Pure helpers for theme preset configuration format, parsing, and serialization.
 public enum ThemePresetConfig {

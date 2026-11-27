@@ -9,6 +9,7 @@
  */
 
 import CoreGraphics
+import TakoCoreUI
 
 extension Tako.SurfaceView {
     /// The background and foreground the engine draws default cells in. They
@@ -36,14 +37,6 @@ extension Tako.SurfaceView {
     /// The foreground default cells are drawn in (the theme's while the
     /// engine has none).
     var drawnForeground: CGColor { drawnColors.foreground.map(Self.cgColor) ?? theme.foreground }
-
-    /// Hands the theme's `bold-is-bright` to the engine, which resolves the
-    /// colours it draws. Here rather than in `TakoCore.setBaseColors(from:)`
-    /// until the engine release that ships `set_bold_is_bright`: see
-    /// `TerminalTheme.boldIsBright`.
-    func applyBoldIsBright(_ theme: TerminalTheme) {
-        core.setBoldIsBright(enabled: theme.boldIsBright)
-    }
 
     private static func cgColor(_ rgb: FfiRgb) -> CGColor {
         CGColor(srgbRed: CGFloat(rgb.r) / 255, green: CGFloat(rgb.g) / 255, blue: CGFloat(rgb.b) / 255, alpha: 1)

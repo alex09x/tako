@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.CrabTracker {
     /// Whether a fade is armed, for tests.

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Fail when any Swift source file's line coverage is below a floor.
 
-    scripts/swift-coverage-gate.py                         # all of TakoCoreUI, floor 80%
-    scripts/swift-coverage-gate.py --min 85 TakoCoreUI/PTYDeliveryPump.swift
-    scripts/swift-coverage-gate.py --module TakoKit --module TakoApp/_TakoShim
+    scripts/swift-coverage-gate.py                         # TakoKit and the shim, floor 80%
+    scripts/swift-coverage-gate.py --min 85 TakoApp/_TakoShim/Tako+PaneStatus.swift
+    scripts/swift-coverage-gate.py --module TakoKit --module TakoApp/Features/Sidebar
 
-Runs the whole Swift suite through scripts/swift-test.sh (which rebuilds the
-engine when it is stale) with coverage on, and reads SwiftPM's coverage JSON.
-Generated bindings are never counted.
+Runs the whole Swift suite through scripts/swift-test.sh with coverage on,
+and reads SwiftPM's coverage JSON. Only this repository's sources are
+counted: the tako-core package (TakoCoreUI) is gated in tako-core.
 """
 
 import argparse
@@ -29,16 +29,21 @@ def extract_module(path: str) -> str:
     return parts[0] if parts else ""
 
 
+DEFAULT_MODULES = ["TakoKit", "TakoApp/_TakoShim"]
+
+
 def compute_effective_modules(files: list[str], modules: list[str] | None) -> set[str]:
     if files:
         mods = {extract_module(f) for f in files if f.strip()}
         mods.discard("")
         return mods
-    return set(modules or ["TakoCoreUI"])
+    return set(modules or DEFAULT_MODULES)
 
 
-def should_filter_coreui(effective_modules: set[str]) -> bool:
-    return effective_modules == {"TakoCoreUI"}
+def is_own_source(filename: str) -> bool:
+    """A file of this repository's package, not of a resolved dependency
+    (SwiftPM reports those from .build/checkouts too)."""
+    return "/Sources/" in filename and "/.build/" not in filename and "/Generated/" not in filename
 
 
 class TestCompletionTracker:
@@ -274,18 +279,16 @@ class TestSwiftCoverageGate(unittest.TestCase):
         self.assertTrue(tracker.finished)
 
     def test_effective_modules_filtering(self):
-        self.assertEqual(compute_effective_modules([], None), {"TakoCoreUI"})
-        self.assertTrue(should_filter_coreui(compute_effective_modules([], None)))
+        self.assertEqual(compute_effective_modules([], None), {"TakoKit", "TakoApp/_TakoShim"})
+        self.assertEqual(compute_effective_modules([], ["TakoKit"]), {"TakoKit"})
+        self.assertEqual(compute_effective_modules(["TakoApp/AppDelegate.swift"], None), {"TakoApp"})
+        self.assertEqual(compute_effective_modules(["./TakoKit/TakoKit.swift"], None), {"TakoKit"})
 
-        self.assertEqual(compute_effective_modules(["TakoCoreUI/PTYDeliveryPump.swift"], None), {"TakoCoreUI"})
-        self.assertTrue(should_filter_coreui(compute_effective_modules(["TakoCoreUI/PTYDeliveryPump.swift"], None)))
-
-        self.assertEqual(compute_effective_modules(["./TakoCoreUI/Renderer/MetalRenderer.swift"], None), {"TakoCoreUI"})
-        self.assertTrue(should_filter_coreui(compute_effective_modules(["./TakoCoreUI/Renderer/MetalRenderer.swift"], None)))
-
-        self.assertFalse(should_filter_coreui(compute_effective_modules(["TakoApp/AppDelegate.swift"], None)))
-        self.assertFalse(should_filter_coreui(compute_effective_modules([], ["TakoKit"])))
-        self.assertFalse(should_filter_coreui(compute_effective_modules(["TakoCoreUI/Foo.swift", "TakoApp/Bar.swift"], None)))
+    def test_dependency_sources_are_never_counted(self):
+        self.assertTrue(is_own_source("/r/swift/Sources/TakoKit/TakoKit.swift"))
+        self.assertFalse(is_own_source(
+            "/r/swift/.build/checkouts/tako-core/swift/Sources/TakoCoreUI/TakoTerminalNSView.swift"))
+        self.assertFalse(is_own_source("/r/swift/Sources/Foo/Generated/binding.swift"))
 
     def test_actual_log_file_full_completion(self):
         log_path = os.path.join(ROOT, "target/swift-final-recheck.log")
@@ -318,7 +321,7 @@ class TestSwiftCoverageGate(unittest.TestCase):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--min", type=float, default=80.0, help="line coverage floor, percent")
-    parser.add_argument("--module", action="append", help="Sources/<dir> to check when no files are named; repeatable (default TakoCoreUI)")
+    parser.add_argument("--module", action="append", help="Sources/<dir> to check when no files are named; repeatable (default TakoKit, TakoApp/_TakoShim)")
     parser.add_argument("--self-test", action="store_true", help="run log parser and module derivation unit tests and exit")
     parser.add_argument("files", nargs="*", help="paths relative to swift/Sources to check")
     args = parser.parse_args()
@@ -335,8 +338,6 @@ def main():
     # ends early with exit status 0, so the exit status alone would pass a run
     # that skipped half its tests. Its closing summary line is the proof that it finished.
     test_cmd = [os.path.join(ROOT, "scripts/swift-test.sh"), "--enable-code-coverage"]
-    if should_filter_coreui(effective_modules):
-        test_cmd += ["--filter", "TakoCoreUITests"]
 
     proc = subprocess.Popen(
         test_cmd,
@@ -362,7 +363,7 @@ def main():
     checked = 0
     for entry in json.load(open(path))["data"][0]["files"]:
         name = entry["filename"]
-        if "/Sources/" not in name or "/Generated/" in name:
+        if not is_own_source(name):
             continue
         rel = name.split("/Sources/", 1)[1]
         if args.files:

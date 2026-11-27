@@ -11,6 +11,7 @@
 import Foundation
 import XCTest
 import UIKit
+import TakoCoreUI
 @testable import TakoCore
 
 @MainActor

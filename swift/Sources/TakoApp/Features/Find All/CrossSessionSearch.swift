@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import TakoCoreUI
 
 /// One terminal a search covers: its engine, and how to tell it apart from
 /// the others. Built on the main thread; only `core` is used off it.

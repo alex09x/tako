@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// Find in All Tabs: a query field over every open terminal's scrollback
 /// and screen, results grouped by terminal and, where the shell marked its

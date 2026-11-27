@@ -8,10 +8,5 @@
 #import <Foundation/Foundation.h>
 #import <UserNotifications/UserNotifications.h>
 
-// The Rust core's C ABI. It comes through the bridging header rather than a
-// module map because a bridging header and an implicit module import of the
-// same declarations cannot both be in effect.
-#import "tako_coreFFI.h"
-
 // Objective-C helpers upstream's Swift calls directly.
 #import "TakoObjC.h"

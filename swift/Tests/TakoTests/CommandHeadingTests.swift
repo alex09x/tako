@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 import Testing
 @testable import Tako
 

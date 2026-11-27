@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 extension DocumentRenderer {
     /// Wraps a unified diff into a formatted HTML document.

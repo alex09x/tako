@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// Main actor store for managing theme presets on disk.
 ///

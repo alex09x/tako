@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.SurfaceView {
 
@@ -120,7 +121,7 @@ extension Tako.SurfaceView {
                     if fitted.cols != cols || fitted.rows != rows {
                         cols = fitted.cols
                         rows = fitted.rows
-                        parserCoordinator.resize(cols: fitted.cols, rows: fitted.rows)
+                        resizeParser(cols: fitted.cols, rows: fitted.rows)
                     }
                 }
             }

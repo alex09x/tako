@@ -10,6 +10,7 @@
 
 import Foundation
 import CoreGraphics
+import TakoCoreUI
 
 extension Tako {
     /// The host-side half of the GPU terminal path: everything an AppKit

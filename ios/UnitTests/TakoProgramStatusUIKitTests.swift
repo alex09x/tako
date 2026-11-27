@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import TakoCoreUI
 import UIKit
 import XCTest
 @testable import TakoCore

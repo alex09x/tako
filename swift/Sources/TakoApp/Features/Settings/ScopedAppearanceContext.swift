@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// The settings dialog edits one explicit scope; inherited values are read
 /// afresh so moving a pane while the dialog is open cannot freeze its parent.

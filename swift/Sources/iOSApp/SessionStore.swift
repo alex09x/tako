@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftUI
+import TakoCoreUI
 
 /// Every session the app knows about, plus the hosts it has trusted.
 @MainActor

@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 @testable import Tako
 
 /// A surface the Core Animation status layer draws, put through states the

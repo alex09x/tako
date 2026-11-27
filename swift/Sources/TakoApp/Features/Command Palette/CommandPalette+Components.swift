@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 extension String {
     /// Returns the character indices that match `query`, trying a substring match first,

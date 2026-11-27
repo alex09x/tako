@@ -10,6 +10,7 @@
 
 import Testing
 import AppKit
+import TakoCoreUI
 @testable import Tako
 
 /// `window-width`/`window-height`, `window-inherit-working-directory` and

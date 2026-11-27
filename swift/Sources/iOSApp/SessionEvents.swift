@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 /// The transport's callbacks arrive on its own thread; the session is
 /// `@MainActor`, so everything hops before it touches published state.

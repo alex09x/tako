@@ -47,6 +47,15 @@ else
 fi
 export PERSIST_ZMX="$APP/Contents/Helpers/zmx" PERSIST_FORGET="scripts/e2e/forget-saved-state.py"
 APPEXE="$APP/Contents/MacOS/Tako"
+# persist-legacy-upgrade starts a session with the runtime older releases
+# shipped: the released fixture, checked against its pinned hash.
+case " $* " in
+    *" persist-legacy-upgrade "*)
+        if [ -z "${TAKO_TEST_OLD_ZMX:-}" ]; then
+            TAKO_TEST_OLD_ZMX=$(python3 scripts/session_runtime.py --legacy-fixture)
+            export TAKO_TEST_OLD_ZMX
+        fi ;;
+esac
 
 # Called on the left of ||, so errexit does not apply here: every step
 # checks its own status.

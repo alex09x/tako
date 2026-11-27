@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 import Testing
 import UserNotifications
 @testable import Tako

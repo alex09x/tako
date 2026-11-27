@@ -13,6 +13,7 @@ import Foundation
 import TakoKit
 import SwiftUI
 import OSLog
+import TakoCoreUI
 #if canImport(TakoCoreUI)
 #endif
 

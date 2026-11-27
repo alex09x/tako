@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 import TakoKit
 
 /// Presents an in-terminal "About Tako" card matching the TakoCore TUI palette,

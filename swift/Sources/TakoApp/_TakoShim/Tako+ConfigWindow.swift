@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import TakoCoreUI
 import TakoKit
 
 extension Tako.Config {

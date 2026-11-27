@@ -10,6 +10,7 @@
 
 import AppKit
 import CoreGraphics
+import TakoCoreUI
 
 extension Tako.TabBarView {
     func drawLoneTitle() {

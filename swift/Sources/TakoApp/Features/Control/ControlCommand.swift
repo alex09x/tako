@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 /// `takoctl last`, `wait` and `run`.
 ///

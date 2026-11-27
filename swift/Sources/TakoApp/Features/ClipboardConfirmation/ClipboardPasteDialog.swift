@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 @MainActor
 enum ClipboardPasteDialog {

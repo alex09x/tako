@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import TakoCoreUI
 
 /// Presents a terminal-style announcement card at launch for new releases,
 /// summarizing the version, highlights, and fixes, matching the TakoCore palette (`TakoTUI`).

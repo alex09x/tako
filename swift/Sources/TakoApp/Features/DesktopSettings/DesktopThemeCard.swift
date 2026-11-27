@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 /// Facts a card shows about one preset, parsed once per catalog refresh.
 struct DesktopThemeFacts: Equatable {

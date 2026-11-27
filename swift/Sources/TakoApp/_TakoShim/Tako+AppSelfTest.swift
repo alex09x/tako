@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import CoreGraphics
+import TakoCoreUI
 
 extension Tako {
     /// The surface a self-test drives: the key window's, else the first
@@ -70,9 +71,13 @@ extension Tako {
             ) else { return }
             captured = true
             renderer.committedFrameCaptureForTesting = nil
+            surface.metalLayer?.framebufferOnly = true
             Self.writePNG(pixels, width: width, height: height, to: Tako.selfTestReportPath("tako-frame.png"))
             try? report.write(toFile: reportPath, atomically: true, encoding: .utf8)
         }
+        // The renderer reads back only a drawable it may read: for this one
+        // capture the layer's drawables are not framebuffer-only.
+        surface.metalLayer?.framebufferOnly = false
         surface.scheduleRedraw()
     }
 

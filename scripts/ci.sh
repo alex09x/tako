@@ -14,28 +14,27 @@
 #   scripts/ci.sh rust swift      # only those stages
 #   scripts/ci.sh --local swift-tests
 #
-# Test-only stages (no coverage or clippy gate): engine-tests, cli-tests,
+# Test-only stages (no coverage or clippy gate): cli-tests,
 # python-tests, swift-tests, macapp-tests, prebuilt-build (one shared app build;
 # TAKO_PREBUILT_DIR makes macapp-, macapp-e2e- and persist-e2e-tests use it), ios-unit-tests, macos-ui-tests,
-# macapp-e2e-tests, persist-e2e-tests, ios-surface-tests, ios-simtest. They retain full
+# macapp-e2e-tests, persist-e2e-tests, ios-simtest. They retain full
 # logs under target/ci-logs, reject empty runs, and show hardware skips.
 # They do not replace the full LAN gates or produce release artifacts.
 #
-# For a change, run only what it touches with scripts/check.sh (named Rust
-# tests, Swift test filters, e2e scenarios, no coverage); this script is the
-# full run, kept for releases and wide changes.
+# The engine and its terminal views come from the tako-core release
+# swift/Package.swift pins; they are tested in tako-core, not here.
+#
+# For a change, run only what it touches with scripts/check.sh (Swift test
+# filters, e2e scenarios, no coverage); this script is the full run, kept
+# for releases and wide changes.
 #
 # Stages, in order:
-#   rust     clippy over every target, then the engine suite with pty and ssh
-#            under the per-file line-coverage gate (every src/ file >= 80%)
 #   cli      clippy and tests for takoctl (CLI/MCP/hooks)
-#   swift    build the xcframework, then the Swift package under its gate
-#            (TakoCoreUI, TakoKit, the shim and the app directories covered
-#            so far, every file >= 80%)
+#   swift    the Swift package under its gate (TakoKit, the shim and the app
+#            directories covered so far, every file >= 80%)
 #   apps     build Tako.app, run its self-test and drive it with real input
-#            (scripts/e2e-macapp.sh), the terminal view's tests
-#            on the iOS simulator, the iOS scenarios and walkthrough, and the
-#            iOS app under its gate
+#            (scripts/e2e-macapp.sh), the iOS scenarios and walkthrough, and
+#            the iOS app under its gate
 #   persist  run the complete session persistence suite (scripts/e2e-persist.sh)
 #   uitest   run the XCUITest accessibility and UI test suite (scripts/uitest.sh)
 set -euo pipefail
@@ -47,7 +46,7 @@ if [ "${1:-}" = --local ]; then
     shift
 fi
 stages=("$@")
-[ ${#stages[@]} -gt 0 ] || stages=(rust cli swift apps persist uitest)
+[ ${#stages[@]} -gt 0 ] || stages=(cli swift apps persist uitest)
 
 # Every byte the command prints goes to target/ci-logs/NAME.log, which the
 # completion checks below read. The console shows start/end, a sparse
@@ -122,10 +121,6 @@ SH
                 --runner target/tako-e2e --out target/prebuilt
             ci_require "$stage" '^prebuilt: packed '
             ;;
-        engine-tests)
-            ci_logged "$stage" mitts test --locked --no-fail-fast --features pty,ssh -- --test-threads=2
-            ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
-            ;;
         cli-tests)
             ci_logged "$stage" mitts test --locked --no-fail-fast --manifest-path takoctl/Cargo.toml -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
@@ -144,13 +139,11 @@ SH
             else
                 ci_logged "$stage-cli" mitts build --locked --manifest-path takoctl/Cargo.toml
             fi
-            TAKO_TEST_NEW_ZMX=$(./scripts/build-zmx.sh)
-            TAKO_TEST_OLD_ZMX=$(./scripts/build-zmx.sh --legacy-test-runtime)
-            export TAKO_TEST_NEW_ZMX="$PWD/$TAKO_TEST_NEW_ZMX"
-            export TAKO_TEST_OLD_ZMX="$PWD/$TAKO_TEST_OLD_ZMX"
-            # Explicitly refresh the host slice and bindings before SwiftPM
-            # plans the graph. No iOS cross-compiles for this macOS suite.
-            ./scripts/build-xcframework.sh --macos-only
+            # The bundled runtime and the one older releases shipped, both
+            # released and checked against their pinned hashes.
+            TAKO_TEST_NEW_ZMX=$(python3 scripts/session_runtime.py)
+            TAKO_TEST_OLD_ZMX=$(python3 scripts/session_runtime.py --legacy-fixture)
+            export TAKO_TEST_NEW_ZMX TAKO_TEST_OLD_ZMX
             ci_logged "$stage" python3 scripts/ci-swift-watchdog.py -- \
                 ./scripts/swift-test.sh --jobs 2 --no-parallel \
                 --enable-xctest --enable-swift-testing
@@ -168,8 +161,8 @@ if not (tracker.finished and tracker.xctest_completed and tracker.swift_testing_
 PY
             ;;
         macapp-tests)
-            # Keep the default bundled session runtime; build-zmx.sh fetches
-            # its pinned Zig/source and checks the toolchain checksum.
+            # Keep the default bundled session runtime: the released one,
+            # checked against its pinned hash (scripts/session_runtime.py).
             export TAKO_WITH_ZMX=1
             export TAKO_BUNDLE_ID=com.tako-core.terminal.ci
             # Off any external volume (scripts/app_locations.py).
@@ -216,8 +209,8 @@ PY
             ci_require "$stage" '^tako e2e: ok$'
             ;;
         persist-e2e-tests)
-            TAKO_TEST_OLD_ZMX=$(./scripts/build-zmx.sh --legacy-test-runtime)
-            export TAKO_TEST_OLD_ZMX="$PWD/$TAKO_TEST_OLD_ZMX"
+            TAKO_TEST_OLD_ZMX=$(python3 scripts/session_runtime.py --legacy-fixture)
+            export TAKO_TEST_OLD_ZMX
             # All isolated persistence scenarios in the driver registry,
             # including the newer recovery, grouping and appearance cases.
             ci_logged "$stage" ./scripts/e2e-persist.sh \
@@ -234,15 +227,8 @@ PY
             ci_require "$stage" '^ok +persist-'
             ci_require "$stage" '^tako e2e: ok$'
             ;;
-        ios-surface-tests)
-            python3 scripts/app_locations.py check-source "$stage"
-            ./scripts/bindings.sh
-            ci_logged "$stage" ./scripts/test-ios-surface.sh
-            ci_require "$stage" 'Completed [1-9][0-9]* tests with 0 failures'
-            ;;
         ios-simtest)
             python3 scripts/app_locations.py check-source "$stage"
-            ./scripts/bindings.sh
             export TAKO_SIM_DEVICE="${TAKO_SIM_DEVICE:-$(ci_simulator_name)}"
             ci_logged "$stage" python3 scripts/simtest.py
             ci_require "$stage" '\[simtest\] [1-9][0-9]*/[1-9][0-9]* scenarios passed'
@@ -250,11 +236,9 @@ PY
             ci_require ios-coverage '^ok +[0-9]'
             ;;
         ios-unit-tests)
-            # This Xcode project links the simulator archive directly. Its
-            # pre-build phase builds that archive; bindings must exist when
-            # Xcode plans the hosted test target's bridging header.
+            # This Xcode project takes TakoCoreUI from the pinned tako-core
+            # package; xcodebuild resolves and checks it.
             python3 scripts/app_locations.py check-source "$stage"
-            ./scripts/bindings.sh
             xcodegen -s ios/project.yml -p ios --quiet
             if [ -n "${TAKO_SIM_DEVICE:-}" ]; then
                 destination="platform=iOS Simulator,name=$TAKO_SIM_DEVICE"
@@ -327,21 +311,16 @@ script=$'set -euo pipefail\n'
 script+="$(declare -f ci_logged ci_require ci_app_build ci_simulator_name ci_test_stage)"
 for stage in "${stages[@]}"; do
     case "$stage" in
-        prebuilt-build|macapp-e2e-shard|engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-surface-tests|ios-simtest)
+        prebuilt-build|macapp-e2e-shard|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-simtest)
             script+=$'\n'
             script+="ci_test_stage $stage" ;;
-        rust) script+="
-echo '== rust'
-mitts clippy --all-targets --features pty,ssh -- -D warnings
-python3 scripts/coverage-gate.py --features pty,ssh" ;;
         cli) script+="
 echo '== cli'
 mitts clippy --manifest-path takoctl/Cargo.toml -- -D warnings
 mitts test --manifest-path takoctl/Cargo.toml" ;;
         swift) script+="
 echo '== swift'
-./scripts/build-xcframework.sh
-python3 scripts/swift-coverage-gate.py --module TakoCoreUI --module TakoKit --module TakoApp/_TakoShim \\
+python3 scripts/swift-coverage-gate.py --module TakoKit --module TakoApp/_TakoShim \\
     --module TakoApp/Helpers --module TakoApp/Features/QuickTerminal \\
     --module 'TakoApp/Features/Secure Input' --module 'TakoApp/Features/Global Keybinds' \\
     --module TakoApp/Features/Services --module TakoApp/Features/Splits \\
@@ -356,7 +335,6 @@ E2E_APP_DIR=\$(python3 scripts/app_locations.py dir macapp-e2e)
 TAKO_BUNDLE_ID=com.tako-core.terminal.e2e TAKO_APP_DIR=\"\$E2E_APP_DIR\" python3 scripts/build-macapp.py
 APP=\"\$E2E_APP_DIR/Tako.app\" ./scripts/selftest-macapp.sh
 APP=\"\$E2E_APP_DIR/Tako.app\" ./scripts/e2e-macapp.sh
-./scripts/test-ios-surface.sh
 python3 scripts/simtest.py
 python3 scripts/ios-coverage-gate.py" ;;
         persist) script+="

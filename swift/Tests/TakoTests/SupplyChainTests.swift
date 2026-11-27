@@ -17,7 +17,8 @@ import Testing
     private var repoRoot: URL {
         var dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         while dir.path != "/" {
-            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("Cargo.toml").path) {
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("rust-toolchain.toml").path),
+               FileManager.default.fileExists(atPath: dir.appendingPathComponent("swift/Package.swift").path) {
                 return dir
             }
             dir = dir.deletingLastPathComponent()
@@ -36,9 +37,27 @@ import Testing
         #expect(content.contains("\"rustfmt\""), "Toolchain must include rustfmt component")
         #expect(content.contains("\"clippy\""), "Toolchain must include clippy component")
         #expect(content.contains("\"aarch64-apple-darwin\""), "Toolchain must include macOS arm64 target")
-        #expect(content.contains("\"aarch64-apple-ios\""), "Toolchain must include iOS arm64 target")
-        #expect(content.contains("\"aarch64-apple-ios-sim\""), "Toolchain must include iOS simulator arm64 target")
         #expect(content.contains("profile = \"minimal\""), "Toolchain profile must be minimal")
+    }
+
+    // The engine is a released input: one exact tako-core version, its commit
+    // recorded, never built from sources in this repository.
+    @Test func testEngineIsPinnedToOneTakoCoreRelease() throws {
+        let manifest = try String(contentsOf: repoRoot.appendingPathComponent("swift/Package.swift"), encoding: .utf8)
+        #expect(manifest.contains(#".package(url: "https://github.com/alex09x/tako-core.git", exact: ""#),
+                "swift/Package.swift must pin tako-core to one exact version")
+        let resolvedData = try Data(contentsOf: repoRoot.appendingPathComponent("swift/Package.resolved"))
+        let resolved = try #require(try JSONSerialization.jsonObject(with: resolvedData) as? [String: Any])
+        let pins = try #require(resolved["pins"] as? [[String: Any]])
+        let core = try #require(pins.first { ($0["identity"] as? String) == "tako-core" })
+        let state = try #require(core["state"] as? [String: Any])
+        let revision = try #require(state["revision"] as? String)
+        #expect(revision.count == 40 && revision.allSatisfy(\.isHexDigit), "Package.resolved must record the commit")
+        #expect(state["version"] as? String != nil, "Package.resolved must record the version")
+        for engineSource in ["Cargo.toml", "src", "swift/Sources/TakoCoreUI"] {
+            #expect(!FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent(engineSource).path),
+                    "\(engineSource) belongs to tako-core, not this repository")
+        }
     }
 
     // MARK: - 2. SPDX 2.3 SBOM Generation
@@ -266,21 +285,7 @@ import Testing
         #expect(reachable == identifiers, "Every exported package must be reachable from the product")
     }
 
-    // MARK: - 4. Reproducible Build Verification Script
-
-    @Test func testVerifyReproducibleBuildScriptExistsAndConfigured() throws {
-        let scriptPath = repoRoot.appendingPathComponent("scripts/verify-reproducible-build.sh")
-        #expect(FileManager.default.fileExists(atPath: scriptPath.path), "verify-reproducible-build.sh must exist")
-        #expect(FileManager.default.isExecutableFile(atPath: scriptPath.path), "verify-reproducible-build.sh must be executable")
-
-        let content = try String(contentsOf: scriptPath, encoding: .utf8)
-        #expect(content.contains("SOURCE_DATE_EPOCH"), "Script must configure SOURCE_DATE_EPOCH")
-        #expect(content.contains("ZERO_AR_DATE"), "Script must configure ZERO_AR_DATE")
-        #expect(content.contains("MACOSX_DEPLOYMENT_TARGET"), "Script must configure MACOSX_DEPLOYMENT_TARGET")
-        #expect(content.contains("--remap-path-prefix"), "Script must configure --remap-path-prefix")
-    }
-
-    // MARK: - 5. Reproducible Builds Documentation
+    // MARK: - 4. Reproducible Builds Documentation
 
     @Test func testReproducibleBuildsDocumentation() throws {
         let docPath = repoRoot.appendingPathComponent("docs/reproducible-builds.md")
@@ -288,15 +293,14 @@ import Testing
 
         let content = try String(contentsOf: docPath, encoding: .utf8)
         #expect(content.contains("rust-toolchain.toml"), "Documentation must reference rust-toolchain.toml")
+        #expect(content.contains("Package.resolved"), "Documentation must reference the engine pin")
+        #expect(content.contains("session-runtime.json"), "Documentation must reference the session runtime pin")
         #expect(content.contains("Cargo.lock"), "Documentation must reference Cargo.lock")
-        #expect(content.contains("SOURCE_DATE_EPOCH"), "Documentation must document SOURCE_DATE_EPOCH")
-        #expect(content.contains("ZERO_AR_DATE"), "Documentation must document ZERO_AR_DATE")
-        #expect(content.contains("RUSTFLAGS"), "Documentation must document RUSTFLAGS")
         #expect(content.contains("SPDX 2.3"), "Documentation must document SPDX 2.3 format")
         #expect(content.contains("CycloneDX 1.5"), "Documentation must document CycloneDX 1.5 format")
     }
 
-    // MARK: - 6. Target and Features Configuration Validation
+    // MARK: - 5. Target and Features Configuration Validation
 
     @Test func testGenerateSbomTargetAndFeaturesValidation() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

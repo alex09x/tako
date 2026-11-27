@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension Tako {
     /// Stops a surface drawing while nobody can see it. Every tab is a

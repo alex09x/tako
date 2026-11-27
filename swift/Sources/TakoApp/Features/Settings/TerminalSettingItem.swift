@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 public enum TerminalSettingType: Equatable, Sendable {
     case boolean(defaultValue: Bool)

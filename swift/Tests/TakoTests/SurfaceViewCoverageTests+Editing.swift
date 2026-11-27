@@ -12,6 +12,7 @@ import AppKit
 import CoreGraphics
 import Darwin
 import Foundation
+import TakoCoreUI
 import TakoKit
 import Testing
 @testable import Tako

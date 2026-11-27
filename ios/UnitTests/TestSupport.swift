@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 import UIKit
 import XCTest
 @testable import TakoCore

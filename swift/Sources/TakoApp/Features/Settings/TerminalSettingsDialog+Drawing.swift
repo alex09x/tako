@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension TerminalSettingsDialog {
     override func draw(_ dirtyRect: NSRect) {

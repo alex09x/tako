@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import TakoCoreUI
 
 extension Tako {
     /// One explicit status per pane from reported signals (B1).

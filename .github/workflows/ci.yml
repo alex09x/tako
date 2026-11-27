@@ -128,7 +128,7 @@ jobs:
 
   tests:
     # Standard public-repository arm64 runners only; no LAN or signing keys.
-    # A failed native producer must not suppress the independent engines,
+    # A failed native producer must not suppress the independent CLI,
     # Python, Swift and iOS results. Native consumers fail closed below.
     if: ${{ !cancelled() && github.event.repository.visibility == 'public' && github.event.repository.private == false }}
     needs: prebuilt
@@ -155,10 +155,8 @@ jobs:
             shard: 4
           - stage: swift-tests
           - stage: macos-ui-tests
-          - stage: ios-surface-tests
           - stage: ios-unit-tests
           - stage: macapp-tests
-          - stage: engine-tests
           - stage: cli-tests
           - stage: python-tests
     env:
@@ -231,7 +229,7 @@ jobs:
           xcodebuild -version
           swift --version
           python3 --version
-          # rustup reads rust-toolchain.toml, including the three Apple targets.
+          # rustup reads rust-toolchain.toml (takoctl's toolchain).
           rustup show
           rustc --version
 
@@ -275,7 +273,7 @@ jobs:
           fi
 
       - name: Prepare Metal compiler for Apple targets
-        if: ${{ matrix.stage != 'engine-tests' && matrix.stage != 'cli-tests' && matrix.stage != 'python-tests' }}
+        if: ${{ matrix.stage != 'cli-tests' && matrix.stage != 'python-tests' }}
         run: |
           set -euo pipefail
           if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then

@@ -10,6 +10,7 @@
 
 import Foundation
 import CoreGraphics
+import TakoCoreUI
 
 /// Generates theme-aware HTML wrappers for Markdown, diffs, images, and documents (D1).
 public enum DocumentRenderer {

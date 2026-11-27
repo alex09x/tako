@@ -10,6 +10,7 @@
 
 import Foundation
 import CoreGraphics
+import TakoCoreUI
 
 /// Resolves the effective terminal theme across global configuration, workspace overrides,
 /// and pane overrides according to the precedence hierarchy.

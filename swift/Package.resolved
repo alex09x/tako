@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "tako-core",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alex09x/tako-core.git",
+      "state" : {
+        "revision" : "afa9ded101e93854b8470cdfbc7bc3b9da0888fa",
+        "version" : "0.1.2"
+      }
+    }
+  ],
+  "version" : 2
+}

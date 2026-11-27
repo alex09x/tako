@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 @MainActor
 enum SessionRecoveryPlacementChoice {

@@ -9,6 +9,7 @@
 
 import AppKit
 import SwiftUI
+import TakoCoreUI
 
 enum SetupStyle {
     static let background = Color(nsColor: Tako.Brand.surface)

@@ -12,6 +12,7 @@ import AppKit
 import Foundation
 import ImageIO
 import SwiftUI
+import TakoCoreUI
 import Testing
 import UniformTypeIdentifiers
 @testable import Tako

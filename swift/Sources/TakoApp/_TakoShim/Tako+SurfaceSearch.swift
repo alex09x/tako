@@ -11,6 +11,7 @@
 import AppKit
 import Combine
 import Foundation
+import TakoCoreUI
 
 /// One occurrence of the find needle, in retained rows: row 0 is the oldest
 /// line still in scrollback, and the live screen follows the scrollback.

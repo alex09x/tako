@@ -1,6 +1,6 @@
 # Tako 🐙
 
-A native macOS terminal with a permanent session sidebar and a canvas for tiled and floating panes. Its Rust engine and Metal renderer are also available as the TakoCoreUI Swift SDK for macOS and iOS.
+A native macOS terminal with a permanent session sidebar and a canvas for tiled and floating panes. Its Rust engine and Metal renderer live in [tako-core](https://github.com/alex09x/tako-core), also available there as the TakoCoreUI Swift SDK for macOS and iOS.
 
 [![macOS 14+](https://img.shields.io/badge/macOS-14.0%2B-blue.svg)](https://apple.com/macos)
 [![iOS 17+](https://img.shields.io/badge/iOS-17.0%2B-green.svg)](https://apple.com/ios)
@@ -154,21 +154,21 @@ frames submitted=12 presented=10
 macapp self-test: ok
 ```
 
-To run the Rust engine test suite:
+The engine, TakoCoreUI and the session runtime are released by
+[tako-core](https://github.com/alex09x/tako-core) and tested there. Tako
+builds against one exact release of each: `swift/Package.swift` pins the
+package (`swift/Package.resolved` records its commit), and
+`packaging/session-runtime.json` pins the session runtime by hash.
+
+To run the Swift suites (SwiftPM fetches the pinned tako-core release):
 ```bash
-mitts test
+./scripts/swift-test.sh
 ```
 
-Rust builds, tests, lint and coverage use the latest stable [Mitts](https://mittsbuild.com/).
+`takoctl` builds, tests, lint and coverage use the latest stable [Mitts](https://mittsbuild.com/).
 Install it with `curl -fsSL https://mittsbuild.com/install.sh | MITTS_INSTALL_ROOT="$HOME/.local" sh` and add
 `~/.local/bin` to `PATH`. Unsupported commands or options stop the affected
 check and are reported to Mitts; build scripts do not fall back to Cargo.
-
-The Swift suites need the engine built locally first:
-```bash
-./scripts/build-xcframework.sh
-./scripts/swift-test.sh
-```
 
 ---
 
@@ -287,7 +287,9 @@ keybind = super+w=close_surface
 
 ## Swift Package Integration
 
-Tako can be embedded in any macOS or iOS application as a Swift Package:
+Tako's terminal view can be embedded in any macOS or iOS application: add
+[tako-core](https://github.com/alex09x/tako-core) as a Swift Package and link
+its `TakoCoreUI` product.
 
 ```swift
 import TakoCoreUI
@@ -304,7 +306,7 @@ terminal.feed(data: incomingBytes)
 Implement `TakoTerminalNSViewDelegate` to forward user input and resize events back to your backend transport.
 
 Runnable samples for macOS, iOS and the C ABI, what the host is responsible for, limits and
-compatibility, and the versioning policy: [docs/takocore.md](docs/takocore.md).
+compatibility, and the versioning policy: [tako-core's docs/takocore.md](https://github.com/alex09x/tako-core/blob/main/docs/takocore.md).
 
 ---
 

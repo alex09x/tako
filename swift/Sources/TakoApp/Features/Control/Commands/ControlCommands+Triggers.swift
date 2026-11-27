@@ -10,6 +10,7 @@
 
 import Foundation
 import AppKit
+import TakoCoreUI
 
 extension ControlCommands {
     /// Handles `triggers` control command: list, add, remove, and clear passive regex triggers (E7).

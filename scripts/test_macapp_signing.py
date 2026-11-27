@@ -172,7 +172,7 @@ class SigningTests(unittest.TestCase):
             verify_source_checkout(source, self.root.name, runner=wrong_head)
 
         def dirty(args, **kwargs):
-            return subprocess.CompletedProcess(args, 0, source if args[1] == "rev-parse" else " M Cargo.lock", "")
+            return subprocess.CompletedProcess(args, 0, source if args[1] == "rev-parse" else " M swift/Package.resolved", "")
 
         with self.assertRaises(ValueError):
             verify_source_checkout(source, self.root.name, runner=dirty)

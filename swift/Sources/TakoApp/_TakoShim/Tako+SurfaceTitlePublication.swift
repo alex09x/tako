@@ -10,6 +10,7 @@
 
 import Combine
 import Foundation
+import TakoCoreUI
 
 /// Gate UI publication, not the raw terminal title or protocol events.
 @MainActor

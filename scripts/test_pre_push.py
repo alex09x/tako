@@ -17,7 +17,7 @@ HOOK = Path(__file__).resolve().parent / "git-hooks/pre-push"
 
 
 class PrePushTests(unittest.TestCase):
-    def run_hook(self, changed, motion=0, ios=0):
+    def run_hook(self, changed, motion=0):
         with tempfile.TemporaryDirectory(prefix="tako-hook-") as temporary:
             root = Path(temporary)
             (root / "bin").mkdir()
@@ -40,15 +40,12 @@ esac
             script(root / "scripts/motion-gate.sh", """echo motion >> "$HOOK_TEST_LOG"
 exit "$HOOK_TEST_MOTION"
 """)
-            script(root / "scripts/check.sh", """test "$1" = ios
-echo ios >> "$HOOK_TEST_LOG"
-exit "$HOOK_TEST_IOS"
-""")
+            script(root / "scripts/check.sh", 'echo "check $*" >> "$HOOK_TEST_LOG"\n')
             script(root / "scripts/motion-mutants.py", 'echo mutant >> "$HOOK_TEST_LOG"\n')
             env = dict(os.environ, PATH=str(root / "bin") + os.pathsep + os.environ["PATH"],
                        TAKO_MAC="fixture@test", HOOK_TEST_ROOT=str(root),
                        HOOK_TEST_CHANGED=changed, HOOK_TEST_LOG=str(root / "calls"),
-                       HOOK_TEST_MOTION=str(motion), HOOK_TEST_IOS=str(ios))
+                       HOOK_TEST_MOTION=str(motion))
             update = "refs/heads/topic " + "1" * 40 + " refs/heads/topic " + "2" * 40 + "\n"
             result = subprocess.run(["/bin/bash", str(HOOK)], input=update, text=True,
                                     capture_output=True, env=env, cwd=root, timeout=10)
@@ -63,15 +60,12 @@ exit "$HOOK_TEST_IOS"
         self.assertEqual((code, calls), (0, ["motion"]), output)
         self.assertNotIn("mutants running", output)
 
-    def test_terminal_surface_changes_still_run_both_required_gates(self):
-        self.assertEqual(self.run_hook("swift/Sources/TakoCoreUI/View.swift")[:2], (0, ["motion", "ios"]))
+    def test_phone_app_changes_run_the_motion_gate_only(self):
+        self.assertEqual(self.run_hook("swift/Sources/iOSApp/TerminalScreen.swift")[:2], (0, ["motion"]))
 
-    def test_failed_motion_blocks_the_push_before_ios(self):
-        self.assertEqual(self.run_hook("swift/Sources/TakoCoreUI/View.swift", motion=7)[:2], (7, ["motion"]))
-
-    def test_failed_ios_blocks_the_push(self):
-        self.assertEqual(self.run_hook("swift/Tests/TakoCoreUITests/ViewTests.swift", ios=8)[:2],
-                         (8, ["motion", "ios"]))
+    def test_failed_motion_blocks_the_push(self):
+        self.assertEqual(self.run_hook("swift/Sources/TakoApp/Features/Sidebar/Row.swift", motion=7)[:2],
+                         (7, ["motion"]))
 
 
 if __name__ == "__main__":

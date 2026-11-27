@@ -12,6 +12,7 @@ import Testing
 @testable import Tako
 import SwiftUI
 import AppKit
+import TakoCoreUI
 
 extension ConfigKeysTests {
     // MARK: - macos-hidden

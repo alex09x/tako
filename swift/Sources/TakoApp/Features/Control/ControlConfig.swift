@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 import TakoKit
 
 /// `takoctl config`: every setting the config file takes, read and written

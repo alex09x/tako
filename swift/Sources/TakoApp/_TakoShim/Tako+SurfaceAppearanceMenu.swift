@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import TakoCoreUI
 
 extension Notification.Name {
     /// A terminal's temporary zoom changed (object: the SurfaceView).

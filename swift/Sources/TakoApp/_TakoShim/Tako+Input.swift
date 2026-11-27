@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import TakoKit
 import OSLog
+import TakoCoreUI
 
 /// The compatibility boundary between upstream's macOS application
 /// layer (Sources/TakoApp, copied verbatim) and our pure-Rust terminal

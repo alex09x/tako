@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import TakoCoreUI
 
 extension Tako.SurfaceView {
     var persistenceEnabled: Bool { !SessionPlaces.isSelfTest && (app?.config.sessionPersistence ?? false) }
