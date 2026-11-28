@@ -35,9 +35,14 @@ OUT = "target/simtest"
 # Off any external volume, where macOS would ask for access (app_locations.py).
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import app_locations  # noqa: E402
+import tako_core  # noqa: E402
 from simtest_results import resize_verdict, walkthrough_verdict  # noqa: E402
 DERIVED = app_locations.app_dir("ios-sim-derived")
 FIXTURE = os.path.join(OUT, "sshd")
+# The engine's test SSH server (tako-core's examples/test_sshd.rs), built
+# from the pinned release into this repository's target/.
+SSHD_TARGET = "target/tako-core-examples"
+TEST_SSHD = os.path.join(SSHD_TARGET, "debug", "examples", "test_sshd")
 BUNDLE_ID = "dev.prod.takocore"
 DEVICE = os.environ.get("TAKO_SIM_DEVICE", "iPhone 17 Pro")
 PORT = int(os.environ.get("TAKO_SIM_SSH_PORT", "2224"))
@@ -209,6 +214,18 @@ def make_servers():
     with open(os.path.join(FIXTURE, "authorized_keys"), "w") as f:
         f.write("\n".join(pubkeys) + "\n")
 
+    # The engine's own test server, from the tako-core release the app
+    # links, built (locked to the release's Cargo.lock) into this
+    # repository's target/ so its checkout stays as released. Before any
+    # listener starts: a failure here leaves no daemon holding a port.
+    try:
+        tako_core.resolve()
+        core = tako_core.locate()
+    except tako_core.Unresolved as e:
+        sys.exit(f"[simtest] tako-core: {e}")
+    run(["mitts", "build", "--locked", "--features", "ssh", "--example", "test_sshd",
+         "--manifest-path", os.path.join(core["checkout"], "Cargo.toml"), "--target-dir", SSHD_TARGET])
+
     # One sshd per host key type: which type a server offers is not something
     # a client can ask for, so the only way to test all three against the
     # app's trust-on-first-use prompt is three servers.
@@ -218,10 +235,9 @@ def make_servers():
              "-E", os.path.join(os.path.dirname(cfg), "sshd.log")])
         wait_for_port(PORT + i, f"sshd/{kind}")
 
-    run(["mitts", "build", "--features", "ssh", "--example", "test_sshd"])
     log = open(os.path.join(FIXTURE, "test_sshd.log"), "w")
     proc = subprocess.Popen(
-        ["target/debug/examples/test_sshd",
+        [TEST_SSHD,
          "--port", str(ECHO_PORT),
          "--password", PASSWORD,
          "--authorized-keys", os.path.join(FIXTURE, "authorized_keys")],
@@ -239,7 +255,7 @@ def make_servers():
     # transport instead of faking prompts inside the app.
     mfa_log = open(os.path.join(FIXTURE, "test_sshd_mfa.log"), "w")
     mfa = subprocess.Popen(
-        ["target/debug/examples/test_sshd",
+        [TEST_SSHD,
          "--port", str(MFA_PORT),
          "--mfa-password", PASSWORD,
          "--mfa-code", MFA_CODE,
@@ -825,7 +841,7 @@ def main():
     # The source tree, the app's DerivedData and the fixtures' target/ (the
     # sshd stand-ins run from there): none of them may resolve onto a volume.
     reason = (app_locations.check_source("simtest") or app_locations.check_app(DERIVED)
-              or app_locations.check_app(OUT) or app_locations.check_app("target/debug/examples"))
+              or app_locations.check_app(OUT) or app_locations.check_app(os.path.dirname(TEST_SSHD)))
     if reason:
         print(reason, file=sys.stderr)
         sys.exit(3)
