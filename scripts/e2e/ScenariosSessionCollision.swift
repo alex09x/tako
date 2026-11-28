@@ -53,7 +53,10 @@ func runSessionNameCollisionScenario(_ d: Driver) throws {
     guard let record = try JSONSerialization.jsonObject(with: recordData) as? [String: Any],
           let runtimeID = record["runtimeID"] as? String, let generation = record["generation"] as? String,
           let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] else { throw Failure("no isolated session record") }
-    let otherRuntime = "0.8.1-0000000000000000"
+    // The colliding session lives under another runtime id that is scanned
+    // first. "0-…" sorts before every real id ('-' before '.'), whatever
+    // version the bundled runtime has.
+    let otherRuntime = "0-0000000000000000"
     guard otherRuntime < runtimeID else { throw Failure("unexpected test runtime ordering") }
     let otherNamespace = URL(fileURLWithPath: home).appendingPathComponent(".tako-sessions/\(otherRuntime)")
     try FileManager.default.createDirectory(at: otherNamespace, withIntermediateDirectories: true,
