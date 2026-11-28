@@ -206,7 +206,10 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         XCTAssertTrue(row.isHittable, "The source session row must be physically accessible")
         row.rightClick()
         let move = app.menuItems["Move to This Window"].firstMatch
-        XCTAssertTrue(move.exists && move.isEnabled, "The existing custom-group action must be available")
+        // The context menu opens after the click returns; wait for it like the
+        // detach menu above instead of reading it at once.
+        XCTAssertTrue(move.waitForExistence(timeout: 3) && move.isEnabled,
+                      "The existing custom-group action must be available")
         move.click()
     }
 
