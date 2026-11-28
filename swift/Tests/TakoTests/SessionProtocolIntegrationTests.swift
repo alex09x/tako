@@ -115,6 +115,15 @@ import Testing
             let labels = Reattach.labels(from: get.output)
             return labels?["tako-gen"] == "gen1" && labels?["tako-attempt"] == "att1"
         })
+        // Step 3 takes `name` away from gen1, so the kill-by-name above cannot
+        // reach it; it is ended by process id instead.
+        let gen1Shell = try #require(RuntimeCommand.sessionPID(bins.newZmx, name: name, environment: env))
+        let gen1Daemon = try #require(OrphanDaemon.daemon(ofShell: gen1Shell, runtime: bins.newZmx),
+                                      "gen1's shell \(gen1Shell) is not run by a \(bins.newZmx.lastPathComponent) daemon")
+        defer {
+            #expect(OrphanDaemon.end(gen1Daemon, runtime: bins.newZmx).isEmpty, "gen1's daemon outlived the test")
+            #expect(!OrphanDaemon.alive(gen1Shell), "gen1's command outlived the test")
+        }
         // Repeated `zmx get` probes under continuous output never fail with Unexpected.
         for _ in 0..<5 {
             let probe = try #require(RuntimeCommand.run(bins.newZmx, ["get", name], environment: env))
